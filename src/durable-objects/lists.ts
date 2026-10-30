@@ -1,0 +1,122 @@
+// Lists: curated groups of accounts, stored in the Durable Object's SQLite. Same rules as lists.js.
+import { DurableObject } from 'cloudflare:workers';
+import { json } from '../lib/twitterapi';
+
+const HANDLE = /^[A-Za-z0-9_]{1,15}$/;
+const MAX_LISTS = 100, MAX_MEMBERS = 500;
+
+interface Member {
+  handle: string; note: string; addedAt: number; missing: boolean;
+  profile: { name: string; avatar: string; followers: number; description: string } | null;
+}
+interface List { id: string; name: string; topic: string; members: Member[]; created: number; updated: number }
+
+// X Lists: lists that live on x.com, kept by reference. We store the id, a name, the groups it belongs to and a note;
+// the tweets are read from X's own list timeline when needed, so no accounts are copied.
+// `public`: shown on the public Lists page. Unset (lists imported before this option) counts as public: they are public lists on X.
+export interface XList { id: string; name: string; groups: string[]; description: string; order: number; public?: boolean }
+const MAX_XLISTS = 300;
+
+const str = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n);
+const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const https = (v: unknown) => (/^https:\/\//i.test(String(v ?? '')) ? String(v).slice(0, 400) : '');
+
+// Whole-list validation: anything the browser sends is reduced to known, bounded fields.
+function cleanList(raw: Record<string, unknown>, prev?: List): List {
+  const name = str(raw.name, 80);
+  if (!name) throw new Error('list name required');
+  const seen = new Set<string>(), members: Member[] = [];
+  const incoming = Array.isArray(raw.members) ? (raw.members as Record<string, unknown>[]).slice(0, MAX_MEMBERS) : [];
+  for (const m of incoming) {
+    const handle = String(m?.handle ?? '').trim().replace(/^@/, '');
+    if (!HANDLE.test(handle) || seen.has(handle.toLowerCase())) continue;
+    seen.add(handle.toLowerCase());
+    const p = m.profile && typeof m.profile === 'object' ? (m.profile as Record<string, unknown>) : null;
+    members.push({
+      handle, note: str(m.note, 200), addedAt: num(m.addedAt) || Date.now(), missing: !!m.missing,
+      profile: p ? { name: str(p.name, 80), avatar: https(p.avatar), followers: num(p.followers), description: str(p.description, 200) } : null,
+    });
+  }
+  return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), name, topic: str(raw.topic, 300), members, created: prev?.created ?? Date.now(), updated: Date.now() };
+}
+
+function cleanX(raw: unknown): XList | null {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const id = String(r.id ?? '').trim();
+  if (!/^\d{1,25}$/.test(id)) return null;
+  const groups = [...new Set((Array.isArray(r.groups) ? r.groups : []).map((g) => str(g, 60)).filter(Boolean))].slice(0, 6);
+  return { id, name: str(r.name, 80) || `List ${id}`, groups, description: str(r.description, 400), order: 0, ...(typeof r.public === 'boolean' ? { public: r.public } : {}) };
+}
+
+export class ListsDO extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS lists (id TEXT PRIMARY KEY, updated INTEGER NOT NULL, data TEXT NOT NULL)');
+    ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS xlists (id TEXT PRIMARY KEY, ord INTEGER NOT NULL, data TEXT NOT NULL)');
+  }
+  private xall(): XList[] {
+    return this.ctx.storage.sql.exec<{ data: string }>('SELECT data FROM xlists ORDER BY ord').toArray().map((r) => JSON.parse(r.data) as XList);
+  }
+  private xput(x: XList): void { this.ctx.storage.sql.exec('INSERT OR REPLACE INTO xlists (id, ord, data) VALUES (?, ?, ?)', x.id, x.order, JSON.stringify(x)); }
+  private all(): List[] {
+    return this.ctx.storage.sql.exec<{ data: string }>('SELECT data FROM lists ORDER BY updated DESC').toArray().map((r) => JSON.parse(r.data) as List);
+  }
+  private get(id: string): List | undefined {
+    const row = this.ctx.storage.sql.exec<{ data: string }>('SELECT data FROM lists WHERE id = ?', id).toArray()[0];
+    return row ? (JSON.parse(row.data) as List) : undefined;
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const name = new URL(request.url).pathname.replace(/^\/lists\//, '');
+    try {
+      if (request.method === 'GET' && name === 'all') return json(this.all());
+      if (request.method === 'GET' && name === 'x-all') return json(this.xall());
+      // What the public Lists page may show: only lists marked public, and only name, groups and description.
+      if (request.method === 'GET' && name === 'x-public') return json(this.xall().filter((x) => x.public !== false).map(({ id, name, groups, description }) => ({ id, name, groups, description })));
+      if (request.method !== 'POST') return json({ error: 'GET or POST required' }, 405);
+      const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      if (name === 'save') {
+        const prev = b.id ? this.get(String(b.id)) : undefined;
+        if (b.id && !prev) throw new Error('unknown list');
+        if (!prev) {
+          const n = this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM lists').one().n;
+          if (n >= MAX_LISTS) throw new Error(`at most ${MAX_LISTS} lists`);
+        }
+        const list = cleanList(b, prev);
+        this.ctx.storage.sql.exec('INSERT OR REPLACE INTO lists (id, updated, data) VALUES (?, ?, ?)', list.id, list.updated, JSON.stringify(list));
+        return json(list);
+      }
+      if (name === 'x-import') {
+        // Adds lists we do not have yet; for one we have, only adds groups, so a rename or note you made is kept.
+        const incoming = (Array.isArray(b.lists) ? b.lists : []).slice(0, MAX_XLISTS).map(cleanX).filter((x): x is XList => !!x);
+        if (!incoming.length) throw new Error('no X list ids found');
+        const have = new Map(this.xall().map((x) => [x.id, x]));
+        let order = Math.max(0, ...[...have.values()].map((x) => x.order)), added = 0, updated = 0;
+        for (const x of incoming) {
+          const cur = have.get(x.id);
+          if (cur) { const groups = [...new Set([...cur.groups, ...x.groups])].slice(0, 6); if (groups.length !== cur.groups.length) { this.xput({ ...cur, groups }); have.set(x.id, { ...cur, groups }); updated++; } continue; }
+          if (have.size >= MAX_XLISTS) throw new Error(`at most ${MAX_XLISTS} X lists`);
+          const next = { ...x, order: ++order }; this.xput(next); have.set(x.id, next); added++;
+        }
+        return json({ added, updated, total: have.size });
+      }
+      if (name === 'x-save') {
+        const x = cleanX(b), cur = x && this.xall().find((y) => y.id === x.id);
+        if (!x || !cur) throw new Error('unknown X list');
+        this.xput({ ...x, order: cur.order, public: x.public ?? cur.public });
+        return json({ ok: true });
+      }
+      if (name === 'x-publish') {      // show or hide several lists on the public page at once
+        const ids = new Set((Array.isArray(b.ids) ? b.ids : []).map(String)), on = b.public === true;
+        let n = 0;
+        for (const x of this.xall()) if (ids.has(x.id)) { this.xput({ ...x, public: on }); n++; }
+        return json({ ok: true, changed: n });
+      }
+      if (name === 'x-delete') { this.ctx.storage.sql.exec('DELETE FROM xlists WHERE id = ?', String(b.id ?? '')); return json({ ok: true }); }
+      if (name === 'delete') { this.ctx.storage.sql.exec('DELETE FROM lists WHERE id = ?', String(b.id ?? '')); return json({ ok: true }); }
+      return json({ error: 'unknown lists route' }, 404);
+    } catch (err) {
+      return json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  }
+}

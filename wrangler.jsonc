@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tweet-explorer",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-27",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Only reachable through a custom domain. /admin and /custom are behind Cloudflare Access; the rest is public.
+  // The domain is not stored here: pass it when you deploy, `npm run deploy -- --domain your.domain.example`.
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // The Worker runs first for every request so each one (even static files) is checked.
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "MONITOR", "class_name": "MonitorDO" },
+      { "name": "HISTORY", "class_name": "HistoryDO" },
+      { "name": "LISTS", "class_name": "ListsDO" },
+      { "name": "PUBLISH", "class_name": "PublishDO" },
+      { "name": "COST", "class_name": "CostDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["MonitorDO", "HistoryDO"] },
+    { "tag": "v2", "new_sqlite_classes": ["ListsDO"] },
+    { "tag": "v3", "new_sqlite_classes": ["PublishDO"] },
+    { "tag": "v4", "new_sqlite_classes": ["CostDO"] }
+  ],
+
+  // Audio versions of briefings (text to speech with Gemini on Replicate): the MP3 files. Create once: `npx wrangler r2 bucket create tweet-explorer-audio`.
+  "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "tweet-explorer-audio" }],
+
+  // Language models: OpenRouter only (the OPENROUTER_API_KEY secret). The Workers AI binding was removed; add `"ai": { "binding": "AI" }` back to use it again.
+
+  "observability": { "enabled": true, "logs": { "head_sampling_rate": 1 } },
+  "upload_source_maps": true,
+
+  // TEAM_DOMAIN and POLICY_AUD (from your Cloudflare Access application) are Worker secrets, not set here:
+  // `npx wrangler secret put TEAM_DOMAIN` and `npx wrangler secret put POLICY_AUD`. If either is missing, every request is refused.
+  "vars": {
+    // Summarize tab and briefings: "openrouter" (needs the OPENROUTER_API_KEY secret), "workers-ai" (needs the AI binding) or "anthropic" (ANTHROPIC_API_KEY).
+    "SUMMARY_PROVIDER": "openrouter",
+    "SUMMARY_MODEL": "anthropic/claude-haiku-5.5"
+  }
+}

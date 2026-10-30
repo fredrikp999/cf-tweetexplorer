@@ -1,0 +1,13 @@
+# Secrets
+.env
+.dev.vars
+
+# Runtime data written by the local server
+.data/
+
+# Tooling
+node_modules/
+.wrangler/
+worker-configuration.d.ts
+.DS_Store
+*.log

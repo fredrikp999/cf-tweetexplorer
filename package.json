@@ -1,0 +1,36 @@
+{
+  "name": "tweet-explorer",
+  "version": "0.1.0",
+  "description": "Explore, collect and summarize X (Twitter) data on Cloudflare Workers, with AI analysis and scheduled public briefings.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fredrikp999/cf-tweetexplorer.git"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.mjs\"",
+    "check": "npm run typecheck && npm test",
+    "build": "wrangler deploy --dry-run --outdir .wrangler/dry-run"
+  },
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "^0.97.0",
+    "@anthropic-ai/sdk": "^0.109.1",
+    "@strands-agents/sdk": "^1.22.0",
+    "openai": "^6.49.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "wrangler": "^4.153.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

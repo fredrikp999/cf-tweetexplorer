@@ -1,0 +1,10 @@
+# Worker under `npm run dev` (wrangler dev). Copy to .dev.vars. Never commit .dev.vars.
+TWITTERAPI_IO_KEY=
+OPENROUTER_API_KEY=
+# REPLICATE_API_TOKEN=
+
+# With DEV_BYPASS_ACCESS you do not need TEAM_DOMAIN / POLICY_AUD locally. Skip the Cloudflare Access check locally (ignored for requests that came through Cloudflare's edge).
+DEV_BYPASS_ACCESS=1
+# Scripted model answers instead of real calls: try the app without spending anything.
+# SUMMARY_MOCK=1
+# AUDIO_MOCK=1

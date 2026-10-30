@@ -1,0 +1,529 @@
+{
+ "source": "Scoble's Lists (Google Doc), x.com/scobleizer/lists",
+ "lists": [
+  {
+   "id": "952969346518720512",
+   "name": "AI Community #1",
+   "description": "Small accounts, mostly researchers or developers working in AI. Good for new ideas and what the community is discussing. Meant to be read together as one big set.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1807679743619367128",
+   "name": "AI Community #2",
+   "description": "Small accounts, mostly researchers or developers working in AI. Good for new ideas and what the community is discussing. Meant to be read together as one big set.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1811773620181463494",
+   "name": "AI Community #3",
+   "description": "Small accounts, mostly researchers or developers working in AI. Good for new ideas and what the community is discussing. Meant to be read together as one big set.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1822396593506848796",
+   "name": "AI Community #4",
+   "description": "Small accounts, mostly researchers or developers working in AI. Good for new ideas and what the community is discussing. Meant to be read together as one big set.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1854973625138294946",
+   "name": "AI Community #5",
+   "description": "Small accounts, mostly researchers or developers working in AI. Good for new ideas and what the community is discussing. Meant to be read together as one big set.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1982705114952659239",
+   "name": "AI Community #6",
+   "description": "Small accounts, mostly researchers or developers working in AI. Good for new ideas and what the community is discussing. Meant to be read together as one big set.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "2024165432484298947",
+   "name": "AI Community #7",
+   "description": "Small accounts, mostly researchers or developers working in AI. Good for new ideas and what the community is discussing. Meant to be read together as one big set.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "2050823188528205973",
+   "name": "AI Community #8",
+   "description": "Small accounts, mostly researchers or developers working in AI. Good for new ideas and what the community is discussing. Meant to be read together as one big set.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1741727636806881476",
+   "name": "AI Consultants",
+   "description": "Consultants who build AI systems for companies.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1805777808330781114",
+   "name": "AI Policy",
+   "description": "People involved in government oversight of AI.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1697023939338519013",
+   "name": "AI Artists and film makers",
+   "description": "Creators who use AI to make graphics or films, and often share how they made them.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1846645136064995788",
+   "name": "AI Film makers",
+   "description": "The film makers among the AI Artists.",
+   "groups": [
+    "AI Community"
+   ]
+  },
+  {
+   "id": "1953536336675365173",
+   "name": "AI Newsmakers",
+   "description": "",
+   "groups": [
+    "AI Leaders"
+   ]
+  },
+  {
+   "id": "1958261568329924954",
+   "name": "AI Influencers",
+   "description": "",
+   "groups": [
+    "AI Leaders"
+   ]
+  },
+  {
+   "id": "1744564719309279599",
+   "name": "AI Founders #1",
+   "description": "",
+   "groups": [
+    "AI Leaders",
+    "Founders"
+   ]
+  },
+  {
+   "id": "1828820239175590166",
+   "name": "AI Founders #2",
+   "description": "",
+   "groups": [
+    "AI Leaders",
+    "Founders"
+   ]
+  },
+  {
+   "id": "2026213443632861286",
+   "name": "AI Founders #3",
+   "description": "",
+   "groups": [
+    "AI Leaders",
+    "Founders"
+   ]
+  },
+  {
+   "id": "1901342713158787428",
+   "name": "AI Investors",
+   "description": "",
+   "groups": [
+    "AI Leaders",
+    "Investors"
+   ]
+  },
+  {
+   "id": "7450",
+   "name": "Investors #1",
+   "description": "",
+   "groups": [
+    "Investors"
+   ]
+  },
+  {
+   "id": "1751865298263932998",
+   "name": "Investors #2",
+   "description": "",
+   "groups": [
+    "Investors"
+   ]
+  },
+  {
+   "id": "1219428908283514881",
+   "name": "VC firms",
+   "description": "",
+   "groups": [
+    "Investors"
+   ]
+  },
+  {
+   "id": "8020",
+   "name": "Founders #1",
+   "description": "",
+   "groups": [
+    "Founders"
+   ]
+  },
+  {
+   "id": "1049755751185403904",
+   "name": "Founders #2",
+   "description": "",
+   "groups": [
+    "Founders"
+   ]
+  },
+  {
+   "id": "1795545373173575917",
+   "name": "Founders #3",
+   "description": "",
+   "groups": [
+    "Founders"
+   ]
+  },
+  {
+   "id": "1696336383231525354",
+   "name": "AI Companies #1",
+   "description": "Companies that use, or are made for, AIs.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1811755253970112761",
+   "name": "AI Companies #2",
+   "description": "",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1705695313334571453",
+   "name": "AI Companies: developer tools",
+   "description": "Subset of the AI Company lists: developer tools.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1705702737835643273",
+   "name": "AI Companies: education",
+   "description": "Subset: education, learning, teaching, students, teachers.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1705692999974637973",
+   "name": "AI Companies: enterprise",
+   "description": "Subset: enterprise, work, big companies as customers.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1705695075014180922",
+   "name": "AI Companies: creative",
+   "description": "Subset: things creative people would use, and things that fit future holodeck headsets, AI operating systems or digital twins.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1705695499108638974",
+   "name": "AI Companies: health and science",
+   "description": "Subset: healthcare, science, medicine, drug discovery, biology.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1705703289579602425",
+   "name": "AI Companies: audio",
+   "description": "Subset: recording, transcribing, making or manipulating music, other audio.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1953236705965949015",
+   "name": "AI Companies: voice and listening",
+   "description": "Smaller subset: AI listening devices, transcription services, voice systems that answer calls.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1705718284488986722",
+   "name": "AI Companies: real estate and design",
+   "description": "Subset: real estate, interior design, architects.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1705715250895667539",
+   "name": "AI Companies: marketing",
+   "description": "Subset: marketing, writing, advertising.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1770238087593112021",
+   "name": "AI Companies: decentralized AI",
+   "description": "Subset: decentralized AI, or AI mixed with blockchain and crypto.",
+   "groups": [
+    "AI Companies"
+   ]
+  },
+  {
+   "id": "1741902685669113995",
+   "name": "AI Orgs",
+   "description": "Organizations that run research labs or AI events. Good for what AI labs are doing and for upcoming events.",
+   "groups": [
+    "AI Orgs and Events"
+   ]
+  },
+  {
+   "id": "1805786050763087967",
+   "name": "Robot AI",
+   "description": "People and companies building robots or the AIs that run them: specialized robots, drones, vehicles and humanoids.",
+   "groups": [
+    "Robots"
+   ]
+  },
+  {
+   "id": "1901112430467706999",
+   "name": "Robot influencers",
+   "description": "People and organizations who write or share about robots.",
+   "groups": [
+    "Robots"
+   ]
+  },
+  {
+   "id": "1901109935196565741",
+   "name": "San Francisco robots",
+   "description": "Robot builders in the San Francisco Bay Area.",
+   "groups": [
+    "Robots"
+   ]
+  },
+  {
+   "id": "956617160733818880",
+   "name": "AI vehicles",
+   "description": "People and companies building vehicles that use AI to operate: cars, trucks, forklifts and more.",
+   "groups": [
+    "Robots"
+   ]
+  },
+  {
+   "id": "733162578625449985",
+   "name": "AR/VR #1",
+   "description": "People who build augmented, virtual or mixed reality and spatial computing systems.",
+   "groups": [
+    "Spatial Computing"
+   ]
+  },
+  {
+   "id": "1786062895668974066",
+   "name": "AR/VR #2",
+   "description": "",
+   "groups": [
+    "Spatial Computing"
+   ]
+  },
+  {
+   "id": "733277650085511168",
+   "name": "AR/VR companies",
+   "description": "Companies that build AR/VR products and services.",
+   "groups": [
+    "Spatial Computing"
+   ]
+  },
+  {
+   "id": "1490757476332945413",
+   "name": "Spatial Computing",
+   "description": "Companies and people in spatial computing, including some who do not fit AR/VR.",
+   "groups": [
+    "Spatial Computing"
+   ]
+  },
+  {
+   "id": "1038538444480307200",
+   "name": "Climate and weather",
+   "description": "Scientists and meteorologists who study climate change, storm chasers, and people who report on weather and climate.",
+   "groups": [
+    "Climate"
+   ]
+  },
+  {
+   "id": "952969256903168000",
+   "name": "Crypto/Web 3.0 #1",
+   "description": "",
+   "groups": [
+    "Crypto and Web 3"
+   ]
+  },
+  {
+   "id": "1837926936586473655",
+   "name": "Crypto/Web 3.0 #2",
+   "description": "",
+   "groups": [
+    "Crypto and Web 3"
+   ]
+  },
+  {
+   "id": "1805986224055955873",
+   "name": "Devs, DevRel, Designers #1",
+   "description": "Software developers, designers, and those in developer relations.",
+   "groups": [
+    "Developers and techies"
+   ]
+  },
+  {
+   "id": "2025151414369223109",
+   "name": "Devs, DevRel, Designers #2",
+   "description": "",
+   "groups": [
+    "Developers and techies"
+   ]
+  },
+  {
+   "id": "1049745135431376896",
+   "name": "Infrastructure",
+   "description": "People who work in computer infrastructure: networking, cloud computing, databases.",
+   "groups": [
+    "Developers and techies"
+   ]
+  },
+  {
+   "id": "1805775704568844551",
+   "name": "Neuroscience and BCI",
+   "description": "Neuroscientists, people who study the human brain, and anyone in brain-computer interfaces.",
+   "groups": [
+    "Neuroscience and BCI"
+   ]
+  },
+  {
+   "id": "1221942510081036293",
+   "name": "News #1",
+   "description": "All AI people removed, so a good set for general news.",
+   "groups": [
+    "News and newsmakers"
+   ]
+  },
+  {
+   "id": "1814007176647847963",
+   "name": "News #2",
+   "description": "",
+   "groups": [
+    "News and newsmakers"
+   ]
+  },
+  {
+   "id": "1982705239246733819",
+   "name": "News #3",
+   "description": "",
+   "groups": [
+    "News and newsmakers"
+   ]
+  },
+  {
+   "id": "1049751021877002240",
+   "name": "PR people",
+   "description": "People in public relations, or who work with journalists and influencers on behalf of companies.",
+   "groups": [
+    "News and newsmakers"
+   ]
+  },
+  {
+   "id": "31748",
+   "name": "Tech news outlets",
+   "description": "News outlets that cover technology.",
+   "groups": [
+    "News and newsmakers"
+   ]
+  },
+  {
+   "id": "8096",
+   "name": "Technology journalists",
+   "description": "Journalists who report on technology companies.",
+   "groups": [
+    "News and newsmakers"
+   ]
+  },
+  {
+   "id": "7100",
+   "name": "Tech VIPs",
+   "description": "Famous CEOs and founders of tech companies, and others with big names in the industry.",
+   "groups": [
+    "News and newsmakers"
+   ]
+  },
+  {
+   "id": "72719839",
+   "name": "World News",
+   "description": "World news organizations from both sides of the political aisle.",
+   "groups": [
+    "News and newsmakers"
+   ]
+  },
+  {
+   "id": "953543671843975168",
+   "name": "Technology companies",
+   "description": "Usually big companies like Microsoft or Amazon.",
+   "groups": [
+    "News and newsmakers"
+   ]
+  },
+  {
+   "id": "1805983875052798286",
+   "name": "Quantum computing",
+   "description": "Companies and people building quantum computers, or associated.",
+   "groups": [
+    "Quantum computing"
+   ]
+  },
+  {
+   "id": "1052973696090955776",
+   "name": "Security",
+   "description": "Security professionals and companies: hackers, exploit finders, red teamers.",
+   "groups": [
+    "Security"
+   ]
+  },
+  {
+   "id": "1901790156237181367",
+   "name": "Tesla and EVs",
+   "description": "Mostly Tesla fans, plus a few others who write about electric vehicles.",
+   "groups": [
+    "EVs and Tesla"
+   ]
+  },
+  {
+   "id": "1901790263292625007",
+   "name": "xAI employees",
+   "description": "People who work for X (formerly Twitter) or xAI. Good for announcements from xAI.",
+   "groups": [
+    "xAI"
+   ]
+  }
+ ]
+}
