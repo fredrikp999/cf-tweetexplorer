@@ -477,17 +477,17 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="monitor" hidden>
-    <header class="page"><h1>Monitor</h1><p>Get new posts from X, RSS feeds and Hacker News as they are published.</p></header>
+    <header class="page"><h1>Monitor</h1><p>Get new posts from X, RSS feeds, YouTube and Hacker News as they are published.</p></header>
     <details class="about" data-about="monitor"><summary>How this works and what it costs</summary>
       <div><p>Get new tweets as they are posted, from an account or a search query, without keeping the page open.</p>
    <ul><li>The <b>server</b> checks each watch every N seconds (15 s to 1 h) using a <code>since_time</code> window, and pushes anything new to this page live.</li>
    <li>Watches are saved: restart the server and nothing is missed or repeated (tweets are de-duplicated by ID).</li>
    <li>A tab badge and optional desktop notifications tell you when something arrives while you are elsewhere.</li>
-   <li><b>RSS / Atom</b> feeds and <b>Hacker News</b> (the front page, new stories, Show HN, Ask HN, or a keyword with a points threshold) are watched the same way and are <b>free</b>. The live feed shows every source combined, or one source at a time.</li></ul>
+   <li><b>RSS / Atom</b> feeds, <b>YouTube</b> channels and playlists (new videos, from their public feeds) and <b>Hacker News</b> (the front page, new stories, Show HN, Ask HN, or a keyword with a points threshold) are watched the same way and are <b>free</b>. The live feed shows every source combined, or one source at a time.</li></ul>
    <p class="cost">Cost (X): this is polling, so you pay for checks even when nothing is posted. 1 minute ≈ $6.50/month per watch while idle; 5 minutes ≈ $1.30; 15 minutes ≈ $0.43. A <b>daily cap</b> (default $2) pauses the X watches when reached; RSS and Hacker News carry on.</p></div></details>
     <form id="monForm">
       <label data-feature="sources" hidden>Source
-        <select name="source"><option value="x">X (Twitter)</option><option value="rss">RSS / Atom feed</option><option value="hn">Hacker News</option></select></label>
+        <select name="source"><option value="x">X (Twitter)</option><option value="rss">RSS / Atom feed</option><option value="hn">Hacker News</option><option value="youtube">YouTube channel</option></select></label>
       <label data-src="x">Watch
         <select name="kind"><option value="account">Account</option><option value="query">Search query</option><option value="list">Accounts in a list</option></select></label>
       <label class="grow" id="monQWrap"><span id="monQLabel">Handle</span>
@@ -518,7 +518,8 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
         <label><input type="radio" name="monSrc" value="" checked><span>All <small data-n=""></small></span></label>
         <label><input type="radio" name="monSrc" value="x"><span>X <small data-n="x"></small></span></label>
         <label><input type="radio" name="monSrc" value="rss"><span>RSS <small data-n="rss"></small></span></label>
-        <label><input type="radio" name="monSrc" value="hn"><span>Hacker News <small data-n="hn"></small></span></label></div>
+        <label><input type="radio" name="monSrc" value="hn"><span>Hacker News <small data-n="hn"></small></span></label>
+        <label><input type="radio" name="monSrc" value="youtube"><span>YouTube <small data-n="youtube"></small></span></label></div>
       <select id="monFilter" style="padding:2px 6px;font-size:12px"><option value="">all watches</option></select></h3>
       <div id="monFeed"><div class="empty">Nothing yet. New items appear here as they are posted.</div></div></div>
   </section>
@@ -614,7 +615,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
           <div class="optrow"><input name="q" placeholder='e.g. "claude code" min_faves:50 lang:en' style="min-width:260px;flex:1" aria-label="Search">
             <div class="seg" role="radiogroup"><label><input type="radio" name="sort" value="Latest" checked><span>Newest</span></label><label><input type="radio" name="sort" value="Top"><span>Popular</span></label></div><div class="seg" role="radiogroup"><label><input type="radio" name="swin" value="0"><span>Any time</span></label><label><input type="radio" name="swin" value="24"><span>24 hours</span></label><label><input type="radio" name="swin" value="168" checked><span>7 days</span></label><label><input type="radio" name="swin" value="720"><span>30 days</span></label></div></div></div>
         <div class="opt" data-srcrow="feed"><span class="ol">Watch</span>
-          <div class="optrow"><select name="feedSource" aria-label="Source" data-feature="sources" hidden><option value="">All sources combined</option><option value="x">X only</option><option value="rss">RSS only</option><option value="hn">Hacker News only</option></select><select name="watch" aria-label="Watch"><option value="">All watches</option></select><span class="note">the last 100 items captured</span></div></div>
+          <div class="optrow"><select name="feedSource" aria-label="Source" data-feature="sources" hidden><option value="">All sources combined</option><option value="x">X only</option><option value="rss">RSS only</option><option value="hn">Hacker News only</option><option value="youtube">YouTube only</option></select><select name="watch" aria-label="Watch"><option value="">All watches</option></select><span class="note">the last 100 items captured</span></div></div>
         <div class="opt"><span class="ol" id="sumFocusLabel">Focus (optional)</span>
           <input name="topic" maxlength="8000" placeholder="e.g. product launches, or who disagrees with whom" style="width:100%" aria-label="Focus"></div>
         <div class="opt"><span class="ol">Length</span><div class="seg" role="radiogroup"><label><input type="radio" name="len" value="brief"><span>Brief</span></label><label><input type="radio" name="len" value="standard" checked><span>Standard</span></label><label><input type="radio" name="len" value="detailed"><span>Detailed</span></label></div></div>
@@ -1220,13 +1221,13 @@ const mf = $('#monForm');
 const money = (n) => '$' + (n < 0.1 ? n.toFixed(4) : n.toFixed(2));
 let mon = { watches: [], settings: { dailyCap: 2 }, spend: { cost: 0 }, capped: false };
 let feedItems = [], monUnseen = 0, monFilter = '', monSrc = '';
-const SRC_NAME = { x: 'X', rss: 'RSS', hn: 'Hacker News' };
+const SRC_NAME = { x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube' };
 const srcOf = (o) => o.source || 'x';
 const safeUrl = (u) => (/^https?:\/\//i.test(u ?? '') ? u : '');
 const monVisible = () => !$('#monitor').hidden && !document.hidden;
 
 function monCostText() {
-  if (mf.source.value !== 'x') { $('#monCost').innerHTML = 'Free: RSS and Hacker News use no API credits, and keep checking when the daily cap is reached.'; return; }
+  if (mf.source.value !== 'x') { $('#monCost').innerHTML = 'Free: RSS, YouTube and Hacker News use no API credits, and keep checking when the daily cap is reached.'; return; }
   const sec = +mf.interval.value, perMonth = (30 * 86400 / sec) * 0.00015;
   $('#monCost').innerHTML = `At this interval a watch makes ${fmt(Math.round(30 * 86400 / sec))} calls a month, about <b>${money(perMonth)}</b> while idle, plus $0.15 per 1,000 tweets found.`
     + (perMonth > 5 ? ' <span class="err">That is a lot for one watch. Consider a longer interval.</span>' : '');
@@ -1236,8 +1237,8 @@ function applyMonSource() {
   const src = mf.source.value, isList = src === 'x' && mf.kind.value === 'list', acc = mf.kind.value === 'account';
   mf.querySelectorAll('[data-src]').forEach((el) => { el.hidden = el.dataset.src !== src; });
   $('#monQWrap').hidden = isList; $('#monListWrap').hidden = !isList;
-  $('#monQLabel').textContent = src === 'rss' ? 'Feed address' : src === 'hn' ? 'Keywords (optional)' : acc ? 'Handle' : 'Search query (X operators work)';
-  mf.query.placeholder = src === 'rss' ? 'https://example.com/feed.xml' : src === 'hn' ? 'rust, "open source"' : acc ? 'anthropicai' : '"claude code" lang:en min_faves:5';
+  $('#monQLabel').textContent = src === 'rss' ? 'Feed address' : src === 'youtube' ? 'Channel, @handle or playlist' : src === 'hn' ? 'Keywords (optional)' : acc ? 'Handle' : 'Search query (X operators work)';
+  mf.query.placeholder = src === 'rss' ? 'https://example.com/feed.xml' : src === 'youtube' ? '@Fireship or https://www.youtube.com/@Fireship' : src === 'hn' ? 'rust, "open source"' : acc ? 'anthropicai' : '"claude code" lang:en min_faves:5';
   monCostText();
 }
 mf.kind.addEventListener('change', applyMonSource);
@@ -1246,7 +1247,7 @@ mf.addEventListener('submit', async (e) => {
   e.preventDefault();
   const sec = +mf.interval.value, perMonth = (30 * 86400 / sec) * 0.00015, src = mf.source.value;
   if (src !== 'x') {
-    if (src === 'rss' && !mf.query.value.trim()) return toast('Enter the address of the feed');
+    if ((src === 'rss' || src === 'youtube') && !mf.query.value.trim()) return toast(src === 'youtube' ? 'Enter a channel, an @handle or a playlist' : 'Enter the address of the feed');
     try {
       await post('/mon/add', { source: src, query: mf.query.value, intervalSec: sec, hnTag: mf.hnTag.value, minPoints: +mf.minPoints.value || 0 });
       mf.query.value = ''; toast('Watch added; the first check runs now');
@@ -1280,7 +1281,7 @@ function renderWatches() {
   $('#monWatches').innerHTML = ws.length ? `<div class="grid">${ws.map((w) => {
     const status = !w.enabled ? 'paused' : w.errors ? 'error' : w.running ? 'checking' : 'active';
     const src = srcOf(w), flags = src === 'x' ? [w.originalsOnly && 'no replies', w.includeRetweets && '+retweets'].filter(Boolean).join(', ')
-      : src === 'rss' ? safeUrl(w.query).replace(/^https?:\/\//, '') : [({ front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' })[w.hnTag], w.query, w.minPoints && `${w.minPoints}+ points`].filter(Boolean).join(' · ');
+      : src === 'rss' || src === 'youtube' ? safeUrl(w.query).replace(/^https?:\/\//, '') : [({ front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' })[w.hnTag], w.query, w.minPoints && `${w.minPoints}+ points`].filter(Boolean).join(' · ');
     return `<div class="card job" data-watch="${esc(w.id)}">
       <div class="top"><b>${esc(w.label)}</b><span class="badge">${esc(SRC_NAME[src])}</span><span class="badge ${status === 'checking' ? 'running' : status}">${status}</span>${flags ? `<span class="meta2">${esc(flags)}</span>` : ''}</div>
       <div class="meta2">every <select data-wint style="padding:1px 4px;font-size:12px">${[15, 30, 60, 300, 900, 1800, 3600].map((v) => `<option value="${v}" ${v === w.intervalSec ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select>
@@ -1288,7 +1289,7 @@ function renderWatches() {
       <div class="meta2">${fmt(w.checks)} checks · ${fmt(w.found)} ${src === 'x' ? 'tweets' : 'items'}${src === 'x' ? ` · ${money(w.cost)} spent` : ' · free'}${w.lastError ? ` · <span class="err">${esc(w.lastError)}</span>` : ''}</div>
       <div class="btns"><button data-mact="check">Check now</button><button data-mact="toggle">${w.enabled ? 'Pause' : 'Resume'}</button><button data-mact="delete">Delete</button></div>
     </div>`;
-  }).join('')}</div>` : '<div class="empty">No watches yet. Add an X account or search, an RSS feed or Hacker News above.</div>';
+  }).join('')}</div>` : '<div class="empty">No watches yet. Add an X account or search, an RSS feed, a YouTube channel or Hacker News above.</div>';
   const sel = $('#monFilter'), cur = sel.value;
   sel.innerHTML = '<option value="">all watches</option>' + ws.filter((w) => !monSrc || srcOf(w) === monSrc).map((w) => `<option value="${esc(w.id)}">${esc(w.label)}</option>`).join('');
   sel.value = ws.some((w) => w.id === cur && (!monSrc || srcOf(w) === monSrc)) ? cur : ''; monFilter = sel.value;
@@ -1308,7 +1309,7 @@ function renderFeed() {
     feedPending = false;
     const inSrc = feedItems.filter((i) => !monSrc || srcOf(i) === monSrc);
     const items = inSrc.filter((i) => !monFilter || i.watchId === monFilter).slice(0, 100);
-    const n = { '': feedItems.length, x: 0, rss: 0, hn: 0 }; for (const i of feedItems) n[srcOf(i)]++;
+    const n = { '': feedItems.length, x: 0, rss: 0, hn: 0, youtube: 0 }; for (const i of feedItems) n[srcOf(i)]++;
     document.querySelectorAll('#monSrc [data-n]').forEach((el) => { el.textContent = n[el.dataset.n] || ''; });
     $('#monFeed').innerHTML = items.length ? items.map((i) => {
       const fresh = Date.now() - i.seenAt < 6000 ? 'fresh' : '', src = srcOf(i);
@@ -1329,6 +1330,7 @@ function itemBlock(t, src, { cls = '', extra = '' } = {}) {
     <div class="th"><b>${esc(t.author?.name ?? '')}</b><time datetime="${esc(t.createdAt ?? '')}">${esc(when(t.createdAt))}</time>
       ${url ? `<a class="ext" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open" aria-label="Open">${ICON.ext}</a>` : ''}</div>
     <p>${url ? `<a class="tlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><b>${esc(title)}</b></a>` : `<b>${esc(title)}</b>`}${rest ? `\n${esc(rest)}` : ''}</p>
+    ${src === 'youtube' ? `<div class="ts"><span title="Views">${cmp(t.viewCount)} views</span></div>` : ''}
     ${src === 'hn' ? `<div class="ts"><span title="Points">▲ ${cmp(t.likeCount)}</span>${talk ? `<a href="${esc(talk)}" target="_blank" rel="noopener noreferrer">${cmp(t.replyCount)} comments</a>` : `<span>${cmp(t.replyCount)} comments</span>`}</div>` : ''}
     ${extra}</div></article>`;
 }
@@ -2479,7 +2481,7 @@ const srcRow = (s = { type: 'search' }) => `<div class="src"><select data-f="typ
   ${s.type === 'xlist' ? `<select data-f="listId">${xlists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select>`
     : s.type === 'xgroup' ? `<select data-f="group">${xgroups().map((g) => `<option value="${esc(g)}" ${s.group === g ? 'selected' : ''}>${esc(g)} (${xlists.filter((l) => l.groups.includes(g)).length} lists, read together)</option>`).join('')}</select>`
     : s.type === 'list' ? `<select data-f="listId">${lists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)} (${l.members.length})</option>`).join('')}</select>`
-    : s.type === 'feed' ? `${features.sources ? `<select data-f="source" aria-label="Source" style="width:auto">${[['', 'All sources combined'], ['x', 'X only'], ['rss', 'RSS only'], ['hn', 'Hacker News only']].map(([v, l]) => `<option value="${v}" ${(s.source ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}<input type="text" data-f="watch" placeholder="only this watch (optional)" value="${esc(s.watch)}">`
+    : s.type === 'feed' ? `${features.sources ? `<select data-f="source" aria-label="Source" style="width:auto">${[['', 'All sources combined'], ['x', 'X only'], ['rss', 'RSS only'], ['hn', 'Hacker News only'], ['youtube', 'YouTube only']].map(([v, l]) => `<option value="${v}" ${(s.source ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}<input type="text" data-f="watch" placeholder="only this watch (optional)" value="${esc(s.watch)}">`
     : `<input type="text" data-f="query" placeholder="e.g. (Kristersson OR Andersson) lang:sv -filter:replies" value="${esc(s.query)}">`}
   <button type="button" class="sec" data-rm>×</button>${s.type === 'xlist' || s.type === 'xgroup' ? srcOpts(s) : ''}</div>`;
 

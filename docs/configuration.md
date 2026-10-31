@@ -23,6 +23,22 @@ Everything you can set: secrets, variables, and the options in the app. Step-by-
 | `SUMMARY_MOCK` | | Local only (`.dev.vars`): scripted answers instead of model calls. Never active for requests through Cloudflare's edge. |
 | `DEV_BYPASS_ACCESS` | | Local only: skips the Access check under `wrangler dev`. |
 
+### YouTube transcripts
+
+The Summarize agent's `get_video_transcript` tool returns what is said in a YouTube video the agent was shown. These are optional variables (set
+them in `wrangler.jsonc` → `vars`, or in `.dev.vars` locally); with none set, the free default is used.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TRANSCRIPT_PROVIDER` | `captions` | `captions`: the video's own public caption track. Free, but unofficial: YouTube may refuse requests from cloud addresses, and videos without captions have none. `openrouter`: a Gemini model reads the video from its YouTube address (needs `OPENROUTER_API_KEY`; billed per token). `replicate`: a speech-to-text model takes the video address (needs `REPLICATE_API_TOKEN`; billed per second of compute). |
+| `TRANSCRIPT_FALLBACK` | unset | `openrouter` or `replicate`: tried only when `TRANSCRIPT_PROVIDER` fails. This is the way to keep the free default and still get a transcript when YouTube refuses the captions. |
+| `TRANSCRIPT_MODEL` | `google/gemini-2.5-flash` | The OpenRouter model for `openrouter`. It must accept video input; Gemini models do, for YouTube addresses. |
+| `TRANSCRIPT_REPLICATE_MODEL` | `adidoes/whisperx-video-transcribe` | The Replicate model for `replicate`. It must take the video address as an input called `url` and return text, or JSON with `segments` (`text`, `start`). |
+| `TRANSCRIPT_REPLICATE_USD_PER_SEC` | `0.001` | A rough price per second of compute, to estimate the cost shown in Costs. Set it to what your Replicate invoice shows. |
+
+A transcript from a paid service is recorded in the Costs tab under **Summarize tab** as "Video transcripts (openrouter|replicate)". Captions cost nothing.
+A run can read at most 5 pages, comment threads and transcripts together, and the text is capped at 12,000 characters by default.
+
 Bindings in `wrangler.jsonc`: the five Durable Objects, the R2 bucket `AUDIO` (create it once with
 `npx wrangler r2 bucket create tweet-explorer-audio`), and the static `ASSETS`.
 

@@ -3,6 +3,7 @@
 // renderer escapes everything first and only ever emits links to posts on x.com / twitter.com.
 import { SLUG } from '../durable-objects/publish';
 import { esc, inline, markdown } from './markdown';
+import { pageOfFeed } from '../sources/youtube';
 export { markdown };
 import { serveAudio, serveImage } from '../media/audio-serve';
 import type { Provenance } from '../durable-objects/publish';
@@ -267,10 +268,12 @@ export function sourcesHtml(i: IssueFull): string {
   const model = modelName(i.model);
   const webUrl = (raw?: string) => { try { const u = new URL(raw ?? ''); return u.protocol === 'https:' || u.protocol === 'http:' ? u : null; } catch { return null; } };
   const feedRows = feeds.map((f) => {
-    const feed = webUrl(f.url), name = feed && f.source === 'rss' ? `<a href="${esc(feed.origin)}" rel="noopener noreferrer nofollow" target="_blank">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`;
+    // The name links to the site, or for YouTube to the channel or playlist page.
+    const feed = webUrl(f.url), page = f.source === 'youtube' ? pageOfFeed(f.url ?? '') : feed && f.source === 'rss' ? feed.origin : null;
+    const name = page ? `<a href="${esc(page)}" rel="noopener noreferrer nofollow" target="_blank">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`;
     // The address of the feed itself, in full, so a reader can subscribe to it or check what was read.
     const addr = feed ? ` <a class="k" href="${esc(feed.href)}" rel="noopener noreferrer nofollow" target="_blank"><code>${esc(feed.href)}</code></a>` : '';
-    return `<li>${name} <span class="k">${f.source === 'hn' ? 'Hacker News' : 'RSS feed'}</span>${addr} <span class="c">${n(f.count)} ${f.count === 1 ? 'item' : 'items'}</span></li>`;
+    return `<li>${name} <span class="k">${f.source === 'hn' ? 'Hacker News' : f.source === 'youtube' ? 'YouTube' : 'RSS feed'}</span>${addr} <span class="c">${n(f.count)} ${f.count === 1 ? 'item' : 'items'}</span></li>`;
   }).join('');
   const basis = !feeds.length ? `<b>${n(p.used)} posts</b> from <b>${n(p.accounts)} accounts</b>`
     : !xPosts ? `<b>${n(feedItems)} items</b> from <b>${n(feeds.length)} ${feeds.length === 1 ? 'feed' : 'feeds'}</b>`

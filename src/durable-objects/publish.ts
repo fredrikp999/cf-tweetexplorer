@@ -26,7 +26,7 @@ import { screenTweets } from '../summarize/screen.ts';
 export type TopicSource =
   | { type: 'search'; query: string; sort: 'Latest' | 'Top' }
   | { type: 'list'; listId: string }
-  | { type: 'feed'; watch?: string; source?: 'x' | 'rss' | 'hn' }
+  | { type: 'feed'; watch?: string; source?: 'x' | 'rss' | 'hn' | 'youtube' }
   | { type: 'xlist'; listId: string; mode?: XMode; minFaves?: number; pages?: number }     // one list on x.com
   | { type: 'xgroup'; group: string; mode?: XMode; minFaves?: number; pages?: number };    // every X list in a group, read together; membership is looked up at run time
 // mode: 'best' (default) = the period's top posts per list, cheap; 'latest' = timeline, newest first. pages: per list (20 posts a page in best, 80 in latest).
@@ -75,7 +75,7 @@ export interface IssueCost { twitter: number; llm: number | null; audio?: number
 export interface SourceInfo { kind: 'search' | 'list' | 'xlist' | 'xgroup' | 'feed'; label: string; count: number; id?: string; accounts?: number; handles?: string[]; lists?: Array<{ id?: string; label: string; count: number }>; mode?: XMode; minFaves?: number }
 export interface Provenance { from: number; to: number; fetched: number; used: number; accounts: number; topAccounts: Array<{ handle: string; count: number }>; sources: SourceInfo[]; truncated: boolean; partial?: boolean;
   /** RSS feeds and Hacker News watches the posts came from, with how many items each gave. Absent on issues that used none. */
-  feeds?: Array<{ source: 'rss' | 'hn'; label: string; url?: string; count: number }> }
+  feeds?: Array<{ source: 'rss' | 'hn' | 'youtube'; label: string; url?: string; count: number }> }
 interface Spend { meter: Meter; tokensIn: number; tokensOut: number; model: string; screen: number }     // screen: dollars spent by the decision model that screens the tweets
 export interface Issue {
   id: string; topic: string; status: IssueStatus; created: number; publishedAt: number;
@@ -134,7 +134,7 @@ function cleanSources(raw: unknown): TopicSource[] {
       if (!group) throw new Error('pick an X list group');
       return { type: 'xgroup', group, ...xopts() };
     }
-    if (s.type === 'feed') return { type: 'feed', ...(str(s.watch, 60) ? { watch: str(s.watch, 60) } : {}), ...(s.source === 'x' || s.source === 'rss' || s.source === 'hn' ? { source: s.source } : {}) };
+    if (s.type === 'feed') return { type: 'feed', ...(str(s.watch, 60) ? { watch: str(s.watch, 60) } : {}), ...(s.source === 'x' || s.source === 'rss' || s.source === 'hn' || s.source === 'youtube' ? { source: s.source } : {}) };
     throw new Error('unknown source type');
   });
 }
@@ -500,9 +500,9 @@ export class PublishDO extends DurableObject<Env> {
     for (let n = 2; this.issue(t.slug, id); n++) id = `${day}-${n}`;
     const now = Date.now(), live = t.autoPublish;
     const byAccount = new Map<string, { handle: string; count: number }>();
-    const byFeed = new Map<string, { source: 'rss' | 'hn'; label: string; url?: string; count: number }>();
+    const byFeed = new Map<string, { source: 'rss' | 'hn' | 'youtube'; label: string; url?: string; count: number }>();
     for (const x of used) {
-      if (x.source === 'rss' || x.source === 'hn') {   // not an X account: counted per feed instead
+      if (x.source === 'rss' || x.source === 'hn' || x.source === 'youtube') {   // not an X account: counted per feed instead
         // Items stored before feeds were named share one entry, not one per author.
         const label = x.feed || (x.source === 'hn' ? 'Hacker News' : 'RSS items'), k = `${x.source}\n${x.feedUrl ?? ''}\n${label}`;
         const e = byFeed.get(k) ?? { source: x.source, label, ...(x.feedUrl ? { url: x.feedUrl } : {}), count: 0 }; e.count++; byFeed.set(k, e);

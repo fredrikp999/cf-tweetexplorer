@@ -86,7 +86,7 @@ function buildServer(env: Env): McpServer {
 
   server.registerTool('get_monitor_feed', {
     description: 'The most recent items the Monitor found, newest first: tweets, RSS items and Hacker News stories. Every item has a `source` (x, rss or hn); leave `source` out for all of them combined.',
-    inputSchema: { limit: z.number().int().min(1).max(500).default(100), source: z.enum(['x', 'rss', 'hn']).optional() },
+    inputSchema: { limit: z.number().int().min(1).max(500).default(100), source: z.enum(['x', 'rss', 'hn', 'youtube']).optional() },
     annotations: readOnly,
   }, ({ limit, source }) => ask(env.MONITOR, '/mon/feed', { limit, ...(source ? { source } : {}) }));
 

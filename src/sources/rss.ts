@@ -39,6 +39,17 @@ export async function parseFeed(xml: string, feedUrl: string): Promise<{ title: 
   const host = new URL(feedUrl).hostname;
   const items: SourceItem[] = [];
   for (const b of blocks.slice(0, MAX_ITEMS)) {
+    const videoId = /^[\w-]{11}$/.test(element(b, 'yt:videoId') ?? '') ? element(b, 'yt:videoId')! : '';   // a YouTube channel or playlist feed
+    if (videoId) {
+      const title = plain(element(b, 'media:title') ?? element(b, 'title') ?? ''), views = Number(/<media:statistics\b[^>]*\bviews="(\d+)"/i.exec(b)?.[1]);
+      const when = Date.parse(element(b, 'published') ?? element(b, 'updated') ?? '');
+      items.push({
+        source: 'youtube', id: `yt:${videoId}`, url: `https://www.youtube.com/watch?v=${videoId}`, title: title || 'Untitled video',
+        text: plain(element(b, 'media:description') ?? '').slice(0, 600), by: plain(element(b, 'name') ?? '').slice(0, 80) || feedTitle,
+        at: new Date(Number.isNaN(when) ? Date.now() : Math.min(when, Date.now())).toISOString(), ...(Number.isFinite(views) ? { views } : {}),
+      });
+      continue;
+    }
     const link = atom ? atomLink(b) : element(b, 'link') ?? atomLink(b);
     const guid = element(b, atom ? 'id' : 'guid') ?? link;
     const title = plain(element(b, 'title') ?? '');

@@ -6,6 +6,7 @@ import { COST_PER_TWEET, OutOfCredits, json, search, slim, type Tweet } from '..
 import { recordCost } from '../lib/costs';
 import { fetchHn, HN_TAGS, type HnTag } from '../sources/hn';
 import { checkFeedUrl, fetchRss } from '../sources/rss';
+import { isYoutubeFeed, resolveYoutubeFeed } from '../sources/youtube';
 import { isSource, toFeedShape, type FetchResult, type SourceKind } from '../sources/types';
 
 const OVERLAP = 90;        // seconds re-read before the checkpoint; duplicates removed by id
@@ -139,7 +140,7 @@ export class MonitorDO extends DurableObject<Env> {
   // but only the newest few are shown, so a new watch is not empty.
   private async checkOther(w: Watch, since: number, out: { found: Found[]; cache?: FetchResult['cache']; title?: string }): Promise<void> {
     let r: FetchResult & { title?: string };
-    if (sourceOf(w) === 'rss') r = await fetchRss({ url: w.query, etag: w.etag, lastModified: w.lastModified });
+    if (sourceOf(w) === 'rss' || sourceOf(w) === 'youtube') r = await fetchRss({ url: w.query, etag: w.etag, lastModified: w.lastModified });
     else r = await fetchHn({ tag: w.hnTag ?? 'front_page', query: w.query || undefined, minPoints: w.minPoints, since });
     out.cache = r.cache; out.title = r.title;
     const fresh = r.items.filter((i) => !this.isSeen(w.id, i.id));
@@ -186,7 +187,7 @@ export class MonitorDO extends DurableObject<Env> {
       this.ctx.storage.transactionSync(() => {
         for (const f of found) {
           // Items that are not tweets remember which feed they came from, so a briefing can say what it drew on.
-          const json = source === 'x' ? f.json : { ...(f.json as object), feed: w.label, feedUrl: source === 'rss' ? w.query : 'https://news.ycombinator.com/' };
+          const json = source === 'x' ? f.json : { ...(f.json as object), feed: w.label, feedUrl: source === 'hn' ? 'https://news.ycombinator.com/' : w.query };
           sql.exec('INSERT INTO feed (watch, label, seen_at, json, source) VALUES (?, ?, ?, ?, ?)', id, w.label, Date.now(), JSON.stringify(json), source);
         }
         // Each source keeps its own FEED_KEEP items, so a busy one cannot push the others out.
@@ -215,7 +216,7 @@ export class MonitorDO extends DurableObject<Env> {
           const queries = new Map(this.watches().map((w) => [w.id, w] as const));
           return json(rows.map((r) => {
             const tweet = JSON.parse(r.json) as Record<string, unknown>;
-            if (r.source !== 'x') { tweet.feed ??= r.label; tweet.feedUrl ??= r.source === 'rss' ? queries.get(r.watch)?.query : 'https://news.ycombinator.com/'; }
+            if (r.source !== 'x') { tweet.feed ??= r.label; tweet.feedUrl ??= r.source === 'hn' ? 'https://news.ycombinator.com/' : queries.get(r.watch)?.query; }
             return { watchId: r.watch, label: r.label, seenAt: r.seen_at, source: r.source, tweet };
           }));
         }
@@ -226,7 +227,8 @@ export class MonitorDO extends DurableObject<Env> {
 
       if (name === 'add') {
         if (this.watches().length >= MAX_WATCHES) throw new Error(`at most ${MAX_WATCHES} watches`);
-        const source = isSource(b.source) ? b.source : 'x';
+        let source = isSource(b.source) ? b.source : 'x';
+        if (source === 'rss' && isYoutubeFeed(String(b.query ?? '').trim())) source = 'youtube';   // a YouTube feed address pasted as a plain feed
         const intervalSec = Math.min(MAX_INTERVAL, Math.max(MIN_INTERVAL, Math.floor(Number(b.intervalSec)) || 60));
         const now = Math.floor(Date.now() / 1000);
         const w: Watch = {
@@ -234,9 +236,9 @@ export class MonitorDO extends DurableObject<Env> {
           created: now, lastCheckedTs: now, nextRun: 0, checks: 0, found: 0, cost: 0, lastRun: 0, lastError: '', errors: 0, source,
         };
         const given = String(b.label ?? '').trim().slice(0, 60);
-        if (source === 'rss') {
-          w.query = checkFeedUrl(String(b.query ?? ''));
-          if (this.watches().some((x) => sourceOf(x) === 'rss' && x.query === w.query)) throw new Error('that feed is already watched');
+        if (source === 'rss' || source === 'youtube') {
+          w.query = source === 'youtube' ? await resolveYoutubeFeed(String(b.query ?? '')) : checkFeedUrl(String(b.query ?? ''));
+          if (this.watches().some((x) => x.query === w.query && (sourceOf(x) === 'rss' || sourceOf(x) === 'youtube'))) throw new Error('that feed is already watched');
           w.label = given || new URL(w.query).hostname; w.autoLabel = !given; w.originalsOnly = false; w.includeRetweets = false;
         } else if (source === 'hn') {
           w.hnTag = HN_TAGS.includes(b.hnTag as HnTag) ? (b.hnTag as HnTag) : 'front_page';

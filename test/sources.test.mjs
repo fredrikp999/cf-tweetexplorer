@@ -162,3 +162,129 @@ describe('reading tools', async () => {
     await assert.rejects(run('get_hn_comments', { id: 'hn:8', limit: 5 }), /not a Hacker News story you were given/);
   });
 });
+
+describe('YouTube feeds', async () => {
+  const yt = await import('../src/sources/youtube.ts');
+  const real = globalThis.fetch;
+  after(() => { globalThis.fetch = real; });
+  const FEED = `<?xml version="1.0"?><feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+<title>Fireship</title><entry><id>yt:video:abcDEF12345</id><yt:videoId>abcDEF12345</yt:videoId><title>Did it pop?</title><link rel="alternate" href="https://www.youtube.com/watch?v=abcDEF12345"/>
+<author><name>Fireship</name></author><published>2026-03-01T08:00:00+00:00</published>
+<media:group><media:title>Did it pop?</media:title><media:description>Long description &amp; links</media:description><media:community><media:statistics views="12345"/></media:community></media:group></entry></feed>`;
+
+  test('parses a channel feed into video items', async () => {
+    const { items } = await parseFeed(FEED, 'https://www.youtube.com/feeds/videos.xml?channel_id=UCsBjURrPoezykLs9EqgamOA');
+    assert.equal(items.length, 1);
+    assert.deepEqual([items[0].source, items[0].id, items[0].url, items[0].by, items[0].views], ['youtube', 'yt:abcDEF12345', 'https://www.youtube.com/watch?v=abcDEF12345', 'Fireship', 12345]);
+    assert.equal(items[0].text, 'Long description & links');
+    assert.equal(toFeedShape(items[0]).viewCount, 12345);
+  });
+  test('addresses: channel, playlist, feed, and what is not YouTube', async () => {
+    const UC = 'UCsBjURrPoezykLs9EqgamOA';
+    assert.equal(await yt.resolveYoutubeFeed(UC), `https://www.youtube.com/feeds/videos.xml?channel_id=${UC}`);
+    assert.equal(await yt.resolveYoutubeFeed(`https://www.youtube.com/channel/${UC}/videos`), `https://www.youtube.com/feeds/videos.xml?channel_id=${UC}`);
+    assert.equal(await yt.resolveYoutubeFeed('https://www.youtube.com/playlist?list=PLabcdefghijk123'), 'https://www.youtube.com/feeds/videos.xml?playlist_id=PLabcdefghijk123');
+    await assert.rejects(yt.resolveYoutubeFeed('https://evil.example.com/@x'), /not a YouTube/);
+    await assert.rejects(yt.resolveYoutubeFeed(''), /enter a channel/);
+  });
+  test('an @handle is looked up on youtube.com only', async () => {
+    let asked;
+    globalThis.fetch = async (u) => { asked = String(u); return new Response('<link rel="canonical" href="https://www.youtube.com/channel/UCsBjURrPoezykLs9EqgamOA">'); };
+    assert.match(await yt.resolveYoutubeFeed('@Fireship'), /channel_id=UCsBjURrPoezykLs9EqgamOA/);
+    assert.equal(asked, 'https://www.youtube.com/@Fireship');
+    globalThis.fetch = async () => new Response('<html>nothing</html>');
+    await assert.rejects(yt.resolveYoutubeFeed('@nobody'), /could not find the channel/);
+  });
+  test('helpers', () => {
+    assert.equal(yt.videoIdOf('https://youtu.be/abcDEF12345'), 'abcDEF12345');
+    assert.equal(yt.videoIdOf('https://www.youtube.com/watch?v=abcDEF12345&t=3'), 'abcDEF12345');
+    assert.equal(yt.videoIdOf('https://evil.test/watch?v=abcDEF12345'), '');
+    assert.equal(yt.pageOfFeed('https://www.youtube.com/feeds/videos.xml?channel_id=UCsBjURrPoezykLs9EqgamOA'), 'https://www.youtube.com/channel/UCsBjURrPoezykLs9EqgamOA');
+    assert.equal(yt.pageOfFeed('https://example.com/feed.xml'), null);
+    assert.ok(yt.isYoutubeFeed('https://www.youtube.com/feeds/videos.xml?playlist_id=PLabcdefghijk123'));
+  });
+});
+
+describe('transcripts', async () => {
+  const tr = await import('../src/sources/transcript.ts');
+  const real = globalThis.fetch;
+  after(() => { globalThis.fetch = real; });
+  const PLAYER = { captions: { playerCaptionsTracklistRenderer: { captionTracks: [
+    { baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=sv', languageCode: 'sv' },
+    { baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=en&kind=asr&fmt=srv3', languageCode: 'en', kind: 'asr' },
+    { baseUrl: 'https://www.youtube.com/api/timedtext?v=x&lang=en', languageCode: 'en' }] } } };
+  const XML = '<transcript><text start="0.5" dur="2">Hello &amp;amp; welcome</text><text start="40" dur="2">It&amp;#39;s me</text></transcript>';
+  // Routes the calls a provider makes to canned answers; records what was asked.
+  const route = (table) => { const calls = []; globalThis.fetch = async (u, init) => { const url = String(u); calls.push({ url, body: init?.body ? JSON.parse(init.body) : undefined, headers: init?.headers });
+    const hit = table.find(([re]) => re.test(url)); if (!hit) throw new Error('unexpected fetch ' + url); const r = hit[1](url, init); return r instanceof Response ? r : Response.json(r); }; return calls; };
+
+  test('settings: captions by default, bad values fall back, fallback must differ', () => {
+    assert.equal(tr.transcriptConfig({}).provider, 'captions');
+    assert.equal(tr.transcriptConfig({ TRANSCRIPT_PROVIDER: 'nonsense' }).provider, 'captions');
+    assert.equal(tr.transcriptConfig({ TRANSCRIPT_PROVIDER: 'openrouter' }).provider, 'openrouter');
+    assert.equal(tr.transcriptConfig({ TRANSCRIPT_FALLBACK: 'replicate' }).fallback, 'replicate');
+    assert.equal(tr.transcriptConfig({ TRANSCRIPT_PROVIDER: 'replicate', TRANSCRIPT_FALLBACK: 'replicate' }).fallback, undefined);
+    assert.equal(tr.transcriptConfig({}).openrouterModel, tr.DEFAULT_TRANSCRIPT_MODEL);
+    assert.equal(tr.transcriptConfig({ TRANSCRIPT_MODEL: 'bad model' }).openrouterModel, tr.DEFAULT_TRANSCRIPT_MODEL);
+  });
+  test('caption xml in both formats, entities decoded, grouped by 30 seconds', () => {
+    const segs = tr.parseCaptionXml(XML);
+    assert.deepEqual(segs.map((s) => s.text), ['Hello & welcome', "It's me"]);
+    assert.equal(tr.formatSegments(segs), "[0:00] Hello & welcome\n[0:40] It's me");
+    assert.deepEqual(tr.parseCaptionXml('<timedtext><body><p t="1500" d="1000"><s>Hi</s> <s>there</s></p></body></timedtext>'), [{ start: 1.5, text: 'Hi there' }]);
+  });
+  test('captions: asks InnerTube, prefers the manual track in the wanted language', async () => {
+    const calls = route([[/youtubei\/v1\/player/, () => PLAYER], [/api\/timedtext/, () => new Response(XML)]]);
+    const t = await tr.captionsTranscript('abcDEF12345', 'en');
+    assert.equal(t.via, 'captions'); assert.equal(t.cost, 0); assert.equal(t.lang, 'en');
+    assert.equal(calls[0].body.videoId, 'abcDEF12345');
+    assert.equal(calls[1].url, 'https://www.youtube.com/api/timedtext?v=x&lang=en');   // not the asr one, not Swedish
+    await assert.rejects(tr.captionsTranscript('short'), /not a YouTube video id/);
+  });
+  test('captions: a video without them, or one YouTube refuses, says why', async () => {
+    route([[/youtubei/, () => ({ playabilityStatus: { status: 'LOGIN_REQUIRED', reason: 'Sign in to confirm you are not a bot' } })]]);
+    await assert.rejects(tr.captionsTranscript('abcDEF12345'), /Sign in to confirm/);
+    route([[/youtubei/, () => ({ playabilityStatus: { status: 'OK' } })]]);
+    await assert.rejects(tr.captionsTranscript('abcDEF12345'), /no captions/);
+  });
+  test('openrouter: sends the video address to a Gemini model and reports the cost', async () => {
+    const calls = route([[/openrouter\.ai/, () => ({ choices: [{ message: { content: '[0:00] Hi' } }], usage: { prompt_tokens: 1000, completion_tokens: 50, cost: 0.0042 } })]]);
+    const cfg = tr.transcriptConfig({ TRANSCRIPT_PROVIDER: 'openrouter', OPENROUTER_API_KEY: 'k' });
+    const t = await tr.getTranscript(cfg, 'abcDEF12345');
+    assert.deepEqual([t.via, t.text, t.cost, t.model], ['openrouter', '[0:00] Hi', 0.0042, 'google/gemini-2.5-flash']);
+    const part = calls[0].body.messages[0].content.find((c) => c.type === 'video_url');
+    assert.equal(part.video_url.url, 'https://www.youtube.com/watch?v=abcDEF12345');
+    assert.equal(calls[0].body.model, 'google/gemini-2.5-flash');
+    await assert.rejects(tr.getTranscript(tr.transcriptConfig({ TRANSCRIPT_PROVIDER: 'openrouter' }), 'abcDEF12345'), /OPENROUTER_API_KEY/);
+  });
+  test('replicate: runs the model by version with the video address and prices the compute', async () => {
+    const out = JSON.stringify({ segments: [{ text: ' Hello', start: 0 }, { text: ' again', start: 45 }] });
+    const calls = route([[/\/v1\/models\//, () => ({ latest_version: { id: 'ver123' } })], [/\/v1\/predictions$/, () => ({ status: 'succeeded', output: out, metrics: { predict_time: 20 } })]]);
+    const cfg = tr.transcriptConfig({ TRANSCRIPT_PROVIDER: 'replicate', REPLICATE_API_TOKEN: 't', TRANSCRIPT_REPLICATE_USD_PER_SEC: '0.002' });
+    const t = await tr.getTranscript(cfg, 'abcDEF12345');
+    assert.equal(t.text, '[0:00] Hello\n[0:45] again'); assert.equal(t.via, 'replicate'); assert.equal(t.cost, 0.04);
+    assert.deepEqual(calls[1].body, { version: 'ver123', input: { url: 'https://www.youtube.com/watch?v=abcDEF12345' } });
+  });
+  test('the fallback runs only when the first way fails, and a double failure lists both', async () => {
+    route([[/youtubei/, () => ({ playabilityStatus: { status: 'OK' } })], [/openrouter\.ai/, () => ({ choices: [{ message: { content: 'From the service' } }], usage: {} })]]);
+    const both = tr.transcriptConfig({ TRANSCRIPT_FALLBACK: 'openrouter', OPENROUTER_API_KEY: 'k' });
+    assert.equal((await tr.getTranscript(both, 'abcDEF12345')).via, 'openrouter');
+    route([[/youtubei/, () => ({ playabilityStatus: { status: 'OK' } })]]);
+    await assert.rejects(tr.getTranscript(tr.transcriptConfig({ TRANSCRIPT_FALLBACK: 'replicate' }), 'abcDEF12345'), /captions: this video has no captions; replicate: needs the REPLICATE_API_TOKEN/);
+    const ok = route([[/youtubei/, () => PLAYER], [/api\/timedtext/, () => new Response(XML)]]);
+    await tr.getTranscript(both, 'abcDEF12345');
+    assert.ok(ok.every((c) => !/openrouter/.test(c.url)), 'a working first way never reaches the service');
+  });
+  test('the tool only serves videos the writer was given, and needs a provider', async () => {
+    const { buildTools } = await import('../src/summarize/agent.ts');
+    const given = [{ id: 'yt:abcDEF12345', url: 'https://www.youtube.com/watch?v=abcDEF12345', by: 'Fireship', at: '', text: 'T', likes: 0, retweets: 0, replies: 0, views: 5, source: 'youtube' }];
+    const asked = [];
+    const run = (tools, input) => tools.find((t) => t.name === 'get_video_transcript').invoke(input, {});
+    const tools = buildTools({ transcript: async (a) => { asked.push(a); return { text: 'x'.repeat(5000), via: 'captions', lang: 'en' }; } }, given);
+    await assert.rejects(run(tools, { id: 'yt:zzzzzzzzzzz' }), /not a YouTube video you were given/);
+    const r = JSON.parse(await run(tools, { id: 'yt:abcDEF12345', maxChars: 2000 }));
+    assert.deepEqual([r.via, r.chars, r.truncated, r.text.length], ['captions', 5000, true, 2000]);
+    assert.equal(asked[0].videoId, 'abcDEF12345');
+    await assert.rejects(run(buildTools({}, given), { id: 'yt:abcDEF12345' }), /not available on this deployment/);
+  });
+});

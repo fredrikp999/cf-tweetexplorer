@@ -16,7 +16,7 @@ export interface CompactTweet {
   likes: number; retweets: number; replies: number; views: number; lang?: string;
   /** 0 to 100: an automatic estimate of how relevant and informative the tweet is (summarize/screen.ts). Absent when the tweet was not screened. */
   signal?: number;
-  /** 'rss' or 'hn' for items that are not tweets; absent for X. For those, `by` is a site or author name and `url` is the article. */
+  /** 'rss', 'hn' or 'youtube' for items that are not tweets; absent for X. For those, `by` is a site or author name and `url` is the article. */
   source?: string; discussion?: string;
 }
 

@@ -13,6 +13,7 @@ import type { RawTweet } from './tweets.ts';
 import { bill, exhausted, llmCost, newMeter, tweetCallCost } from './pricing.ts';
 import { recordCost } from '../lib/costs';
 import type { Meter } from './pricing.ts';
+import { getTranscript, transcriptConfig } from '../sources/transcript.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -97,6 +98,11 @@ export function workerSources(env: Env, meter?: Meter): Sources {
         cursor = r.next_cursor;
       }
       return out;
+    },
+    async transcript({ videoId, lang }) {
+      const t = await getTranscript(transcriptConfig(env as unknown as Record<string, string | undefined>), videoId, lang);
+      if (t.via !== 'captions') await recordCost(env, { kind: 'summarize', ref: 'transcript', label: `Video transcripts (${t.via})`, llm: t.cost, calls: 1, tokensIn: t.tokensIn, tokensOut: t.tokensOut, model: t.model });
+      return { text: t.text, via: t.via, lang: t.lang };
     },
     async feed({ limit, watch, source }) {
       const res = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/feed?limit=${limit}${source ? `&source=${source}` : ''}`));

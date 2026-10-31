@@ -1,6 +1,6 @@
 // The neutral shape every non-X source (RSS, Hacker News, …) is turned into before it reaches the Monitor feed.
-export type SourceKind = 'x' | 'rss' | 'hn';
-export const SOURCES: SourceKind[] = ['x', 'rss', 'hn'];
+export type SourceKind = 'x' | 'rss' | 'hn' | 'youtube';
+export const SOURCES: SourceKind[] = ['x', 'rss', 'hn', 'youtube'];
 export const isSource = (s: unknown): s is SourceKind => SOURCES.includes(s as SourceKind);
 
 export interface SourceItem {
@@ -20,6 +20,8 @@ export interface SourceItem {
   at: string;
   points?: number;
   comments?: number;
+  /** YouTube. */
+  views?: number;
 }
 
 export interface FetchResult { items: SourceItem[]; /** True when the server said nothing changed (HTTP 304). */ unchanged?: boolean; cache?: { etag?: string; lastModified?: string } }
@@ -29,7 +31,7 @@ export interface FetchResult { items: SourceItem[]; /** True when the server sai
 export function toFeedShape(i: SourceItem) {
   return {
     id: i.id, url: i.url, text: i.title && i.text ? `${i.title}\n${i.text}` : i.title || i.text, createdAt: i.at, isReply: false, isRetweet: false,
-    likeCount: i.points ?? 0, retweetCount: 0, replyCount: i.comments ?? 0, quoteCount: 0, viewCount: 0,
+    likeCount: i.points ?? 0, retweetCount: 0, replyCount: i.comments ?? 0, quoteCount: 0, viewCount: i.views ?? 0,
     author: { userName: i.by, name: i.by },
     entities: { hashtags: [] as { text: string }[], urls: [] as { url: string; expanded_url?: string }[] },
     source: i.source, title: i.title, discussionUrl: i.discussionUrl,
