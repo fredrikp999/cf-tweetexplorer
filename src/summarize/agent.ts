@@ -221,7 +221,13 @@ export function buildPrompt(req: SummaryRequest, now = new Date(), fetched?: { n
 
 // Provider errors arrive as raw JSON; say what to do about the common ones.
 function friendlyError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
+  let msg = err instanceof Error ? err.message : String(err);
+  // The OpenAI client reports every failed fetch as a bare "Connection error."; the real reason is on the cause chain.
+  if (/^connection error\.?$/i.test(msg)) {
+    const causes: string[] = [];
+    for (let c = (err as { cause?: unknown } | null)?.cause; c && causes.length < 3; c = (c as { cause?: unknown }).cause) causes.push(c instanceof Error ? c.message : String(c));
+    if (causes.length) msg = `Connection error (${causes.join(' ← ')})`;
+  }
   const status = Number((err as { status?: number } | null)?.status ?? /^(\d{3})\b/.exec(msg)?.[1]);
   if (status === 401) return 'The AI provider rejected the API key (401). Check ANTHROPIC_API_KEY or OPENROUTER_API_KEY.';
   if (status === 402) return 'The AI provider account is out of credits (402).';

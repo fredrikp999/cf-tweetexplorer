@@ -385,9 +385,10 @@ export class PublishDO extends DurableObject<Env> {
   async alarm(): Promise<void> {
     try {
       const now = Date.now();
-      for (const t of this.topics()) {
-        if (t.pending || (t.enabled && t.nextRun <= now)) await this.runTopic(t.slug);
-      }
+      // One topic per alarm: every invocation has its own subrequest budget, so a heavy topic cannot starve the next one.
+      // runTopic moves nextRun on, and arm() fires again a second later for whichever topic is still due.
+      const due = this.topics().find((t) => t.pending || (t.enabled && t.nextRun <= now));
+      if (due) { await this.runTopic(due.slug); return; }
       for (const j of this.ctx.storage.sql.exec<{ topic: string; id: string }>('SELECT topic, id FROM image_jobs').toArray()) await this.makeImage(j.topic, j.id);
       for (const j of this.ctx.storage.sql.exec<{ topic: string; id: string }>('SELECT topic, id FROM audio_jobs').toArray()) await this.makeAudio(j.topic, j.id);
     } catch (err) {
@@ -470,12 +471,15 @@ export class PublishDO extends DurableObject<Env> {
     spend.model = built.id;
     // A run that hits the output cap or loses the connection is nondeterministic: retry once on the same model, then escalate to a stronger one.
     // Only the model call repeats; the tweets are already fetched, so a retry costs no more Twitter data.
+    // Screening is the most call-heavy step (one request per tweet), so run it once and let every attempt reuse the result.
+    let screened: ReturnType<typeof screenTweets> | undefined;
+    const screen = (tweets: Parameters<typeof screenTweets>[1], instr?: string) => (screened ??= screenTweets(this.env, tweets, instr).then((r) => { if (r) spend.screen += r.cost; return r; }));
     const tries = [built, built, ...(this.env.SUMMARY_MOCK === '1' ? [] : [modelFor(this.env, ESCALATION_MODEL, '')])];
     for (const [n, attempt] of tries.entries()) {
       if (!attempt) continue;
       markdown = ''; fail = '';
       for await (const ev of streamSummary({ req: { instruction, length: t.length, tweets: used.map(compact) }, sources, model: attempt.model, modelId: attempt.id,
-        screen: async (tweets, instr) => { const r = await screenTweets(this.env, tweets, instr); if (r) spend.screen += r.cost; return r; } })) {
+        screen })) {
         if (ev.type === 'text') markdown += ev.delta;
         else if (ev.type === 'usage') { tokens = ev.inputTokens + ev.outputTokens; usedModel = ev.model ?? usedModel; spend.tokensIn += ev.inputTokens; spend.tokensOut += ev.outputTokens; spend.model = usedModel; }
         else if (ev.type === 'error') fail = ev.message;
