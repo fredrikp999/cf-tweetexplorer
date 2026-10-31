@@ -73,7 +73,7 @@ src/
   summarize/               The Strands summarizer agent, model providers, screening, cost tables, Worker and Node hosts
   media/                   Replicate text to speech and images, audio script, serving audio and pictures from R2
   site/public.ts           The public HTML pages
-  sources/                 Non-X sources: types.ts (the neutral item and its feed shape) · rss.ts (RSS/Atom) · youtube.ts (channel and playlist feeds) · hn.ts (Hacker News via Algolia) · read.ts (article and comment reading) · feedlist.ts (curated feed lists) · transcript.ts (video transcripts)
+  sources/                 Non-X sources: types.ts (the neutral item and its feed shape) · rss.ts (RSS/Atom) · youtube.ts (channel and playlist feeds) · hn.ts (Hacker News via Algolia) · read.ts (article and comment reading) · presets.ts (shorthand such as `r/rust` or `github:owner/repo`, expanded to the feed address it stands for) · feedlist.ts (curated feed lists) · transcript.ts (video transcripts)
   lib/                     twitterapi.ts (API client) · costs.ts (ledger writes) · pool.ts
 server/                    The same app for running locally with Node (npm start): index.js, History, Lists, Monitor, Agent
 public/admin/              The admin app (one HTML page, no build step)

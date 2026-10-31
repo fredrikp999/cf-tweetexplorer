@@ -5,6 +5,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { COST_PER_TWEET, OutOfCredits, json, search, slim, type Tweet } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
 import { fetchHn, HN_TAGS, type HnTag } from '../sources/hn';
+import { expandShorthand } from '../sources/presets';
 import { checkFeedUrl, fetchRss } from '../sources/rss';
 import { isYoutubeFeed, resolveYoutubeFeed } from '../sources/youtube';
 import { isSource, toFeedShape, type FetchResult, type SourceKind } from '../sources/types';
@@ -231,6 +232,7 @@ export class MonitorDO extends DurableObject<Env> {
       if (name === 'add') {
         if (this.watches().length >= MAX_WATCHES) throw new Error(`at most ${MAX_WATCHES} watches`);
         let source = isSource(b.source) ? b.source : 'x';
+        if (source === 'rss') b.query = expandShorthand(String(b.query ?? '')) ?? b.query;   // r/rust, github:owner/repo, … → the feed they stand for
         if (source === 'rss' && isYoutubeFeed(String(b.query ?? '').trim())) source = 'youtube';   // a YouTube feed address pasted as a plain feed
         const listId = /^[A-Za-z0-9-]{1,40}$/.test(String(b.list ?? '')) ? String(b.list) : undefined;
         // Already watched: from a feed list that is fine (the watch just remembers it belongs to the list too); otherwise it is a mistake.

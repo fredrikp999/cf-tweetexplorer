@@ -527,6 +527,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
     <form id="monForm">
       <label data-feature="sources" hidden>Source
         <select name="source"><option value="x">X (Twitter)</option><option value="rss">RSS / Atom feed</option><option value="hn">Hacker News</option><option value="youtube">YouTube channel</option><option value="flist">A feed list</option></select></label>
+      <label data-src="rss" hidden>Kind of feed <select name="tpl" id="monTpl"></select></label>
       <label data-src="flist" hidden>Feed list <select name="flist" id="monFLSel"></select></label>
       <label data-src="x">Watch
         <select name="kind"><option value="account">Account</option><option value="query">Search query</option><option value="list">Accounts in a list</option></select></label>
@@ -1284,12 +1285,56 @@ function monCostText() {
     + (perMonth > 5 ? ' <span class="err">That is a lot for one watch. Consider a longer interval.</span>' : '');
 }
 mf.interval.addEventListener('change', monCostText); monCostText();
+// Ready-made feeds: pick one, fill in the one thing it needs, and it becomes the shorthand the server understands (src/sources/presets.ts).
+const FEED_TPL = [
+  ['Discussion', [
+    ['reddit', 'Reddit community', 'Subreddit', 'rust', (v) => `r/${v.replace(/^\/?r\//i, '')}`],
+    ['redditq', 'Reddit search', 'Keywords', 'local llama', (v) => `redditsearch:${v}`],
+    ['lobsters', 'Lobsters (all, or one tag)', 'Tag (optional)', 'rust', (v) => `lobsters:${v}`, true],
+    ['so', 'Stack Overflow tag', 'Tag', 'rust', (v) => `stackoverflow:${v}`]]],
+  ['Social', [
+    ['bsky', 'Bluesky account', 'Handle', 'bsky.app', (v) => `bluesky:${v}`],
+    ['mastoU', 'Mastodon account', 'Account', '@name@mastodon.social', (v) => `mastodon:${v}`],
+    ['mastoT', 'Mastodon hashtag', 'Hashtag and server', 'rust@fosstodon.org', (v) => `mastodon:#${v.replace(/^#/, '')}`]]],
+  ['News and reference', [
+    ['news', 'Google News search', 'Keywords', 'climate policy', (v) => `news:${v}`],
+    ['wikinews', 'Wikinews (new articles)', '', '', () => 'wikinews:', true, true],
+    ['wikiP', 'Wikipedia page edits', 'Page title', 'Large language model', (v) => `wikipedia:${v}`],
+    ['wikiR', 'Wikipedia recent changes', '', '', () => 'wikipedia:', true, true]]],
+  ['Code and research', [
+    ['gh', 'GitHub releases', 'Repository', 'cloudflare/workers-sdk', (v) => `github:${v}`],
+    ['arxivC', 'arXiv category', 'Category', 'cs.AI', (v) => `arxiv:${v}`],
+    ['arxivQ', 'arXiv search', 'Keywords', 'diffusion models', (v) => `arxivsearch:${v}`]]],
+  ['Writing', [
+    ['substack', 'Substack publication', 'Name', 'platformer', (v) => `substack:${v}`],
+    ['mediumU', 'Medium author', 'Name', 'name', (v) => `medium:@${v.replace(/^@/, '')}`],
+    ['mediumT', 'Medium topic', 'Topic', 'javascript', (v) => `medium:${v}`],
+    ['ph', 'Product Hunt (new products)', '', '', () => 'producthunt:', true, true]]],
+].map(([g, items]) => [g, items.map(([id, name, label, ph, make, optional, none]) => ({ id, name, label, ph, make, optional: !!optional, none: !!none }))]);
+const FEED_TPL_BY_ID = Object.fromEntries(FEED_TPL.flatMap(([, items]) => items.map((t) => [t.id, t])));
+const tplOptions = (plain) => `<option value="">${plain}</option>` + FEED_TPL.map(([g, items]) => `<optgroup label="${g}">${items.map((t) => `<option value="${t.id}">${t.name}</option>`).join('')}</optgroup>`).join('');
+// The feed written out for a chosen template and the text typed for it; throws what is missing.
+function tplLine(id, value) {
+  const t = FEED_TPL_BY_ID[id], v = (value || '').trim();
+  if (!v && !t.optional) throw new Error(`Enter the ${t.label.toLowerCase()}`);
+  return t.make(v);
+}
+// Shows the field a template needs (none for the ones that take nothing) and what to put in it.
+function tplField(sel, input, labelEl) {
+  const t = FEED_TPL_BY_ID[sel.value];
+  if (!t) return false;
+  input.placeholder = t.ph; if (labelEl) labelEl.textContent = t.label;
+  return t.none ? 'none' : true;
+}
+$('#monTpl').innerHTML = tplOptions('Feed address (RSS / Atom)');
+$('#monTpl').addEventListener('change', () => applyMonSource());
 function applyMonSource() {
   const src = mf.source.value, isList = src === 'x' && mf.kind.value === 'list', acc = mf.kind.value === 'account';
   mf.querySelectorAll('[data-src]').forEach((el) => { el.hidden = el.dataset.src !== src; });
   $('#monQWrap').hidden = isList || src === 'flist'; $('#monListWrap').hidden = !isList;
-  $('#monQLabel').textContent = src === 'rss' ? 'Feed address' : src === 'youtube' ? 'Channel, @handle or playlist' : src === 'hn' ? 'Keywords (optional)' : acc ? 'Handle' : 'Search query (X operators work)';
-  mf.query.placeholder = src === 'rss' ? 'https://example.com/feed.xml' : src === 'youtube' ? '@Fireship or https://www.youtube.com/@Fireship' : src === 'hn' ? 'rust, "open source"' : acc ? 'anthropicai' : '"claude code" lang:en min_faves:5';
+  $('#monQLabel').textContent = src === 'rss' ? 'Feed address or shorthand' : src === 'youtube' ? 'Channel, @handle or playlist' : src === 'hn' ? 'Keywords (optional)' : acc ? 'Handle' : 'Search query (X operators work)';
+  mf.query.placeholder = src === 'rss' ? 'https://example.com/feed.xml, r/rust, github:owner/repo, news: climate' : src === 'youtube' ? '@Fireship or https://www.youtube.com/@Fireship' : src === 'hn' ? 'rust, "open source"' : acc ? 'anthropicai' : '"claude code" lang:en min_faves:5';
+  if (src === 'rss') { const t = tplField(mf.tpl, mf.query, $('#monQLabel')); if (t) $('#monQWrap').hidden = t === 'none'; }
   monCostText();
 }
 mf.kind.addEventListener('change', applyMonSource);
@@ -1305,9 +1350,11 @@ mf.addEventListener('submit', async (e) => {
     return;
   }
   if (src !== 'x') {
-    if ((src === 'rss' || src === 'youtube') && !mf.query.value.trim()) return toast(src === 'youtube' ? 'Enter a channel, an @handle or a playlist' : 'Enter the address of the feed');
+    let address = mf.query.value;
+    if (src === 'rss' && mf.tpl.value) { try { address = tplLine(mf.tpl.value, address); } catch (err) { return toast(err.message); } }
+    else if ((src === 'rss' || src === 'youtube') && !mf.query.value.trim()) return toast(src === 'youtube' ? 'Enter a channel, an @handle or a playlist' : 'Enter the address of the feed');
     try {
-      await post('/mon/add', { source: src, query: mf.query.value, intervalSec: sec, hnTag: mf.hnTag.value, minPoints: +mf.minPoints.value || 0 });
+      await post('/mon/add', { source: src, query: address, intervalSec: sec, hnTag: mf.hnTag.value, minPoints: +mf.minPoints.value || 0 });
       mf.query.value = ''; toast('Watch added; the first check runs now');
     } catch (err) { toast(err.message); }
     return;
@@ -1554,8 +1601,11 @@ function renderFLDetail() {
     <div class="ldh"><input class="ltitle" data-flf="name" value="${esc(l.name)}" maxlength="80" aria-label="List name"><button class="link" data-flact="delete">Delete list</button></div>
     <input class="ltopic" data-flf="topic" value="${esc(l.topic)}" maxlength="300" placeholder="Topic: what is this list for?" aria-label="Topic">
     <label class="chk"><input type="checkbox" data-flpub ${l.public ? 'checked' : ''}> Show on the public Lists page (the sources and the topic)</label>
-    <form id="flAdd" class="addrow"><label class="grow"><span>Add channels and feeds</span>
-      <textarea name="lines" rows="3" placeholder="One per line: @Fireship, https://www.youtube.com/@TED, a playlist link, or an RSS / Atom address"></textarea></label><button class="go">Add</button></form>
+    <form id="flAddTpl" class="addrow"><label>Add a ready-made feed<select name="tpl" data-tpl>${tplOptions('Choose…')}</select></label>
+      <label class="grow" data-tplwrap hidden><span data-tpllabel></span><input name="v" maxlength="200" autocomplete="off"></label><button class="go">Add</button></form>
+    <details><summary>Add channels and feeds by address</summary>
+    <form id="flAdd" class="addrow"><label class="grow"><span>One per line</span>
+      <textarea name="lines" rows="3" placeholder="@Fireship, https://www.youtube.com/@TED, a playlist link, an RSS / Atom address, or a shorthand such as r/rust or github:owner/repo"></textarea></label><button class="go">Add</button></form></details>
     <details><summary>Add a Hacker News search</summary>
       <form id="flAddHn" class="addrow"><label>Stories<select name="tag"><option value="front_page">Front page</option><option value="story">New stories</option><option value="show_hn">Show HN</option><option value="ask_hn">Ask HN</option></select></label>
         <label class="grow"><span>Keywords (optional)</span><input name="q" maxlength="200" placeholder='rust, "open source"' autocomplete="off"></label>
@@ -1584,8 +1634,9 @@ $('#flDetail').addEventListener('submit', async (e) => {
   const l = curFL(); if (!l) return;
   const have = new Set(l.members.map(flKey)), btn = e.target.querySelector('button');
   try {
-    if (e.target.id === 'flAdd') {
-      const lines = e.target.lines.value.split('\n').map((x) => x.trim()).filter(Boolean);
+    if (e.target.id === 'flAdd' || e.target.id === 'flAddTpl') {
+      const lines = e.target.id === 'flAddTpl' ? (e.target.tpl.value ? [tplLine(e.target.tpl.value, e.target.v.value)] : []) : e.target.lines.value.split('\n').map((x) => x.trim()).filter(Boolean);
+      if (e.target.id === 'flAddTpl' && !lines.length) return toast('Choose a ready-made feed first');
       if (!lines.length) return;
       btn.disabled = true; toast(`Checking ${lines.length} address${lines.length > 1 ? 'es' : ''}…`);
       const res = await post('/lists/f-resolve', { lines: lines.slice(0, 25) });
@@ -1596,7 +1647,7 @@ $('#flDetail').addEventListener('submit', async (e) => {
         if (have.has(flKey(m))) { dup++; continue; }
         have.add(flKey(m)); l.members.push(m); added++;
       }
-      if (added) { await saveFL(l); renderFLMembers(); renderFLists(); refreshSummarize(); e.target.lines.value = bad.length ? bad.map((x) => x.split(' (')[0]).join('\n') : ''; }
+      if (added) { await saveFL(l); renderFLMembers(); renderFLists(); refreshSummarize(); if (e.target.lines) e.target.lines.value = bad.length ? bad.map((x) => x.split(' (')[0]).join('\n') : ''; else e.target.v.value = ''; }
       toast([added && `Added ${added}`, dup && `${dup} already in the list`, bad.length && `could not add: ${bad.join('; ')}`].filter(Boolean).join(', ') || 'Nothing to add');
     } else if (e.target.id === 'flAddHn') {
       const m = { source: 'hn', query: e.target.q.value.trim(), hnTag: e.target.tag.value, minPoints: +e.target.min.value || 0, note: '', addedAt: Date.now() };
@@ -1608,6 +1659,10 @@ $('#flDetail').addEventListener('submit', async (e) => {
 });
 $('#flDetail').addEventListener('change', async (e) => {
   const l = curFL(); if (!l) return;
+  if (e.target.matches('[data-tpl]')) {
+    const f = e.target.form, t = tplField(e.target, f.v, f.querySelector('[data-tpllabel]'));
+    f.querySelector('[data-tplwrap]').hidden = !t || t === 'none'; return;
+  }
   try {
     if (e.target.matches('[data-flpub]')) { l.public = e.target.checked; await saveFL(l); toast(l.public ? 'Shown on the public Lists page' : 'Hidden from the public Lists page'); }
     else if (e.target.dataset.flf) { l[e.target.dataset.flf] = e.target.value; if (!l.name.trim()) return toast('A list needs a name'); await saveFL(l); renderFLists(); refreshSummarize(); }

@@ -1,6 +1,7 @@
 // Feed lists: curated sets of feeds (RSS, YouTube channels and playlists, Hacker News searches). Reading a list fetches every member
 // now and keeps what was published in the window, so a briefing or a summary does not depend on what the Monitor happened to capture.
 import { fetchHn, HN_TAGS, type HnTag } from './hn.ts';
+import { expandShorthand } from './presets.ts';
 import { checkFeedUrl, fetchRss } from './rss.ts';
 import { toFeedShape, type SourceItem } from './types.ts';
 import { isYoutubeFeed, resolveYoutubeFeed } from './youtube.ts';
@@ -33,6 +34,8 @@ export interface ResolveResult { line: string; ok: boolean; member?: Pick<FeedMe
 async function resolveLine(raw: string): Promise<ResolveResult> {
   const line = raw.trim();
   try {
+    const short = expandShorthand(line);
+    if (short) { const r = await fetchRss({ url: short }); return { line, ok: true, member: { source: 'rss', query: short, label: r.title.slice(0, 80) || new URL(short).hostname } }; }
     const looksYoutube = /^@?[\w.-]{2,60}$/.test(line) && !/\./.test(line.replace(/^@/, '')) || /^UC[\w-]{22}$/.test(line) || /^(PL|UU|OL)[\w-]{10,60}$/.test(line)
       || /^(https?:\/\/)?(www\.|m\.)?(youtube\.com|youtu\.be)\b/i.test(line);
     if (looksYoutube) {
