@@ -288,3 +288,78 @@ describe('transcripts', async () => {
     await assert.rejects(run(buildTools({}, given), { id: 'yt:abcDEF12345' }), /not available on this deployment/);
   });
 });
+
+describe('feed lists', async () => {
+  const fl = await import('../src/sources/feedlist.ts');
+  const { buildTools, fetchSource, buildPrompt } = await import('../src/summarize/agent.ts');
+  const { parseRequest } = await import('../src/summarize/request.ts');
+  const real = globalThis.fetch;
+  after(() => { globalThis.fetch = real; });
+  const day = 86_400_000;
+  const rss = (title, items) => `<?xml version="1.0"?><rss version="2.0"><channel><title>${title}</title>${items.map(([t, l, ago]) => `<item><title>${t}</title><link>${l}</link><guid>${l}</guid><pubDate>${new Date(Date.now() - ago).toUTCString()}</pubDate></item>`).join('')}</channel></rss>`;
+  const feeds = {
+    'https://a.example.com/feed': rss('Blog A', [['Fresh A', 'https://a.example.com/1', 2 * 3600_000], ['Old A', 'https://a.example.com/0', 10 * day]]),
+    'https://b.example.com/feed': rss('Blog B', [['Fresh B', 'https://b.example.com/1', 5 * 3600_000], ['Same story', 'https://shared.example.com/s', 3600_000]]),
+    'https://c.example.com/feed': rss('Blog C', [['Same story again', 'https://shared.example.com/s', 3600_000]]),
+  };
+  const serve = () => { globalThis.fetch = async (u) => { const body = feeds[String(u)]; return body ? new Response(body, { headers: { 'content-type': 'application/xml' } }) : new Response('nope', { status: 404 }); }; };
+  const member = (url, label) => ({ source: 'rss', query: url, label, note: '', addedAt: 1 });
+
+  test('lines: a feed is checked and named, a broken one is reported, the rest still work', async () => {
+    serve();
+    const r = await fl.resolveLines(['https://a.example.com/feed', 'https://missing.example.com/x', '  ', 'ftp://bad.example.com']);
+    assert.equal(r.length, 3);
+    assert.deepEqual([r[0].ok, r[0].member.source, r[0].member.label], [true, 'rss', 'Blog A']);
+    assert.equal(r[1].ok, false); assert.match(r[1].error, /HTTP 404/);
+    assert.equal(r[2].ok, false);
+  });
+  test('a YouTube feed address pasted as a link becomes a youtube member', async () => {
+    const YT = 'https://www.youtube.com/feeds/videos.xml?channel_id=UCsBjURrPoezykLs9EqgamOA';
+    globalThis.fetch = async () => new Response('<feed xmlns:yt="y" xmlns="http://www.w3.org/2005/Atom"><title>Fireship</title></feed>');
+    const [r] = await fl.resolveLines([YT]);
+    assert.deepEqual([r.ok, r.member.source, r.member.label, r.member.query], [true, 'youtube', 'Fireship', YT]);
+  });
+  test('reading keeps the window, names each item\'s feed, and drops a story two feeds both carry', async () => {
+    serve();
+    const r = await fl.readMembers([member('https://a.example.com/feed', 'Blog A'), member('https://b.example.com/feed', 'Blog B'), member('https://c.example.com/feed', 'Blog C'), member('https://gone.example.com/feed', 'Gone')], Date.now() - 2 * day);
+    assert.equal(r.read, 4);
+    assert.deepEqual(r.items.map((i) => i.title).filter((t) => t.startsWith('Fresh')).sort(), ['Fresh A', 'Fresh B']);
+    assert.equal(r.items.length, 3);
+    assert.ok(!r.items.some((i) => i.title === 'Old A'), 'older than the window');
+    assert.equal(r.items.filter((i) => i.url === 'https://shared.example.com/s').length, 1);
+    assert.deepEqual(r.items.find((i) => i.title === 'Fresh A').feed, 'Blog A');
+    assert.equal(r.items.find((i) => i.title === 'Fresh A').feedUrl, 'https://a.example.com/feed');
+    assert.ok(r.failed.some((f) => /^Gone/.test(f)));
+    assert.ok(r.items[0].createdAt >= r.items[1].createdAt, 'newest first');
+  });
+  test('the same feed in two members is one entry', () => {
+    assert.equal(fl.memberKey({ source: 'youtube', query: 'https://x.test/f' }), fl.memberKey({ source: 'rss', query: 'https://x.test/f' }));
+    assert.notEqual(fl.memberKey({ source: 'hn', query: 'rust', hnTag: 'story' }), fl.memberKey({ source: 'hn', query: 'rust', hnTag: 'front_page' }));
+  });
+  test('as a source: parsed from a request, prefetched, and offered to the agent as a tool', async () => {
+    assert.deepEqual(parseRequest({ source: { type: 'flist', listId: 'ab12', hours: 48 } }).source, { type: 'flist', listId: 'ab12', hours: 48 });
+    assert.throws(() => parseRequest({ source: { type: 'flist', listId: '../x' } }), /pick a feed list/);
+    const item = { id: 'rss:1', url: 'https://a.example.com/1', text: 'Fresh A', createdAt: new Date().toISOString(), source: 'rss', feed: 'Blog A', author: { userName: 'Blog A', name: 'Blog A' } };
+    const sources = { feedList: async (a) => { assert.deepEqual(a, { listId: 'ab12', hours: 48 }); return { tweets: [item], name: 'My feeds', feeds: 3, failed: ['Gone'] }; } };
+    const got = await fetchSource(sources, { type: 'flist', listId: 'ab12', hours: 48 });
+    assert.deepEqual([got.tweets.length, got.parts[0].kind, got.parts[0].label], [1, 'flist', 'My feeds']);
+    assert.match(got.note, /Could not read: Gone/);
+    await assert.rejects(fetchSource({}, { type: 'flist', listId: 'ab12', hours: 48 }), /only available on the deployed site/);
+    assert.match(buildPrompt({ length: 'brief', source: { type: 'flist', listId: 'ab12', hours: 48 } }), /get_feed_list_items/);
+    assert.ok(buildTools(sources).some((t) => t.name === 'get_feed_list_items'));
+    assert.ok(!buildTools({}).some((t) => t.name === 'get_feed_list_items'));
+  });
+});
+
+test('unreachable and non-web addresses give readable reasons', async () => {
+  const fl = await import('../src/sources/feedlist.ts');
+  const real = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => { throw new Error('internal error; reference = abc123'); };
+    const [a, b] = await fl.resolveLines(['https://down.example.com/feed', 'ftp://files.example.com/x']);
+    assert.equal(a.error, 'could not reach that address');
+    assert.match(b.error, /must start with https/);
+    const r = await fl.readMembers([{ source: 'rss', query: 'https://down.example.com/feed', label: 'Down', note: '', addedAt: 1 }], 0);
+    assert.deepEqual(r.failed, ['Down (could not reach that address)']);
+  } finally { globalThis.fetch = real; }
+});

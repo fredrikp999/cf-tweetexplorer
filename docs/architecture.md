@@ -54,7 +54,7 @@ survive eviction and deploys and carry on where they stopped.
 | --- | --- | --- |
 | `HistoryDO` | History jobs, their tweets (sharded by time window and query), labels, analyses, saved reports | Collection slices (10 min) and analysis slices (8 min) |
 | `PublishDO` | Briefing topics, issues (drafts and published), audio and image templates | The schedule: a topic's next run |
-| `ListsDO` | Your curated lists of accounts, and X Lists kept by reference (with groups) | |
+| `ListsDO` | Your curated lists of accounts, X Lists kept by reference (with groups), and feed lists (RSS, YouTube, Hacker News) | |
 | `MonitorDO` | Watches (X searches and accounts, RSS feeds, Hacker News), their checkpoints and the combined feed | Polling |
 | `CostDO` | The spend ledger behind the Costs tab | |
 
@@ -73,7 +73,7 @@ src/
   summarize/               The Strands summarizer agent, model providers, screening, cost tables, Worker and Node hosts
   media/                   Replicate text to speech and images, audio script, serving audio and pictures from R2
   site/public.ts           The public HTML pages
-  sources/                 Non-X sources: types.ts (the neutral item and its feed shape) · rss.ts (RSS/Atom) · youtube.ts (channel and playlist feeds) · hn.ts (Hacker News via Algolia) · read.ts (article and comment reading) · transcript.ts (video transcripts)
+  sources/                 Non-X sources: types.ts (the neutral item and its feed shape) · rss.ts (RSS/Atom) · youtube.ts (channel and playlist feeds) · hn.ts (Hacker News via Algolia) · read.ts (article and comment reading) · feedlist.ts (curated feed lists) · transcript.ts (video transcripts)
   lib/                     twitterapi.ts (API client) · costs.ts (ledger writes) · pool.ts
 server/                    The same app for running locally with Node (npm start): index.js, History, Lists, Monitor, Agent
 public/admin/              The admin app (one HTML page, no build step)

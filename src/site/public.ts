@@ -261,6 +261,7 @@ export function sourcesHtml(i: IssueFull): string {
     const cnt = `<span class="c">${n(s.count)} posts</span>`;
     if (s.kind === 'xgroup') return `<li><b>${esc(s.label)}</b> <span class="k">group of ${s.lists?.length ?? 0} X lists, read together${howRead(s) ? ': ' + howRead(s) : ''}</span> ${cnt}<ul>${(s.lists ?? []).map((l) => `<li>${listLink(l.id, l.label)} <span class="c">${n(l.count)}</span></li>`).join('')}</ul></li>`;
     if (s.kind === 'xlist') return `<li>${listLink(s.id, s.label)} <span class="k">X list${howRead(s) ? ': ' + howRead(s) : ''}</span> ${cnt}</li>`;
+    if (s.kind === 'flist') return `<li><b>${esc(s.label)}</b> <span class="k">feed list</span> ${cnt.replace(' posts', ' items')}</li>`;
     if (s.kind === 'search') return `<li><code>${esc(s.label)}</code> <span class="k">search on X</span> ${cnt}</li>`;
     if (s.kind === 'list') return `<li><b>${esc(s.label)}</b> <span class="k">curated list${s.accounts ? ` of ${n(s.accounts)} accounts` : ''}</span> ${cnt}${s.handles?.length ? `<details><summary>The accounts</summary><p>${s.handles.map(handleLink).join(', ')}${(s.accounts ?? 0) > s.handles.length ? ', …' : ''}</p></details>` : ''}</li>`;
     return `<li>${esc(s.label)} ${cnt}</li>`;

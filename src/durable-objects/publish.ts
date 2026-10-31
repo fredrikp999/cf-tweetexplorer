@@ -26,6 +26,7 @@ import { screenTweets } from '../summarize/screen.ts';
 export type TopicSource =
   | { type: 'search'; query: string; sort: 'Latest' | 'Top' }
   | { type: 'list'; listId: string }
+  | { type: 'flist'; listId: string }     // a feed list (RSS, YouTube, Hacker News), read when the briefing runs
   | { type: 'feed'; watch?: string; source?: 'x' | 'rss' | 'hn' | 'youtube' }
   | { type: 'xlist'; listId: string; mode?: XMode; minFaves?: number; pages?: number }     // one list on x.com
   | { type: 'xgroup'; group: string; mode?: XMode; minFaves?: number; pages?: number };    // every X list in a group, read together; membership is looked up at run time
@@ -72,7 +73,7 @@ export type IssueStatus = 'draft' | 'published' | 'hidden';
 /** What a run spent. Visible to the admin only. */
 export interface IssueCost { twitter: number; llm: number | null; audio?: number; image?: number; total: number; calls: number; fetched: number; tokensIn: number; tokensOut: number; capped?: boolean }
 /** Where a briefing's tweets came from. Shown to readers, so it never holds cost. */
-export interface SourceInfo { kind: 'search' | 'list' | 'xlist' | 'xgroup' | 'feed'; label: string; count: number; id?: string; accounts?: number; handles?: string[]; lists?: Array<{ id?: string; label: string; count: number }>; mode?: XMode; minFaves?: number }
+export interface SourceInfo { kind: 'search' | 'list' | 'flist' | 'xlist' | 'xgroup' | 'feed'; label: string; count: number; id?: string; accounts?: number; handles?: string[]; lists?: Array<{ id?: string; label: string; count: number }>; mode?: XMode; minFaves?: number }
 export interface Provenance { from: number; to: number; fetched: number; used: number; accounts: number; topAccounts: Array<{ handle: string; count: number }>; sources: SourceInfo[]; truncated: boolean; partial?: boolean;
   /** RSS feeds and Hacker News watches the posts came from, with how many items each gave. Absent on issues that used none. */
   feeds?: Array<{ source: 'rss' | 'hn' | 'youtube'; label: string; url?: string; count: number }> }
@@ -118,6 +119,10 @@ function cleanSources(raw: unknown): TopicSource[] {
     if (s.type === 'list') {
       if (typeof s.listId !== 'string' || !/^[A-Za-z0-9-]{1,40}$/.test(s.listId)) throw new Error('pick a list');
       return { type: 'list', listId: s.listId };
+    }
+    if (s.type === 'flist') {
+      if (typeof s.listId !== 'string' || !/^[A-Za-z0-9-]{1,40}$/.test(s.listId)) throw new Error('pick a feed list');
+      return { type: 'flist', listId: s.listId };
     }
     // How an X list is read. Unset (topics from before this option) means the default: best posts.
     const xopts = () => ({
@@ -455,6 +460,7 @@ export class PublishDO extends DurableObject<Env> {
         } else spec =
           s.type === 'search' ? { type: 'search', query: `${s.query} since_time:${Math.floor(since / 1000)}`, sort: s.sort, pages: 3 }
           : s.type === 'list' ? { type: 'list', listId: s.listId, hours: windowHours }
+          : s.type === 'flist' ? { type: 'flist', listId: s.listId, hours: windowHours }
           : s.type === 'xlist' ? { type: 'xlist', listIds: [s.listId], hours: windowHours, pages: pagesFor(s), mode: s.mode ?? 'best', minFaves: s.minFaves ?? 5 }
           : { type: 'feed', limit: 200, ...(s.watch ? { watch: s.watch } : {}), ...(s.source ? { source: s.source } : {}) };
         const r = await fetchSource(sources, spec), parts = r.parts ?? [];

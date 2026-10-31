@@ -14,6 +14,7 @@ import { bill, exhausted, llmCost, newMeter, tweetCallCost } from './pricing.ts'
 import { recordCost } from '../lib/costs';
 import type { Meter } from './pricing.ts';
 import { getTranscript, transcriptConfig } from '../sources/transcript.ts';
+import { readMembers, type FeedMember } from '../sources/feedlist.ts';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -98,6 +99,14 @@ export function workerSources(env: Env, meter?: Meter): Sources {
         cursor = r.next_cursor;
       }
       return out;
+    },
+    async feedList({ listId, hours }) {
+      const res = await env.LISTS.getByName('main').fetch(new Request('https://internal/lists/f-all'));
+      const list = ((await res.json()) as Array<{ id: string; name: string; members: FeedMember[] }>).find((l) => l.id === listId);
+      if (!list) throw new Error(`No feed list with id ${listId}.`);
+      if (!list.members.length) return { tweets: [], name: list.name, feeds: 0, failed: [] };
+      const r = await readMembers(list.members, Date.now() - hours * 3_600_000);
+      return { tweets: r.items as unknown as RawTweet[], name: list.name, feeds: r.read, failed: r.failed };
     },
     async transcript({ videoId, lang }) {
       const t = await getTranscript(transcriptConfig(env as unknown as Record<string, string | undefined>), videoId, lang);

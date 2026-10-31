@@ -74,6 +74,11 @@ function buildServer(env: Env): McpServer {
     annotations: readOnly,
   }, () => ask(env.LISTS, '/lists/all'));
 
+  server.registerTool('list_feed_lists', {
+    description: 'Your feed lists: curated sets of RSS feeds, YouTube channels and Hacker News searches.',
+    annotations: readOnly,
+  }, () => ask(env.LISTS, '/lists/f-all'));
+
   server.registerTool('list_x_lists', {
     description: 'X Lists kept by reference, with their groups.',
     annotations: readOnly,

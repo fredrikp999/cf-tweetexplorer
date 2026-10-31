@@ -444,7 +444,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
       <li>Lists are saved. Add a note to any account to remember why it is there.</li></ul>
       <p class="cost">Cost: about $0.0002 to check an account, then about $0.15 per 1,000 tweets loaded. Watching costs the same as any Monitor watch; a long list is split into a few watches.</p></div></details>
 
-    <div class="seg" id="listMode" role="radiogroup" data-feature="xlists" hidden style="margin-bottom:16px"><label><input type="radio" name="lmode" value="my" checked><span>My lists</span></label><label><input type="radio" name="lmode" value="x"><span>X Lists</span></label></div>
+    <div class="seg" id="listMode" role="radiogroup" data-feature="sources" hidden style="margin-bottom:16px"><label><input type="radio" name="lmode" value="my" checked><span>My lists</span></label><label><input type="radio" name="lmode" value="x"><span>X Lists</span></label><label><input type="radio" name="lmode" value="feeds"><span>Feed lists</span></label></div>
     <div id="myLists">
     <form id="listForm">
       <label class="grow"><span>New list</span><input name="name" placeholder="e.g. AI labs" required maxlength="80" autocomplete="off"></label>
@@ -453,6 +453,22 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
     </form>
     <div id="listCards" class="grid"></div>
     <div id="listDetail"></div>
+    </div>
+
+    <div id="feedPane" hidden>
+      <details class="about" data-about="feedlists"><summary>How feed lists work</summary>
+        <div><p>A feed list is a named set of sources you follow for a topic: <b>YouTube channels and playlists</b>, <b>RSS / Atom feeds</b> and <b>Hacker News searches</b>, in any mix.</p>
+        <ul><li>Paste links, one per line. A channel (<code>@Fireship</code> or a link), a playlist, or a feed address: each is checked by loading it once, and named after the feed.</li>
+        <li><b>Summarize latest</b> reads every feed in the list now and summarizes what it published in the period. Briefings can use a feed list as a source in the same way.</li>
+        <li><b>Watch in Monitor</b> adds a watch per feed, so new items appear in the live feed.</li></ul>
+        <p class="cost">Cost: nothing for the feeds. Summaries cost the language model only.</p></div></details>
+      <form id="flForm">
+        <label class="grow"><span>New feed list</span><input name="name" placeholder="e.g. AI channels" required maxlength="80" autocomplete="off"></label>
+        <label class="grow"><span>Topic (optional)</span><input name="topic" placeholder="What is this list for?" maxlength="300" autocomplete="off"></label>
+        <button class="go">Create list</button>
+      </form>
+      <div id="flCards" class="grid"></div>
+      <div id="flDetail"></div>
     </div>
 
     <div id="xPane" hidden>
@@ -606,9 +622,11 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
     <form id="sumForm">
       <div class="card refine">
         <div class="opt"><span class="ol">Summarize</span>
-          <div class="seg" role="radiogroup"><label><input type="radio" name="what" value="list" checked><span>Latest from a list</span></label><label data-feature="xlists" hidden><input type="radio" name="what" value="xlist"><span>An X list</span></label><label><input type="radio" name="what" value="search"><span>A search</span></label><label><input type="radio" name="what" value="feed"><span>Monitor feed</span></label><label><input type="radio" name="what" value="screen"><span id="sumScreenLabel">Tweets on screen</span></label><label><input type="radio" name="what" value="free"><span>Describe it</span></label></div></div>
+          <div class="seg" role="radiogroup"><label><input type="radio" name="what" value="list" checked><span>Latest from a list</span></label><label data-feature="xlists" hidden><input type="radio" name="what" value="xlist"><span>An X list</span></label><label data-feature="sources" hidden><input type="radio" name="what" value="flist"><span>A feed list</span></label><label><input type="radio" name="what" value="search"><span>A search</span></label><label><input type="radio" name="what" value="feed"><span>Monitor feed</span></label><label><input type="radio" name="what" value="screen"><span id="sumScreenLabel">Tweets on screen</span></label><label><input type="radio" name="what" value="free"><span>Describe it</span></label></div></div>
         <div class="opt" data-srcrow="list"><span class="ol">List</span>
           <div class="optrow"><select name="list" aria-label="List"></select><div class="seg" role="radiogroup"><label><input type="radio" name="hours" value="24"><span>24 hours</span></label><label><input type="radio" name="hours" value="168" checked><span>7 days</span></label><label><input type="radio" name="hours" value="720"><span>30 days</span></label></div></div></div>
+        <div class="opt" data-srcrow="flist"><span class="ol">Feed list</span>
+          <div class="optrow"><select name="flsrc" aria-label="Feed list"></select><div class="seg" role="radiogroup"><label><input type="radio" name="flhours" value="24"><span>24 hours</span></label><label><input type="radio" name="flhours" value="168" checked><span>7 days</span></label><label><input type="radio" name="flhours" value="720"><span>30 days</span></label></div></div></div>
         <div class="opt" data-srcrow="xlist"><span class="ol">X list</span>
           <div class="optrow"><select name="xsrc" aria-label="X list"></select><select name="xmode" aria-label="What to read"><option value="best" selected>Best posts</option><option value="latest">Newest first</option></select><select name="xmin" aria-label="Minimum likes"><option value="0">any likes</option><option value="3">3+ likes</option><option value="5" selected>5+ likes</option><option value="20">20+ likes</option><option value="50">50+ likes</option></select><div class="seg" role="radiogroup"><label><input type="radio" name="xhours" value="6"><span>6 hours</span></label><label><input type="radio" name="xhours" value="24" checked><span>24 hours</span></label><label><input type="radio" name="xhours" value="72"><span>3 days</span></label><label><input type="radio" name="xhours" value="168"><span>7 days</span></label></div></div></div>
         <div class="opt" data-srcrow="search"><span class="ol">Search</span>
@@ -778,6 +796,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const fmt = (n) => Number(n ?? 0).toLocaleString();
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 let lists = [], listSel = null; // curated lists, shared by Lists, Search, History and Monitor
+let flists = [], flSel = null; // feed lists (RSS, YouTube, Hacker News), shared by Lists, Summarize and Briefings
 
 async function api(path, params = {}) {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v != null));
@@ -1100,8 +1119,8 @@ function refreshXSource() {
   if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
 }
 document.querySelectorAll('input[name=lmode]').forEach((r) => r.addEventListener('change', () => {
-  const x = document.querySelector('input[name=lmode]:checked').value === 'x';
-  $('#myLists').hidden = x; $('#xPane').hidden = !x;
+  const mode = document.querySelector('input[name=lmode]:checked').value;
+  $('#myLists').hidden = mode !== 'my'; $('#xPane').hidden = mode !== 'x'; $('#feedPane').hidden = mode !== 'feeds';
 }));
 
 // Depth choices: pages per list. A page is 20 posts in "best" mode and about 80 tweets in "newest first".
@@ -1397,6 +1416,7 @@ async function initFeatures() {
   applyFeatures(); refreshSummarize();
   loadLists();
   if (features.xlists) loadX();
+  if (features.sources) loadFLists();
   // Open the tab named in the address (/admin/#costs); otherwise land on Briefings when they exist.
   const want = location.hash.slice(1), btn = want && document.querySelector(`#tabs button[data-tab="${CSS.escape(want)}"]`);
   if (btn && !btn.hidden) show(want); else if (features.publish) show('publish');
@@ -1423,6 +1443,132 @@ $('#monWatches').addEventListener('change', async (e) => {
 $('#monCapSave').onclick = () => post('/mon/settings', { dailyCap: +$('#monCap').value }).then(() => toast('Daily cap saved')).catch((err) => toast(err.message));
 $('#monClear').onclick = async () => { if (confirm('Clear the captured feed? Watches keep running.')) { await post('/mon/clear', {}); feedItems = []; renderFeed(); } };
 initFeatures();
+
+// ---------- feed lists: curated sets of RSS feeds, YouTube channels and Hacker News searches ----------
+const curFL = () => flists.find((l) => l.id === flSel);
+const FL_KIND = { rss: 'RSS', youtube: 'YouTube', hn: 'Hacker News' };
+const HN_TAG_NAME = { front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' };
+const flKey = (m) => (m.source === 'hn' ? `hn\n${m.hnTag ?? 'front_page'}\n${(m.query || '').toLowerCase()}\n${m.minPoints ?? 0}` : `${m.source === 'youtube' ? 'rss' : m.source}\n${m.query}`);
+async function loadFLists() {
+  try { flists = await (await fetch('/lists/f-all')).json(); } catch { flists = []; }
+  renderFLists(); refreshSummarize();
+}
+async function saveFL(l) {
+  const saved = await post('/lists/f-save', l);
+  const mine = flists.find((x) => x.id === saved.id);
+  if (mine) mine.updated = saved.updated; else flists.unshift(saved);
+  return saved;
+}
+function renderFLists() {
+  $('#flCards').innerHTML = flists.length ? flists.map((l) => {
+    const n = { rss: 0, youtube: 0, hn: 0 }; for (const m of l.members) n[m.source]++;
+    const parts = Object.entries(n).filter(([, v]) => v).map(([k, v]) => `${v} ${FL_KIND[k]}`).join(' · ');
+    return `<div class="card job listcard ${l.id === flSel ? 'sel' : ''}" data-flid="${esc(l.id)}" role="button" tabindex="0"><div class="top"><b>${esc(l.name)}</b></div>${l.topic ? `<div class="meta2">${esc(l.topic)}</div>` : ''}<div class="meta2">${parts || 'empty'}</div></div>`;
+  }).join('') : '<div class="empty" style="grid-column:1/-1">No feed lists yet. Create one above, then paste the channels and feeds you want to follow.</div>';
+  if (!curFL()) { $('#flDetail').innerHTML = ''; delete $('#flDetail').dataset.id; return; }
+  if ($('#flDetail').dataset.id !== flSel) renderFLDetail();
+}
+function flMemberRow(m, i) {
+  const addr = m.source === 'hn' ? [HN_TAG_NAME[m.hnTag] ?? 'front page', m.query, m.minPoints && `${m.minPoints}+ points`].filter(Boolean).join(' · ') : m.query;
+  return `<div class="mrow" data-i="${i}"><span class="av" style="background:hsl(${hueOf(m.source)} 38% 36%)">${esc(FL_KIND[m.source].charAt(0))}</span>
+    <div class="mi"><div><b>${esc(m.label)}</b> <span class="badge">${esc(FL_KIND[m.source])}</span></div><div class="meta2" style="overflow-wrap:anywhere">${m.source !== 'hn' && safeUrl(m.query) ? `<a href="${esc(m.query)}" target="_blank" rel="noopener noreferrer">${esc(addr)}</a>` : esc(addr)}</div></div>
+    <input class="mnote" data-flnote placeholder="Note" value="${esc(m.note)}" maxlength="200" aria-label="Note for ${esc(m.label)}">
+    <button class="link" data-flact="remove" title="Remove from this list">Remove</button></div>`;
+}
+function renderFLMembers() {
+  const l = curFL(), box = $('#flMembers'); if (!l || !box) return;
+  box.innerHTML = l.members.length ? l.members.map(flMemberRow).join('') : '<div class="empty">No feeds yet. Paste channels or feed addresses above.</div>';
+}
+function renderFLDetail() {
+  const l = curFL(), box = $('#flDetail');
+  if (!l) { box.innerHTML = ''; delete box.dataset.id; return; }
+  box.dataset.id = l.id;
+  box.innerHTML = `<div class="card">
+    <div class="ldh"><input class="ltitle" data-flf="name" value="${esc(l.name)}" maxlength="80" aria-label="List name"><button class="link" data-flact="delete">Delete list</button></div>
+    <input class="ltopic" data-flf="topic" value="${esc(l.topic)}" maxlength="300" placeholder="Topic: what is this list for?" aria-label="Topic">
+    <form id="flAdd" class="addrow"><label class="grow"><span>Add channels and feeds</span>
+      <textarea name="lines" rows="3" placeholder="One per line: @Fireship, https://www.youtube.com/@TED, a playlist link, or an RSS / Atom address"></textarea></label><button class="go">Add</button></form>
+    <details><summary>Add a Hacker News search</summary>
+      <form id="flAddHn" class="addrow"><label>Stories<select name="tag"><option value="front_page">Front page</option><option value="story">New stories</option><option value="show_hn">Show HN</option><option value="ask_hn">Ask HN</option></select></label>
+        <label class="grow"><span>Keywords (optional)</span><input name="q" maxlength="200" placeholder='rust, "open source"' autocomplete="off"></label>
+        <label>Min points <input type="number" name="min" min="0" max="10000" value="0" style="width:80px"></label><button class="go">Add</button></form></details>
+    <div id="flMembers"></div>
+    <div class="lacts">
+      <select id="flHours" aria-label="Period"><option value="24">Past 24 hours</option><option value="168" selected>Past 7 days</option><option value="720">Past 30 days</option></select>
+      <button class="go" data-flact="summarize">Summarize latest</button>
+      <button class="go ghost" data-flact="watch">Watch in Monitor</button>
+      <button class="go ghost" data-flact="copy">Copy addresses</button>
+    </div></div>`;
+  renderFLMembers();
+}
+$('#flForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  try {
+    const saved = await saveFL({ name: f.name.value, topic: f.topic.value, members: [] });
+    f.reset(); flSel = saved.id; renderFLists(); renderFLDetail(); refreshSummarize();
+  } catch (err) { toast(err.message); }
+});
+$('#flCards').addEventListener('click', (e) => { const c = e.target.closest('[data-flid]'); if (c) { flSel = c.dataset.flid; renderFLists(); renderFLDetail(); } });
+$('#flDetail').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const l = curFL(); if (!l) return;
+  const have = new Set(l.members.map(flKey)), btn = e.target.querySelector('button');
+  try {
+    if (e.target.id === 'flAdd') {
+      const lines = e.target.lines.value.split('\n').map((x) => x.trim()).filter(Boolean);
+      if (!lines.length) return;
+      btn.disabled = true; toast(`Checking ${lines.length} address${lines.length > 1 ? 'es' : ''}…`);
+      const res = await post('/lists/f-resolve', { lines: lines.slice(0, 25) });
+      let added = 0, dup = 0; const bad = [];
+      for (const r of res) {
+        if (!r.ok) { bad.push(`${r.line.slice(0, 40)} (${r.error})`); continue; }
+        const m = { ...r.member, note: '', addedAt: Date.now() };
+        if (have.has(flKey(m))) { dup++; continue; }
+        have.add(flKey(m)); l.members.push(m); added++;
+      }
+      if (added) { await saveFL(l); renderFLMembers(); renderFLists(); refreshSummarize(); e.target.lines.value = bad.length ? bad.map((x) => x.split(' (')[0]).join('\n') : ''; }
+      toast([added && `Added ${added}`, dup && `${dup} already in the list`, bad.length && `could not add: ${bad.join('; ')}`].filter(Boolean).join(', ') || 'Nothing to add');
+    } else if (e.target.id === 'flAddHn') {
+      const m = { source: 'hn', query: e.target.q.value.trim(), hnTag: e.target.tag.value, minPoints: +e.target.min.value || 0, note: '', addedAt: Date.now() };
+      m.label = `HN ${HN_TAG_NAME[m.hnTag]}${m.query ? ` · ${m.query}` : ''}${m.minPoints ? ` · ${m.minPoints}+ points` : ''}`.slice(0, 80);
+      if (have.has(flKey(m))) return toast('That search is already in the list');
+      l.members.push(m); await saveFL(l); renderFLMembers(); renderFLists(); refreshSummarize(); toast('Added');
+    }
+  } catch (err) { toast(err.message); } finally { btn.disabled = false; }
+});
+$('#flDetail').addEventListener('change', async (e) => {
+  const l = curFL(); if (!l) return;
+  try {
+    if (e.target.dataset.flf) { l[e.target.dataset.flf] = e.target.value; if (!l.name.trim()) return toast('A list needs a name'); await saveFL(l); renderFLists(); refreshSummarize(); }
+    else if (e.target.matches('[data-flnote]')) { l.members[+e.target.closest('[data-i]').dataset.i].note = e.target.value; await saveFL(l); }
+  } catch (err) { toast(err.message); }
+});
+$('#flDetail').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-flact]'), l = curFL(); if (!b || !l) return;
+  try {
+    if (b.dataset.flact === 'remove') { l.members.splice(+b.closest('[data-i]').dataset.i, 1); await saveFL(l); renderFLMembers(); renderFLists(); refreshSummarize(); }
+    else if (b.dataset.flact === 'delete') {
+      if (!confirm(`Delete the feed list "${l.name}"? Briefings that use it will stop finding it.`)) return;
+      await post('/lists/f-delete', { id: l.id }); flists = flists.filter((x) => x.id !== l.id); flSel = null; renderFLists(); refreshSummarize();
+    } else if (b.dataset.flact === 'summarize') {
+      if (!l.members.length) return toast('Add some feeds first');
+      show('summarize'); sf.querySelector('input[name=what][value=flist]').checked = true; refreshSummarize(); sf.flsrc.value = l.id;
+      const h = $('#flHours').value; sf.querySelector(`input[name=flhours][value="${h}"]`).checked = true; window.scrollTo(0, 0);
+    } else if (b.dataset.flact === 'watch') {
+      if (!l.members.length) return toast('Add some feeds first');
+      if (!confirm(`Add ${l.members.length} watch${l.members.length > 1 ? 'es' : ''} to Monitor for "${l.name}", checking every 15 minutes? These sources are free.`)) return;
+      let added = 0, had = 0;
+      for (const m of l.members) {
+        try { await post('/mon/add', { source: m.source, query: m.query, label: m.label, hnTag: m.hnTag, minPoints: m.minPoints, intervalSec: 900 }); added++; }
+        catch (err) { if (/already watched/.test(err.message)) had++; else throw err; }
+      }
+      toast([added && `Added ${added}`, had && `${had} already watched`].filter(Boolean).join(', ') + '. Find them in Monitor.');
+    } else if (b.dataset.flact === 'copy') {
+      await navigator.clipboard.writeText(l.members.map((m) => (m.source === 'hn' ? `hn: ${m.query}` : m.query)).join('\n')); toast('Copied');
+    }
+  } catch (err) { toast(err.message); }
+});
 
 // ---------- summarize tab: a Strands agent (the same code runs on Cloudflare and locally) ----------
 const sf = $('#sumForm');
@@ -1452,6 +1598,9 @@ function refreshSummarize() {
   const usable = lists.filter((l) => l.members.some((m) => !m.missing)), keepL = sf.list.value, keepW = sf.watch.value;
   sf.list.innerHTML = usable.length ? usable.map((l) => `<option value="${esc(l.id)}">${esc(l.name)} (${l.members.filter((m) => !m.missing).length})</option>`).join('') : '<option value="">No lists yet</option>';
   if (usable.some((l) => l.id === keepL)) sf.list.value = keepL;
+  const keepF = sf.flsrc.value;
+  sf.flsrc.innerHTML = flists.length ? flists.map((l) => `<option value="${esc(l.id)}">${esc(l.name)} (${l.members.length})</option>`).join('') : '<option value="">No feed lists yet</option>';
+  if (flists.some((l) => l.id === keepF)) sf.flsrc.value = keepF;
   sf.watch.innerHTML = '<option value="">All watches</option>' + (mon.watches ?? []).map((w) => `<option value="${esc(w.id)}">${esc(w.label)}</option>`).join('');
   sf.watch.value = [...sf.watch.options].some((o) => o.value === keepW) ? keepW : '';
   // tweets already on screen
@@ -1479,6 +1628,7 @@ sf.addEventListener('submit', async (e) => {
   const what = sf.what.value, body = { length: sf.len.value, instruction: sf.topic.value.trim() };
   if (!$('#sumModelRow').hidden) body.model = $('#sumModel').value;
   if (what === 'list') { if (!sf.list.value) return toast('Create a list first (Lists tab)'); body.source = { type: 'list', listId: sf.list.value, hours: +sf.hours.value }; }
+  else if (what === 'flist') { if (!sf.flsrc.value) return toast('Make a feed list first (Lists tab, Feed lists)'); body.source = { type: 'flist', listId: sf.flsrc.value, hours: +sf.flhours.value }; }
   else if (what === 'search') {
     let q = sf.q.value.trim(); if (!q) return toast('Enter a search');
     if (+sf.swin.value) q += ' since_time:' + (Math.floor(Date.now() / 1000) - sf.swin.value * 3600);
@@ -2477,9 +2627,10 @@ const srcOpts = (s) => {
     ${best ? `<label style="display:flex;gap:6px;align-items:center">at least <input type="number" data-f="minFaves" min="0" max="1000" value="${s.minFaves ?? 5}" style="width:72px"> likes</label>` : ''}
     <label style="display:flex;gap:6px;align-items:center">up to <select data-f="pages" style="width:auto">${[1, 2, 3, 5].map((n) => `<option value="${n}" ${pages === n ? 'selected' : ''}>${best ? n * 20 : n * 80}</option>`).join('')}</select> ${best ? 'posts' : 'tweets'} per list</label></div>`;
 };
-const srcRow = (s = { type: 'search' }) => `<div class="src"><select data-f="type">${['search', 'list', ...(xlists.length ? ['xlist', 'xgroup'] : []), 'feed'].map((x) => `<option ${s.type === x ? 'selected' : ''} value="${x}">${{ search: 'Search', list: 'List', xlist: 'X list', xgroup: 'X list group', feed: 'Monitor feed' }[x]}</option>`).join('')}</select>
+const srcRow = (s = { type: 'search' }) => `<div class="src"><select data-f="type">${['search', 'list', ...(xlists.length ? ['xlist', 'xgroup'] : []), ...(features.sources ? ['flist'] : []), 'feed'].map((x) => `<option ${s.type === x ? 'selected' : ''} value="${x}">${{ search: 'Search', list: 'List', xlist: 'X list', xgroup: 'X list group', flist: 'Feed list', feed: 'Monitor feed' }[x]}</option>`).join('')}</select>
   ${s.type === 'xlist' ? `<select data-f="listId">${xlists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select>`
     : s.type === 'xgroup' ? `<select data-f="group">${xgroups().map((g) => `<option value="${esc(g)}" ${s.group === g ? 'selected' : ''}>${esc(g)} (${xlists.filter((l) => l.groups.includes(g)).length} lists, read together)</option>`).join('')}</select>`
+    : s.type === 'flist' ? `<select data-f="listId">${flists.length ? flists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)} (${l.members.length} feeds)</option>`).join('') : '<option value="">No feed lists yet (Lists tab)</option>'}</select>`
     : s.type === 'list' ? `<select data-f="listId">${lists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)} (${l.members.length})</option>`).join('')}</select>`
     : s.type === 'feed' ? `${features.sources ? `<select data-f="source" aria-label="Source" style="width:auto">${[['', 'All sources combined'], ['x', 'X only'], ['rss', 'RSS only'], ['hn', 'Hacker News only'], ['youtube', 'YouTube only']].map(([v, l]) => `<option value="${v}" ${(s.source ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}<input type="text" data-f="watch" placeholder="only this watch (optional)" value="${esc(s.watch)}">`
     : `<input type="text" data-f="query" placeholder="e.g. (Kristersson OR Andersson) lang:sv -filter:replies" value="${esc(s.query)}">`}
@@ -2512,7 +2663,7 @@ function estimateTopic(f) {
     else if (s.type === 'list') { const l = lists.find((x) => x.id === s.listId), q = Math.min(12, Math.ceil((l ? l.members.filter((m) => !m.missing).length : 20) / 22)); tweets += q * 40; calls += q * 2; }
     else if (s.type === 'xlist') { tweets += listPosts(s); calls += +s.pages || 2; lists1 += 1; pageCost = Math.max(pageCost, (s.mode === 'latest' ? 80 : 20) * TW); }
     else if (s.type === 'xgroup') { const n = Math.min(20, xlists.filter((l) => l.groups.includes(s.group)).length); tweets += n * listPosts(s); calls += n * (+s.pages || 2); lists1 += n; pageCost = Math.max(pageCost, (s.mode === 'latest' ? 80 : 20) * TW); }
-    else if (s.type === 'feed') feed = true;     // already captured by Monitor: no new X data cost
+    else if (s.type === 'feed' || s.type === 'flist') feed = true;     // Monitor feed or feed list: no X data cost
   }
   const cap = +f.maxCost || 0, uncapped = Math.max(tweets, calls) * TW, twitter = cap ? Math.min(uncapped, cap) : uncapped;
   const used = Math.min(150, feed ? 150 : tweets);

@@ -16,6 +16,9 @@ export function parseRequest(raw: unknown): SummaryRequest {
   if (s?.type === 'list') {
     if (typeof s.listId !== 'string' || !/^[A-Za-z0-9-]{1,40}$/.test(s.listId)) throw new Error('pick a list');
     source = { type: 'list', listId: s.listId, hours: clamp(s.hours, 1, 720, 168) };
+  } else if (s?.type === 'flist') {
+    if (typeof s.listId !== 'string' || !/^[A-Za-z0-9-]{1,40}$/.test(s.listId)) throw new Error('pick a feed list');
+    source = { type: 'flist', listId: s.listId, hours: clamp(s.hours, 1, 720, 168) };
   } else if (s?.type === 'search') {
     const query = typeof s.query === 'string' ? s.query.trim().slice(0, 400) : '';
     if (!query) throw new Error('enter a search');
