@@ -78,6 +78,15 @@ details.about summary:hover { color: var(--text); }
 details.about > div { margin-top: 8px; padding: 2px 0 4px 16px; border-left: 2px solid var(--line); font-size: 14.5px; max-width: 78ch; }
 details.about p { margin: 6px 0; } details.about ul { margin: 6px 0; padding-left: 20px; } details.about li { margin: 4px 0; }
 details.about .cost { color: var(--muted); }
+/* A titled, collapsible block inside a form or card. Open or closed is remembered per block. */
+details.fold { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+details.fold > summary { cursor: pointer; padding: 10px 14px; list-style: none; display: flex; align-items: baseline; gap: 10px; font-weight: 600; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.8px solid var(--muted); border-bottom: 1.8px solid var(--muted); transform: rotate(-45deg) translateY(-1px); transition: transform .15s; }
+details.fold[open] > summary::before { transform: rotate(45deg) translateY(-2px); }
+details.fold > summary .hint { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: auto; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+details.fold > .foldbody { padding: 2px 14px 14px; display: grid; gap: 10px; }
+.askmode { margin: 4px 0 16px; }
 
 /* ----- forms ----- */
 form { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 18px; }
@@ -350,37 +359,36 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 <aside class="rail">
   <div class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c9265f"/><polyline pathLength="1" points="5,17 11,17 14,8 18,24 21,14 23,17 27,17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Tweet Explorer</span></div>
   <nav id="tabs" aria-label="Sections">
+    <div class="grp">Work</div>
+    <button data-tab="search" class="on"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span>Find tweets</span></button>
+    <button data-tab="user"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.5-5.5 7-5.5s6.2 1.9 7 5.5"/></svg><span>Look up account</span></button>
+    <button data-tab="trends"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Trending</span></button>
+    <button data-tab="summarize"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 11h8M5 16h14"/><path d="M18.5 8.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></svg><span>Ask AI</span></button>
+    <div class="grp">Watch</div>
+    <button data-tab="monitor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg><span>Live feed</span><span id="monBadge" class="badge" hidden></span></button>
+    <button data-tab="history"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Archives</span></button>
     <div class="grp" data-feature="publish" hidden>Publish</div>
     <button data-tab="publish" data-feature="publish" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12.5h5"/></svg><span>Briefings</span></button>
-    <div class="grp">Explore</div>
-    <button data-tab="search" class="on"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span>Search</span></button>
-    <button data-tab="user"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.5-5.5 7-5.5s6.2 1.9 7 5.5"/></svg><span>User</span></button>
-    <button data-tab="trends"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Trends</span></button>
-    <div class="grp">Track</div>
-    <button data-tab="lists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg><span>Lists</span></button>
-    <button data-tab="monitor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg><span>Monitor</span><span id="monBadge" class="badge" hidden></span></button>
-    <button data-tab="history"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>History</span></button>
-    <button data-tab="costs" data-feature="costs" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M16 7.5c-.7-1-2-1.5-4-1.5-2.4 0-4 1-4 2.7 0 4 8 1.8 8 5.6 0 1.8-1.7 2.7-4 2.7-2.2 0-3.7-.6-4.6-1.8"/></svg><span>Costs</span></button>
-    <div class="grp">Ask</div>
-    <button data-tab="summarize"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 11h8M5 16h14"/><path d="M18.5 8.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></svg><span>Summarize</span></button>
-    <button data-tab="agent" data-feature="agent"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-7l-4.5 3.5V16H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg><span>Agent</span></button>
-    <div class="grp" data-feature="account">Act</div>
-    <button data-tab="account" data-feature="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5 19 4M15.5 7.5l2.5 2.5"/></svg><span>Account</span></button>
+    <div class="grp">Library</div>
+    <button data-tab="lists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg><span>Lists and templates</span></button>
     <div class="sp"></div>
+    <div class="grp">Settings</div>
+    <button data-tab="costs" data-feature="costs" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M16 7.5c-.7-1-2-1.5-4-1.5-2.4 0-4 1-4 2.7 0 4 8 1.8 8 5.6 0 1.8-1.7 2.7-4 2.7-2.2 0-3.7-.6-4.6-1.8"/></svg><span>Costs</span></button>
+    <button data-tab="account" data-feature="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5 19 4M15.5 7.5l2.5 2.5"/></svg><span>Post as X</span></button>
     <button data-tab="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h10"/></svg><span>Guide</span></button>
   </nav>
   <div class="railfoot"><span id="who"></span><span id="balance"></span></div>
 </aside>
 <main>
   <section id="search">
-    <header class="page"><h1>Search</h1><p>Find tweets on any topic and see what they add up to.</p></header>
+    <header class="page"><h1>Find tweets</h1><p>Search X for any topic and see what the tweets add up to.</p></header>
     <details class="about" data-about="search"><summary>How this works and what it costs</summary>
       <div><p>Find tweets matching a query and see what they add up to. Good for a quick look at a topic <i>right now</i> or over the last few days.</p>
    <ul><li>Type words or a phrase, then narrow things down with the options: sort order, how many tweets, when they were posted, minimum likes, originals only, media or links, language and a specific account.</li>
    <li>The <i>Searching for</i> line shows the exact query those options build (X's advanced search operators), so you can also type operators such as <code>from:</code>, <code>min_faves:</code> or <code>since_time:</code> yourself.</li>
-   <li><b>From lists</b> limits the search to the accounts in one or more of your lists (made in the Lists tab). It combines with every other option; a long list is split into several searches automatically.</li>
+   <li><b>From lists</b> limits the search to the accounts in one or more of your lists (made under Lists and templates). It combines with every other option; a long list is split into several searches automatically.</li>
    <li>You get stats, charts and the tweet list. <b>Click a chart bar</b> to filter the list, <b>click a tweet's text</b> to open its replies, conversation, quotes and retweeters.</li></ul>
-   <p class="cost">Cost: about $0.15 per 1,000 tweets. For long time ranges use <b>History</b>; to be alerted use <b>Monitor</b>.</p></div></details>
+   <p class="cost">Cost: about $0.15 per 1,000 tweets. For long time ranges use <b>Archives</b>; to be alerted use <b>Live feed</b>.</p></div></details>
     <div class="seg" id="searchMode" role="radiogroup" data-feature="sources" hidden style="margin-bottom:16px"><label><input type="radio" name="smode" value="x" checked><span>On X</span></label><label><input type="radio" name="smode" value="feeds"><span>In feed lists</span></label></div>
     <div id="feedSearch" hidden>
       <form id="fsForm" class="sform" autocomplete="off">
@@ -427,11 +435,11 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="user" hidden>
-    <header class="page"><h1>User</h1><p>Profile and recent tweets for one account.</p></header>
+    <header class="page"><h1>Look up account</h1><p>Profile and recent tweets for one account.</p></header>
     <details class="about" data-about="user"><summary>How this works and what it costs</summary>
       <div><p>Look at one account: profile card (bio, followers, location) plus an analysis of their most recent tweets.</p>
    <ul><li>Shows when they post, what they tag, which tweets did best, and how often they reply.</li>
-   <li>Pages of recent tweets: 1–5 (about 20 each). For anything older than that, use <b>History</b> with <code>from:handle</code>.</li>
+   <li>Pages of recent tweets: 1–5 (about 20 each). For anything older than that, use <b>Archives</b> with <code>from:handle</code>.</li>
    <li>Clicking an author's name anywhere in the app opens them here.</li></ul>
    <p class="cost">Cost: one profile lookup plus about $0.15 per 1,000 tweets.</p></div></details>
     <form data-form="user">
@@ -447,17 +455,17 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="lists" hidden>
-    <header class="page"><h1>Lists</h1><p>Curate groups of accounts to follow for a topic.</p></header>
+    <header class="page"><h1>Lists and templates</h1><p>Everything you maintain in one place: account lists, feed lists, X lists, and the audio and image templates used by briefings.</p></header>
     <details class="about" data-about="lists"><summary>How this works and what it costs</summary>
       <div><p>A list is a named set of accounts you care about for one topic, for example "AI labs" or "Security researchers".</p>
       <ul><li>Paste handles or profile links (many at once). Each account is checked and shown with its picture and follower count. Accounts that don't exist are flagged.</li>
       <li><b>Load recent tweets</b> pulls the latest posts from every account in the list and analyses them like a search. It also shows which accounts have been quiet.</li>
-      <li><b>Watch in Monitor</b> turns the list into live watches, so new tweets from any member show up in the Monitor feed.</li>
-      <li>Use a list as a filter in <b>Search</b>, <b>History</b> and <b>Monitor</b>: pick it and combine it with any other option, such as minimum likes, language or a date range.</li>
+      <li><b>Watch in Live feed</b> turns the list into live watches, so new tweets from any member show up in the Live feed.</li>
+      <li>Use a list as a filter in <b>Find tweets</b>, <b>Archives</b> and <b>Live feed</b>: pick it and combine it with any other option, such as minimum likes, language or a date range.</li>
       <li>Lists are saved. Add a note to any account to remember why it is there.</li></ul>
       <p class="cost">Cost: about $0.0002 to check an account, then about $0.15 per 1,000 tweets loaded. Watching costs the same as any Monitor watch; a long list is split into a few watches.</p></div></details>
 
-    <div class="seg" id="listMode" role="radiogroup" data-feature="sources" hidden style="margin-bottom:16px"><label><input type="radio" name="lmode" value="my" checked><span>My lists</span></label><label><input type="radio" name="lmode" value="x"><span>X Lists</span></label><label><input type="radio" name="lmode" value="feeds"><span>Feed lists</span></label></div>
+    <div class="seg" id="listMode" role="radiogroup" aria-label="What to manage" style="margin-bottom:16px"><label><input type="radio" name="lmode" value="my" checked><span>Account lists</span></label><label data-feature="sources" hidden><input type="radio" name="lmode" value="feeds"><span>Feed lists</span></label><label data-feature="xlists" hidden><input type="radio" name="lmode" value="x"><span>X lists</span></label><label data-feature="publish" hidden><input type="radio" name="lmode" value="audio"><span>Audio templates</span></label><label data-feature="publish" hidden><input type="radio" name="lmode" value="image"><span>Image templates</span></label></div>
     <div id="myLists">
     <form id="listForm">
       <label class="grow"><span>New list</span><input name="name" placeholder="e.g. AI labs" required maxlength="80" autocomplete="off"></label>
@@ -473,7 +481,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
         <div><p>A feed list is a named set of sources you follow for a topic: <b>YouTube channels and playlists</b>, <b>RSS / Atom feeds</b> and <b>Hacker News searches</b>, in any mix.</p>
         <ul><li>Paste links, one per line. A channel (<code>@Fireship</code> or a link), a playlist, or a feed address: each is checked by loading it once, and named after the feed.</li>
         <li><b>Summarize latest</b> reads every feed in the list now and summarizes what it published in the period. Briefings can use a feed list as a source in the same way.</li>
-        <li><b>Watch in Monitor</b> adds a watch per feed, so new items appear in the live feed.</li></ul>
+        <li><b>Watch in Live feed</b> adds a watch per feed, so new items appear in the live feed.</li></ul>
         <p class="cost">Cost: nothing for the feeds. Summaries cost the language model only.</p></div></details>
       <form id="flForm">
         <label class="grow"><span>New feed list</span><input name="name" placeholder="e.g. AI channels" required maxlength="80" autocomplete="off"></label>
@@ -484,9 +492,11 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
       <div id="flDetail"></div>
     </div>
 
+    <div id="tplPane" hidden><div id="libTpl"></div></div>
+
     <div id="xPane" hidden>
       <div class="card">
-        <p style="margin:0 0 12px">Lists that live on x.com, kept by reference: nothing is copied. <b>Best posts</b> (the default) asks X for the range's top posts in each list, without retweets or replies and above a minimum of likes: 20 per call (about $0.003), and you pay only for what comes back. <b>Newest first</b> reads the timeline instead: 80 per call, retweets included, but a busy list can take many calls to reach back a day. The <b>Public</b> switch shows a list on the public <a href="/lists" target="_blank" rel="noopener">Lists page</a>, linking out to X (the lists from the shared document start public). Use one, or a whole group read together, in <b>Summarize</b> and in scheduled topics under <b>Briefings</b>.</p>
+        <p style="margin:0 0 12px">Lists that live on x.com, kept by reference: nothing is copied. <b>Best posts</b> (the default) asks X for the range's top posts in each list, without retweets or replies and above a minimum of likes: 20 per call (about $0.003), and you pay only for what comes back. <b>Newest first</b> reads the timeline instead: 80 per call, retweets included, but a busy list can take many calls to reach back a day. The <b>Public</b> switch shows a list on the public <a href="/lists" target="_blank" rel="noopener">Lists page</a>, linking out to X (the lists from the shared document start public). Use one, or a whole group read together, in <b>Ask AI</b> and in scheduled briefings under <b>Briefings</b>.</p>
         <div class="lacts" style="border-top:0;padding-top:0;margin:0">
           <select id="xMode" aria-label="What to read"><option value="best" selected>Best posts of the range</option><option value="latest">Newest first (everything)</option></select>
           <select id="xMin" aria-label="Minimum likes"><option value="0">any likes</option><option value="3">3+ likes</option><option value="5" selected>5+ likes</option><option value="20">20+ likes</option><option value="50">50+ likes</option><option value="100">100+ likes</option></select>
@@ -506,7 +516,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="monitor" hidden>
-    <header class="page"><h1>Monitor</h1><p>Get new posts from X, RSS feeds, YouTube and Hacker News as they are published.</p></header>
+    <header class="page"><h1>Live feed</h1><p>Get new posts from X, RSS feeds, YouTube and Hacker News as they are published.</p></header>
     <details class="about" data-about="monitor"><summary>How this works and what it costs</summary>
       <div><p>Get new tweets as they are posted, from an account or a search query, without keeping the page open.</p>
    <ul><li>The <b>server</b> checks each watch every N seconds (15 s to 1 h) using a <code>since_time</code> window, and pushes anything new to this page live.</li>
@@ -556,7 +566,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="history" hidden>
-    <header class="page"><h1>History</h1><p>Collect and analyse tweets across weeks, months or years.</p></header>
+    <header class="page"><h1>Archives</h1><p>Collect and analyse tweets across weeks, months or years.</p></header>
     <details class="about" data-about="history"><summary>How this works and what it costs</summary>
       <div><p>Collect a large archive of tweets over a date range, then analyse it. Use this for "everything about X in 2025" instead of the latest page of results.</p>
    <ul><li>Splits the range into <b>time shards</b> and slides <code>until_time</code> backwards inside each (no cursors, which loop on old data). Duplicates are removed.</li>
@@ -594,7 +604,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   <section id="publish" hidden>
     <header class="page"><h1>Briefings</h1><p>What is summarized on a schedule and published to <a href="/" target="_blank" rel="noopener">the public site</a>. <a href="#costs" data-tabgo="costs">What it costs</a></p></header>
     <div class="layout">
-      <aside><div id="pubTopics"></div><p><button class="primary" id="pubNew">New topic</button></p><p><button class="sec" id="pubTplBtn" type="button">Audio templates</button></p><p><button class="sec" id="pubImgTplBtn" type="button">Image templates</button></p></aside>
+      <aside><div id="pubTopics"></div><p><button class="primary" id="pubNew">New topic</button></p><p class="muted" style="font-size:13px">Voices and picture styles are managed under <a href="#" data-libgo="audio">Audio templates</a> and <a href="#" data-libgo="image">Image templates</a>.</p></aside>
       <div id="pubDetail"><div class="card muted">Pick a topic, or create one.</div></div>
     </div>
   </section>
@@ -620,10 +630,11 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="summarize" hidden>
-    <header class="page"><h1>Summarize</h1><p>An AI agent reads the tweets and writes you the gist.</p></header>
+    <header class="page"><h1>Ask AI</h1><p>Have AI read a source and write you the gist.</p>
+    <div class="seg askmode" role="tablist" aria-label="Ask AI mode"><label><input type="radio" name="askmode" value="summarize" checked><span>Summarize a source</span></label><label data-feature="agent" hidden><input type="radio" name="askmode" value="agent"><span>Chat with Claude Code</span></label></div></header>
     <details class="about" data-about="summarize"><summary>How this works and what it costs</summary>
       <div><p>Pick what to summarize and the agent fetches the tweets itself with read-only tools, then writes a summary with links back to the tweets it used.</p>
-      <ul><li>Sources: the latest from one of your lists, a search, what Monitor has captured, the tweets already on your screen (use <b>Summarize these tweets</b> under Search or Lists results), or just describe what you want.</li>
+      <ul><li>Sources: the latest from one of your lists, a search, what the Live feed has captured, the tweets already on your screen (use <b>Summarize these tweets</b> under Find tweets or list results), or just describe what you want.</li>
       <li>It can look up replies or more tweets when it needs context. Everything it does is shown under <i>What the agent did</i>.</li>
       <li>The agent is built with the Strands Agents SDK, and the same code runs here and on Cloudflare. Each run is capped (turns, tokens and tweets) so it can't run away, and it stops if you click Stop or leave the page.</li>
       <li>Pick the AI model under <b>Model</b>; each shows its context size, price and what testing showed. The tweets it reads go to the model provider (OpenRouter, or Anthropic if you configure that).</li></ul>
@@ -661,7 +672,8 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="agent" hidden>
-    <header class="page"><h1>Agent</h1><p>Ask in plain language. Claude Code fetches the data and explains it.</p></header>
+    <header class="page"><h1>Ask AI</h1><p>Chat with Claude Code. It fetches the data and explains it.</p>
+    <div class="seg askmode" role="tablist" aria-label="Ask AI mode"><label><input type="radio" name="askmode" value="summarize"><span>Summarize a source</span></label><label><input type="radio" name="askmode" value="agent" checked><span>Chat with Claude Code</span></label></div></header>
     <details class="about" data-about="agent"><summary>How this works and what it costs</summary>
       <div><p>Ask questions in plain language instead of picking endpoints. Claude Code runs as an agent over the Agent Client Protocol (ACP) with the <b>twitterapi-io</b> skill and calls the API itself.</p>
    <ul><li>Good for open-ended or multi-step questions: "compare these two accounts", "what changed after the launch?".</li>
@@ -684,7 +696,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="account" hidden>
-    <header class="page"><h1>Account</h1><p>Optional. Log in to like, retweet, reply, follow and post as your X account.</p></header>
+    <header class="page"><h1>Post as X</h1><p>Optional. Log in to like, retweet, reply, follow and post as your X account.</p></header>
     <details class="about" data-about="account"><summary>How this works and what it costs</summary>
       <div><p>Optional. Log in as an X account to <b>act</b> from this app. Everything else here only reads public data.</p>
    <ul><li>Once logged in, every tweet shows Reply, Quote, Like, Retweet, Bookmark, Follow, DM and Delete buttons, and you can compose a tweet or load your bookmarks.</li>
@@ -729,10 +741,10 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="trends" hidden>
-    <header class="page"><h1>Trends</h1><p>What is trending right now, by region.</p></header>
+    <header class="page"><h1>Trending</h1><p>What is trending right now, by region.</p></header>
     <details class="about" data-about="trends"><summary>How this works and what it costs</summary>
       <div><p>What is trending in a region. Pick a region and load.</p>
-   <ul><li>Click a trend to jump to <b>Search</b> with that trend as the query.</li></ul>
+   <ul><li>Click a trend to jump to <b>Find tweets</b> with that trend as the query.</li></ul>
    <p class="cost">Cost: very small, one call per load.</p></div></details>
     <form data-form="trends">
       <label>Region
@@ -748,54 +760,54 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="guide" hidden>
-    <header class="page"><h1>Guide</h1><p>Pick a mode by the question you have.</p></header>
+    <header class="page"><h1>Guide</h1><p>Pick a tool by the question you have.</p></header>
     <p class="hint" style="margin:-6px 0 18px">Search, track and analyse tweets through <a href="https://twitterapi.io" target="_blank" rel="noopener" style="color:var(--accent)">twitterapi.io</a>. Each tab also has a <i>How this works</i> note with the details.</p>
 
     <div class="card" style="margin-bottom:12px">
-      <h3>Which mode should I use?</h3>
+      <h3>Which tool should I use?</h3>
       <table class="guide">
         <tr><th>I want to…</th><th>Use</th><th>Looks at</th><th>Runs</th></tr>
-        <tr><td>See what people say about a topic now</td><td><button class="link" data-goto="search">Search</button></td><td>Latest or top results, up to ~200 tweets</td><td>One request, you wait</td></tr>
-        <tr><td>Understand one account</td><td><button class="link" data-goto="user">User</button></td><td>Profile + their recent tweets</td><td>One request</td></tr>
-        <tr><td>Know what is trending</td><td><button class="link" data-goto="trends">Trends</button></td><td>Trending topics by region</td><td>One request</td></tr>
-        <tr><td>Follow a set of accounts for a topic</td><td><button class="link" data-goto="lists">Lists</button></td><td>Accounts you curate, then their latest tweets</td><td>Saved; load on demand or watch in Monitor</td></tr>
-        <tr><td>Be told when something is posted</td><td><button class="link" data-goto="monitor">Monitor</button></td><td>New tweets from now on</td><td>Server polls on a schedule</td></tr>
-        <tr><td>Study a long period (weeks to years)</td><td><button class="link" data-goto="history">History</button></td><td>Everything in a date range, thousands of tweets</td><td>Background job, resumable</td></tr>
-        <tr><td>Get the gist of many tweets</td><td><button class="link" data-goto="summarize">Summarize</button></td><td>A list, a search, the Monitor feed, or what is on screen</td><td>An AI agent reads and writes you a summary</td></tr>
-        <tr data-feature="agent"><td>Ask a complex question in words</td><td><button class="link" data-goto="agent">Agent</button></td><td>Whatever the agent decides to fetch</td><td>Claude Code, you approve each command</td></tr>
-        <tr data-feature="account"><td>Post, like, follow or DM</td><td><button class="link" data-goto="account">Account</button></td><td>Your X account (write actions)</td><td>One request per action</td></tr>
+        <tr><td>See what people say about a topic now</td><td><button class="link" data-goto="search">Find tweets</button></td><td>Latest or top results, up to ~200 tweets</td><td>One request, you wait</td></tr>
+        <tr><td>Understand one account</td><td><button class="link" data-goto="user">Look up account</button></td><td>Profile + their recent tweets</td><td>One request</td></tr>
+        <tr><td>Know what is trending</td><td><button class="link" data-goto="trends">Trending</button></td><td>Trending topics by region</td><td>One request</td></tr>
+        <tr><td>Follow a set of accounts for a topic</td><td><button class="link" data-goto="lists">Lists and templates</button></td><td>Accounts you curate, then their latest tweets</td><td>Saved; load on demand or watch in Monitor</td></tr>
+        <tr><td>Be told when something is posted</td><td><button class="link" data-goto="monitor">Live feed</button></td><td>New tweets from now on</td><td>Server polls on a schedule</td></tr>
+        <tr><td>Study a long period (weeks to years)</td><td><button class="link" data-goto="history">Archives</button></td><td>Everything in a date range, thousands of tweets</td><td>Background job, resumable</td></tr>
+        <tr><td>Get the gist of many tweets</td><td><button class="link" data-goto="summarize">Ask AI</button></td><td>A list, a search, the Live feed, or what is on screen</td><td>An AI agent reads and writes you a summary</td></tr>
+        <tr data-feature="agent"><td>Ask a complex question in words</td><td><button class="link" data-goto="agent">Ask AI, Chat with Claude Code</button></td><td>Whatever the agent decides to fetch</td><td>Claude Code, you approve each command</td></tr>
+        <tr data-feature="account"><td>Post, like, follow or DM</td><td><button class="link" data-goto="account">Post as X</button></td><td>Your X account (write actions)</td><td>One request per action</td></tr>
       </table>
     </div>
 
     <div class="grid">
-      <div class="card"><h3>Reading a tweet: drill-down</h3>
-        <p>Click the text of any tweet to open a panel with its <b>replies</b> (sortable; expand any reply for its own replies), the <b>conversation</b> around it, <b>quotes</b> and <b>retweeters</b>. Click an author's name to open their profile in <b>User</b>. Esc closes the panel; Back steps through tweets you opened.</p></div>
-      <div class="card"><h3>Reading the charts</h3>
-        <p>On Search, User and History, <b>click a bar</b> in a chart (time bucket, hour, hashtag, author, language, word) to filter the tweet list underneath; <i>show all</i> clears it. Times are in your local time zone.</p></div>
-      <div class="card"><h3>What things cost</h3>
+      <details class="fold" data-fold="guide:reading-a-tweet-drill-down"><summary>Reading a tweet: drill-down</summary><div class="foldbody">
+        <p>Click the text of any tweet to open a panel with its <b>replies</b> (sortable; expand any reply for its own replies), the <b>conversation</b> around it, <b>quotes</b> and <b>retweeters</b>. Click an author's name to open their profile in <b>User</b>. Esc closes the panel; Back steps through tweets you opened.</p></div></details>
+      <details class="fold" data-fold="guide:reading-the-charts"><summary>Reading the charts</summary><div class="foldbody">
+        <p>On Find tweets, Look up account and Archives, <b>click a bar</b> in a chart (time bucket, hour, hashtag, author, language, word) to filter the tweet list underneath; <i>show all</i> clears it. Times are in your local time zone.</p></div></details>
+      <details class="fold" data-fold="guide:what-things-cost"><summary>What things cost</summary><div class="foldbody">
         <ul><li>Tweets: about <b>$0.15 per 1,000</b> ($0.00015 each). An empty call is billed as one tweet.</li>
         <li>Profiles: about $0.18 per 1,000.</li>
         <li>Write actions: 60 credits ($0.0006); login 10,000 credits ($0.10).</li>
-        <li>The <b>Costs</b> tab shows what has actually been spent, per day, per activity and per briefing. <b>Briefings</b> shows each report's cost and an estimate while you set up a schedule.</li><li>Your remaining credits are shown at the bottom of the sidebar. Monitor has a daily spend cap; History asks before it starts.</li></ul></div>
-      <div class="card"><h3>Rate limits</h3>
-        <p>Free accounts allow about one request every 5 seconds, so multi-page loads are slow; the app waits and retries automatically. Paid accounts allow far more, and History can then run up to 12 shards in parallel.</p></div>
-      <div class="card" data-feature="deployed"><h3>Where your data lives</h3>
+        <li>The <b>Costs</b> tab shows what has actually been spent, per day, per activity and per briefing. <b>Briefings</b> shows each report's cost and an estimate while you set up a schedule.</li><li>Your remaining credits are shown at the bottom of the sidebar. Monitor has a daily spend cap; History asks before it starts.</li></ul></div></details>
+      <details class="fold" data-fold="guide:rate-limits"><summary>Rate limits</summary><div class="foldbody">
+        <p>Free accounts allow about one request every 5 seconds, so multi-page loads are slow; the app waits and retries automatically. Paid accounts allow far more, and History can then run up to 12 shards in parallel.</p></div></details>
+      <details class="fold" data-fold="guide:where-your-data-lives" data-feature="deployed"><summary>Where your data lives</summary><div class="foldbody">
         <ul><li>Your twitterapi.io key is a Cloudflare secret. It is never sent to the browser.</li>
         <li>Watches, captured tweets and History collections are stored in this site's own Cloudflare storage and run on Cloudflare timers, so they keep working while your browser is closed.</li>
         <li>Access is limited to the people your Cloudflare Access policy allows.</li>
-        <li>This online version is read-only. The Agent tab and the Account tab (posting, liking, following) only exist when you run the app on your own computer.</li></ul></div>
-      <div class="card" data-feature="local"><h3>Where your data lives</h3>
+        <li>This online version is read-only. The Agent tab and the Account tab (posting, liking, following) only exist when you run the app on your own computer.</li></ul></div></details>
+      <details class="fold" data-fold="guide:where-your-data-lives" data-feature="local"><summary>Where your data lives</summary><div class="foldbody">
         <ul><li><code>.env</code>: your API key. It stays on the server and is never sent to the browser.</li>
         <li><code>.data/history/</code>: collected tweets (JSONL) and job progress.</li>
         <li><code>.data/monitor/</code>: watches, checkpoints and the captured-tweet feed.</li>
         <li><code>.data/session.json</code>: X login cookies, only if you log in on the Account tab.</li>
-        <li>Everything is local; this app listens on 127.0.0.1 only and refuses requests from other websites.</li></ul></div>
-      <div class="card"><h3>Search operators worth knowing</h3>
+        <li>Everything is local; this app listens on 127.0.0.1 only and refuses requests from other websites.</li></ul></div></details>
+      <details class="fold" data-fold="guide:search-operators-worth-knowing"><summary>Search operators worth knowing</summary><div class="foldbody">
         <ul><li><code>from:name</code> tweets by an account; <code>to:name</code> replies to one</li>
         <li><code>"exact phrase"</code>, <code>-word</code> to exclude, <code>a OR b</code></li>
         <li><code>min_faves:100</code>, <code>min_retweets:20</code>, <code>lang:en</code></li>
         <li><code>-filter:replies</code> originals only; <code>filter:media</code> with media</li>
-        <li><code>since_time:</code> / <code>until_time:</code> Unix seconds for date windows (History sets these for you)</li></ul></div>
+        <li><code>since_time:</code> / <code>until_time:</code> Unix seconds for date windows (History sets these for you)</li></ul></div></details>
     </div>
   </section>
 </main>
@@ -959,7 +971,7 @@ function renderListDetail() {
         <select id="lRange" aria-label="Time range"><option value="86400">Past 24 hours</option><option value="604800" selected>Past 7 days</option><option value="2592000">Past 30 days</option></select>
         <select id="lPages" aria-label="Pages per query"><option value="1">Up to 20 per query</option><option value="3" selected>Up to 60 per query</option><option value="5">Up to 100 per query</option></select>
         <button class="go" data-lact="tweets">Load recent tweets</button>
-        <button class="go ghost" data-lact="watch">Watch in Monitor</button>
+        <button class="go ghost" data-lact="watch">Watch in Live feed</button>
         <button class="go ghost" data-lact="search">Search with filters</button>
         <button class="go ghost" data-lact="history">Collect history</button>
         <button class="go ghost" data-lact="copy">Copy handles</button>
@@ -1040,10 +1052,10 @@ async function watchList(l) {
   const members = l.members.filter((m) => !m.missing).map((m) => m.handle);
   if (!members.length) return toast('Add some accounts first');
   const queries = handleQueries(members), perMonth = queries.length * (30 * 86400 / 300) * 0.00015;
-  if (!confirm(`Create ${queries.length} watch${queries.length > 1 ? 'es' : ''} in Monitor for "${l.name}", checking every 5 minutes?\n\nAbout ${money(perMonth)} a month while idle, plus $0.15 per 1,000 tweets found.`)) return;
+  if (!confirm(`Create ${queries.length} watch${queries.length > 1 ? 'es' : ''} in the Live feed for "${l.name}", checking every 5 minutes?\n\nAbout ${money(perMonth)} a month while idle, plus $0.15 per 1,000 tweets found.`)) return;
   for (let i = 0; i < queries.length; i++)
     await post('/mon/add', { kind: 'query', query: queries[i], label: `List: ${l.name}` + (queries.length > 1 ? ` (${i + 1}/${queries.length})` : ''), intervalSec: 300 });
-  toast(`Added ${queries.length} watch${queries.length > 1 ? 'es' : ''}. Find ${queries.length > 1 ? 'them' : 'it'} in Monitor.`);
+  toast(`Added ${queries.length} watch${queries.length > 1 ? 'es' : ''}. Find ${queries.length > 1 ? 'them' : 'it'} in the Live feed.`);
 }
 
 listForm.addEventListener('submit', async (e) => {
@@ -1106,7 +1118,7 @@ function renderHistX() {
   const keep = new Set([...box.querySelectorAll('input[name=xl]:checked')].map((i) => i.value));
   box.innerHTML = xlists.length ? [...xGroupMap()].map(([g, ls]) => `<span class="xhg"><b class="note">${esc(g)}</b>${ls.length > 1 ? ` <button type="button" class="link" data-xall="${esc(g)}">all</button>` : ''}
     ${ls.map((l) => `<label class="pill"><input type="checkbox" name="xl" value="${esc(l.id)}"${keep.has(l.id) ? ' checked' : ''}><span>${esc(l.name)}</span></label>`).join('')}</span>`).join('')
-    : '<span class="note">No X lists yet. Add some in the Lists tab.</span>';
+    : '<span class="note">No X lists yet. Add some under Lists and templates.</span>';
 }
 $('#histXLists').addEventListener('click', (e) => {
   const b = e.target.closest('[data-xall]'); if (!b) return;
@@ -1136,6 +1148,8 @@ function refreshXSource() {
 document.querySelectorAll('input[name=lmode]').forEach((r) => r.addEventListener('change', () => {
   const mode = document.querySelector('input[name=lmode]:checked').value;
   $('#myLists').hidden = mode !== 'my'; $('#xPane').hidden = mode !== 'x'; $('#feedPane').hidden = mode !== 'feeds';
+  $('#tplPane').hidden = mode !== 'audio' && mode !== 'image';
+  if (mode === 'audio' || mode === 'image') window.openTemplates?.(mode);
 }));
 
 // Depth choices: pages per list. A page is 20 posts in "best" mode and about 80 tweets in "newest first".
@@ -1282,7 +1296,7 @@ mf.addEventListener('submit', async (e) => {
   const sec = +mf.interval.value, perMonth = (30 * 86400 / sec) * 0.00015, src = mf.source.value;
   if (src === 'flist') {
     const l = flists.find((x) => x.id === mf.flist.value);
-    if (!l || !l.members.length) return toast('Pick a feed list that has feeds (Lists tab, Feed lists)');
+    if (!l || !l.members.length) return toast('Pick a feed list that has feeds (Lists and templates, Feed lists)');
     const r = await watchFeedList(l, sec);
     toast([r.added && `Added ${r.added}`, r.had && `${r.had} already watched`, r.failed.length && `could not add: ${r.failed.join('; ')}`].filter(Boolean).join(', ') + '. The first check runs now.');
     return;
@@ -1444,7 +1458,7 @@ async function initFeatures() {
   if (features.xlists) loadX();
   if (features.sources) loadFLists();
   // Open the tab named in the address (/admin/#costs); otherwise land on Briefings when they exist.
-  const want = location.hash.slice(1), btn = want && document.querySelector(`#tabs button[data-tab="${CSS.escape(want)}"]`);
+  const want = location.hash.slice(1), wantTab = want === 'agent' ? 'summarize' : want === 'library' ? 'lists' : want, btn = want && document.querySelector(`#tabs button[data-tab="${CSS.escape(wantTab)}"]`);
   if (btn && !btn.hidden) show(want); else if (features.publish) show('publish');
   if (features.account) fetch('/act/session').then((r) => r.json()).then(setSession).catch(() => {});
   loadMon();
@@ -1505,7 +1519,7 @@ function renderFSLists() {
   const box = $('#fsLists'); if (!box) return;
   const keep = new Set([...box.querySelectorAll('input:checked')].map((i) => i.value));
   box.innerHTML = flists.length ? flists.map((l) => `<label class="pill"><input type="checkbox" value="${esc(l.id)}"${keep.has(l.id) || (!keep.size && flists.length === 1) ? ' checked' : ''}><span>${esc(l.name)}<small>${l.members.length}</small></span></label>`).join('')
-    : '<span class="note">No feed lists yet. Create one in the Lists tab (Feed lists).</span>';
+    : '<span class="note">No feed lists yet. Create one under Lists and templates (Feed lists).</span>';
 }
 function renderFLists() {
   renderFSLists();
@@ -1547,7 +1561,7 @@ function renderFLDetail() {
       <select id="flHours" aria-label="Period"><option value="24">Past 24 hours</option><option value="168" selected>Past 7 days</option><option value="720">Past 30 days</option></select>
       <button class="go" data-flact="preview">Show latest items</button>
       <button class="go" data-flact="summarize">Summarize latest</button>
-      <button class="go ghost" data-flact="watch">Watch in Monitor</button>
+      <button class="go ghost" data-flact="watch">Watch in Live feed</button>
       <button class="go ghost" data-flact="copy">Copy addresses</button>
     </div></div><div id="flOut" style="margin-top:14px"></div>`;
   renderFLMembers();
@@ -1614,7 +1628,7 @@ $('#flDetail').addEventListener('click', async (e) => {
       if (!l.members.length) return toast('Add some feeds first');
       if (!confirm(`Add ${l.members.length} watch${l.members.length > 1 ? 'es' : ''} to Monitor for "${l.name}", checking every 15 minutes? These sources are free.`)) return;
       const r = await watchFeedList(l, 900);
-      toast([r.added && `Added ${r.added}`, r.had && `${r.had} already watched`, r.failed.length && `could not add: ${r.failed.join('; ')}`].filter(Boolean).join(', ') + '. Find them in Monitor.');
+      toast([r.added && `Added ${r.added}`, r.had && `${r.had} already watched`, r.failed.length && `could not add: ${r.failed.join('; ')}`].filter(Boolean).join(', ') + '. Find them in the Live feed.');
       try { mon = await (await fetch('/mon/state')).json(); renderWatches(); } catch {}
     } else if (b.dataset.flact === 'copy') {
       await navigator.clipboard.writeText(l.members.map((m) => (m.source === 'hn' ? `hn: ${m.query}` : m.query)).join('\n')); toast('Copied');
@@ -1693,14 +1707,14 @@ sf.addEventListener('submit', async (e) => {
   if (sumAbort) return;
   const what = sf.what.value, body = { length: sf.len.value, instruction: sf.topic.value.trim() };
   if (!$('#sumModelRow').hidden) body.model = $('#sumModel').value;
-  if (what === 'list') { if (!sf.list.value) return toast('Create a list first (Lists tab)'); body.source = { type: 'list', listId: sf.list.value, hours: +sf.hours.value }; }
-  else if (what === 'flist') { if (!sf.flsrc.value) return toast('Make a feed list first (Lists tab, Feed lists)'); body.source = { type: 'flist', listId: sf.flsrc.value, hours: +sf.flhours.value }; }
+  if (what === 'list') { if (!sf.list.value) return toast('Create a list first (Lists and templates)'); body.source = { type: 'list', listId: sf.list.value, hours: +sf.hours.value }; }
+  else if (what === 'flist') { if (!sf.flsrc.value) return toast('Make a feed list first (Lists and templates, Feed lists)'); body.source = { type: 'flist', listId: sf.flsrc.value, hours: +sf.flhours.value }; }
   else if (what === 'search') {
     let q = sf.q.value.trim(); if (!q) return toast('Enter a search');
     if (+sf.swin.value) q += ' since_time:' + (Math.floor(Date.now() / 1000) - sf.swin.value * 3600);
     body.source = { type: 'search', query: q, sort: sf.sort.value, pages: 2 };
   } else if (what === 'xlist') {
-    const v = sf.xsrc.value; if (!v) return toast('Import some X lists first (Lists tab, X Lists)');
+    const v = sf.xsrc.value; if (!v) return toast('Import some X lists first (Lists and templates, X lists)');
     const ids = v.startsWith('group:') ? xlists.filter((l) => l.groups.includes(v.slice(6))).map((l) => l.id) : [v.slice(5)];
     body.source = { type: 'xlist', listIds: ids.slice(0, 20), hours: +sf.xhours.value, pages: 2, mode: sf.xmode.value, minFaves: +sf.xmin.value };
   } else if (what === 'feed') body.source = { type: 'feed', limit: 100, watch: sf.watch.value || undefined, source: sf.feedSource.value || undefined };
@@ -2543,7 +2557,7 @@ function renderListPills(box) {
   const usable = lists.filter((l) => l.members.some((m) => !m.missing));
   box.innerHTML = usable.length
     ? usable.map((l) => `<label class="pill"><input type="checkbox" name="lists" value="${esc(l.id)}"${keep.has(l.id) ? ' checked' : ''}><span>${esc(l.name)}<small>${l.members.filter((m) => !m.missing).length}</small></span></label>`).join('')
-    : '<span class="note">No lists yet. Create one in the Lists tab to search only within chosen accounts.</span>';
+    : '<span class="note">No lists yet. Create one under Lists and templates to search only within chosen accounts.</span>';
 }
 function refreshListConsumers() {
   renderListPills($('#searchLists')); renderListPills($('#histLists'));
@@ -2655,9 +2669,24 @@ $('#trends').addEventListener('click', (e) => {
   const f = $('form[data-form=search]'); f.reset(); f.query.value = a.dataset.q; refreshSearchUi(); f.requestSubmit();
 });
 
+// Remember which help boxes and folded sections the person opened.
+const foldKey = (d) => d.dataset.fold || (d.dataset.about ? 'about:' + d.dataset.about : '');
+window.restoreFolds = (root = document) => root.querySelectorAll('details[data-fold],details[data-about]').forEach((d) => {
+  let v = null; try { v = localStorage.getItem('fold:' + foldKey(d)); } catch {}
+  if (v !== null) d.open = v === '1';
+});
+document.addEventListener('toggle', (e) => {
+  const d = e.target, k = d instanceof HTMLDetailsElement && foldKey(d); if (!k) return;
+  try { localStorage.setItem('fold:' + k, d.open ? '1' : '0'); } catch {}
+}, true);
+restoreFolds();
+
 function show(tab) {
+  if (tab === 'library') tab = 'lists';
   document.querySelectorAll('main > section').forEach((s) => (s.hidden = s.id !== tab));
-  document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  const navTab = tab === 'agent' ? 'summarize' : tab;
+  document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === navTab));
+  document.querySelectorAll('input[name=askmode]').forEach((r) => { r.checked = r.value === tab; });
   if (tab === 'history') pollJobs();
   if (tab === 'monitor') { clearUnseen(); renderFeed(); }
   if (tab === 'lists') loadLists();
@@ -2666,6 +2695,7 @@ function show(tab) {
   if (tab === 'publish') window.loadPublish?.();
   if (location.hash.slice(1) !== tab && history.replaceState) history.replaceState(null, '', '#' + tab);
 }
+document.querySelectorAll('input[name=askmode]').forEach((r) => r.addEventListener('change', () => show(r.value)));
 document.addEventListener('click', (e) => { const g = e.target.closest('[data-tabgo]'); if (g) { e.preventDefault(); show(g.dataset.tabgo); } });
 $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) show(b.dataset.tab); });
 
@@ -2700,19 +2730,15 @@ async function loadTemplates() { try { const r = await call('audio-templates'); 
 
 async function load() {
   topics = await call('topics');
-  renderList(); if (sel && sel !== '@templates' && sel !== '@imgtemplates') renderDetail(false);
+  renderList(); if (sel) renderDetail(false);
   clearTimeout(timer); if (topics.some((t) => busy(t) || audioBusy(t))) timer = setTimeout(() => { if (!$('#publish').hidden) load().catch(() => {}); }, 5000);
 }
 function renderList() {
-  $('#pubTplBtn').className = sel === '@templates' ? 'primary' : 'sec';
-  $('#pubImgTplBtn').className = sel === '@imgtemplates' ? 'primary' : 'sec';
   $('#pubTopics').innerHTML = topics.map((t) => `<button class="t ${t.slug === sel ? 'on' : ''}" data-slug="${esc(t.slug)}">
     <b>${esc(t.title)}</b><small>/${esc(t.slug)} · ${busy(t) ? 'running…' : t.enabled ? 'next ' + when(t.nextRun) : 'paused'}</small></button>`).join('') || '<p class="muted">No topics yet.</p>';
 }
 $('#pubTopics').addEventListener('click', (e) => { const b = e.target.closest('[data-slug]'); if (b) { sel = b.dataset.slug; renderList(); renderDetail(true); } });
 $('#pubNew').onclick = () => { sel = '+new'; renderList(); renderDetail(true); };
-$('#pubTplBtn').onclick = async () => { sel = '@templates'; renderList(); await loadTemplates(); renderTemplates(); };
-$('#pubImgTplBtn').onclick = async () => { sel = '@imgtemplates'; renderList(); await loadImgTemplates(); renderImgTemplates(); };
 
 // How an X list is read. "Best posts": X returns the period's top posts per list (no retweets or replies, at least N likes): 20 a page,
 // and the data cost is only what comes back. "Newest first": the list timeline, 80 tweets a page, retweets included.
@@ -2789,8 +2815,6 @@ function syncAudioNote(form) {
 }
 
 function renderDetail(resetForm) {
-  if (sel === '@templates') return renderTemplates();
-  if (sel === '@imgtemplates') return renderImgTemplates();
   const isNew = sel === '+new', t = isNew ? { sources: [{ type: 'search' }], intervalHours: 24, hourUtc: 6, length: 'standard', enabled: true, autoPublish: false, listed: true, model: '', maxCost: 0, audioTemplate: '', audioAuto: false } : topics.find((x) => x.slug === sel);
   if (!t) { $('#pubDetail').innerHTML = ''; return; }
   const d = $('#pubDetail');
@@ -2803,10 +2827,13 @@ function renderDetail(resetForm) {
       <label>Title <input type="text" name="title" required maxlength="80" value="${esc(t.title)}"></label>
     </div>
     <label>Shown under the title (also tells the summarizer the scope) <input type="text" name="description" maxlength="300" value="${esc(t.description)}"></label>
-    <div><b>Sources</b> <span class="muted">— tweets from the last run interval are fetched from each and merged</span>
-      <div id="pubSources" style="display:grid;gap:8px;margin-top:8px">${t.sources.map(srcRow).join('')}</div>
-      <p><button type="button" class="sec" id="pubAddSrc">Add source</button></p></div>
-    <label>Instruction for the summarizer (optional) <textarea name="instruction" rows="8" maxlength="8000" style="min-height:180px" placeholder="Write in Swedish. Focus on party leaders and policy announcements.">${esc(t.instruction)}</textarea></label>
+    <details class="fold" data-fold="topic:sources" open><summary>Sources<span class="hint">what the briefing is written from</span></summary><div class="foldbody">
+      <p class="muted" style="margin:0">Items from the last run interval are fetched from each source and merged.</p>
+      <div id="pubSources" style="display:grid;gap:8px">${t.sources.map(srcRow).join('')}</div>
+      <p style="margin:0"><button type="button" class="sec" id="pubAddSrc">Add source</button></p></div></details>
+    <details class="fold" data-fold="topic:instruction"${t.instruction ? ' open' : ''}><summary>Instruction for the summarizer<span class="hint">${t.instruction ? esc(t.instruction.slice(0, 60)) : 'optional'}</span></summary><div class="foldbody">
+      <textarea name="instruction" rows="8" maxlength="8000" style="min-height:180px" placeholder="Write in Swedish. Focus on party leaders and policy announcements.">${esc(t.instruction)}</textarea></div></details>
+    <details class="fold" data-fold="topic:schedule" open><summary>Schedule and model<span class="hint">when it runs, length, cost limit</span></summary><div class="foldbody">
     <div class="row">
       <label>Runs <select name="intervalHours">${[[6, 'every 6 hours'], [12, 'every 12 hours'], [24, 'daily'], [48, 'every other day'], [168, 'weekly']].map(([v, l]) => `<option value="${v}" ${t.intervalHours === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>First run at (UTC hour) <input type="number" name="hourUtc" min="0" max="23" value="${t.hourUtc}"></label>
@@ -2820,25 +2847,25 @@ function renderDetail(resetForm) {
       <label class="check"><input type="checkbox" name="fallbackOn" ${fallbackOn(t) ? 'checked' : ''}> If that model cannot start (the free Cloudflare allowance is used up, no capacity), write it with an OpenRouter model instead</label>
       <label>Fallback model <select name="fallback">${models.filter((m) => m.provider === 'openrouter').map((m) => `<option value="${esc(m.id)}" ${fallbackId(t) === m.id ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select></label>
       <p class="muted" id="pubFbNote" style="margin:0"></p></div>` : feat.summaryProvider === 'openrouter' ? '' : '<p class="muted" style="margin:0">To offer OpenRouter models and a fallback, add the <code>OPENROUTER_API_KEY</code> secret (see DEPLOY.md).</p>'}
-    <div class="card" style="background:var(--bg);padding:12px 14px;display:grid;gap:8px">
-      <b>Picture</b>
+    </div></details>
+    <details class="fold" data-fold="topic:picture"><summary>Picture<span class="hint">${imgTemplates.length ? 'illustration for each briefing' : 'no templates yet'}</span></summary><div class="foldbody">
       ${imgTemplates.length ? `<label>Image template (model and prompt) <select name="imageTemplate">${imgTemplates.map((x) => `<option value="${esc(x.id)}" ${(t.imageTemplate || imgTemplates[0].id) === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
         <label class="check"><input type="checkbox" name="imageAuto" ${t.imageAuto ? 'checked' : ''}> Create the picture automatically when a briefing is written (otherwise make it by hand on each issue)</label>
         <p class="muted" id="pubImageNote" style="margin:0"></p>` : '<p class="muted" style="margin:0">No image templates yet. Create one first.</p>'}
       ${imgInfo.configured ? '' : '<p class="perr" style="margin:0">Pictures are not set up: add the <code>REPLICATE_API_TOKEN</code> secret (see DEPLOY.md).</p>'}
       <p class="muted" style="margin:0">Templates are shared by all topics. <a href="#" data-imgtplgo>Edit the image templates</a>. The picture appears at the top of the public post once the briefing is published.</p>
-    </div>
-    <div class="card" style="background:var(--bg);padding:12px 14px;display:grid;gap:8px">
-      <b>Audio version</b>
+    </div></details>
+    <details class="fold" data-fold="topic:audio"><summary>Audio version<span class="hint">${templates.length ? 'read aloud' : 'no templates yet'}</span></summary><div class="foldbody">
       ${templates.length ? `<label>Delivery template (voice and style) <select name="audioTemplate">${templates.map((x) => `<option value="${esc(x.id)}" ${(t.audioTemplate || templates[0].id) === x.id ? 'selected' : ''}>${esc(x.name)} · ${esc(x.voice)}</option>`).join('')}</select></label>
         <label class="check"><input type="checkbox" name="audioAuto" ${t.audioAuto ? 'checked' : ''}> Create the audio automatically when a briefing is written (otherwise make it by hand on each issue)</label>
         <p class="muted" id="pubAudioNote" style="margin:0"></p>` : '<p class="muted" style="margin:0">No audio templates yet. Create one first.</p>'}
       ${audioInfo.configured ? '' : '<p class="perr" style="margin:0">Audio is not set up: add the <code>REPLICATE_API_TOKEN</code> secret (see DEPLOY.md).</p>'}
-      <p class="muted" style="margin:0">Templates are shared by all topics. <a href="#" data-tplgo>Edit the templates</a>. The audio appears at the top of the public post once the briefing is published.</p>
-    </div>
+      <p class="muted" style="margin:0">Templates are shared by all topics. <a href="#" data-tplgo>Edit the audio templates</a>. The audio appears at the top of the public post once the briefing is published.</p>
+    </div></details>
+    <details class="fold" data-fold="topic:publishing" open><summary>Publishing<span class="hint">schedule, drafts, visibility</span></summary><div class="foldbody">
     <label class="check"><input type="checkbox" name="enabled" ${t.enabled ? 'checked' : ''}> Run on schedule</label>
     <label class="check"><input type="checkbox" name="autoPublish" ${t.autoPublish ? 'checked' : ''}> Publish automatically (otherwise each run waits as a draft for you to approve)</label>
-    <label class="check"><input type="checkbox" name="listed" ${t.listed ? 'checked' : ''}> Show on the landing page (off: only people with the link find it)</label>
+    <label class="check"><input type="checkbox" name="listed" ${t.listed ? 'checked' : ''}> Show on the landing page (off: only people with the link find it)</label></div></details>
     <div class="actions"><button class="primary" type="submit">Save</button>
       ${isNew ? '' : `<button type="button" class="sec" id="pubRun" ${busy(t) ? 'disabled' : ''}>${busy(t) ? 'Running…' : 'Run now'}</button>
       <button type="button" class="sec" id="pubImageLatest" title="Draws a picture for the newest briefing from the text already written: no new tweets, no new summary."></button>
@@ -2846,7 +2873,7 @@ function renderDetail(resetForm) {
       <a href="/${esc(t.slug)}" target="_blank">Public page</a><button type="button" class="danger" id="pubDel" style="margin-left:auto">Delete topic</button>`}</div>
     ${isNew ? '' : `<p class="muted" style="margin:0">Last run: ${when(t.lastRun)}${t.lastError ? ` · <span class="perr">${esc(t.lastError)}</span>` : ''} · Next: ${t.enabled ? when(t.nextRun) : 'paused'}</p>`}
   </form></div><div id="pubIssues"></div><div id="pubEditor"></div>`;
-  syncModel($('form', d)); syncEstimate($('form', d)); syncAudioNote($('form', d)); syncImageNote($('form', d));
+  syncModel($('form', d)); syncEstimate($('form', d)); syncAudioNote($('form', d)); syncImageNote($('form', d)); window.restoreFolds?.(d);
   renderIssues(t);
 }
 
@@ -2977,18 +3004,14 @@ $('#pubDetail').addEventListener('click', async (e) => {
     else if (e.target.id === 'pubCloseMd') $('#pubEditor').innerHTML = '';
     else if (e.target.dataset.image === 'create') { const id = e.target.dataset.id; await call('image-create', { slug: sel, id }); toast('Drawing the picture…'); await load(); await openEditor(id); followImage(id); }
     else if (e.target.dataset.image === 'delete') { if (confirm('Delete the picture for this briefing? It disappears from the public page.')) { const id = e.target.dataset.id; await call('image-delete', { slug: sel, id }); await load(); await openEditor(id); } }
-    else if (e.target.closest('[data-imgtplgo]')) { e.preventDefault(); sel = '@imgtemplates'; renderList(); renderImgTemplates(); }
-    else if (imgTplClick(e)) { /* handled by the image template manager */ }
     else if (e.target.dataset.audio === 'create') { const id = e.target.dataset.id; await call('audio-create', { slug: sel, id }); toast('Creating the audio…'); await load(); await openEditor(id); followAudio(id); }
     else if (e.target.dataset.audio === 'delete') { if (confirm('Delete the audio for this briefing? The player disappears from the public page.')) { const id = e.target.dataset.id; await call('audio-delete', { slug: sel, id }); await load(); await openEditor(id); } }
-    else if (e.target.closest('[data-tplgo]')) { e.preventDefault(); sel = '@templates'; renderList(); renderTemplates(); }
-    else if (tplClick(e)) { /* handled by the template manager */ }
+    else if (e.target.closest('[data-imgtplgo]')) { e.preventDefault(); openLibrary('image'); }
+    else if (e.target.closest('[data-tplgo]')) { e.preventDefault(); openLibrary('audio'); }
   } catch (err) { toast(err.message); }
 });
 $('#pubDetail').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (e.target.id === 'pubTplForm') return saveTemplate(e.target);
-  if (e.target.id === 'pubImgForm') return saveImgTemplate(e.target);
   try { const t = await call('save-topic', readForm(e.target)); sel = t.slug; toast('Saved'); await load(); renderDetail(true); }
   catch (err) { toast(err.message); }
 });
@@ -3007,9 +3030,10 @@ let voices = [];
 let editingTpl = null;
 
 function renderTemplates() {
-  const d = $('#pubDetail');
+  const d = $('#libTpl');
   d.innerHTML = `<div class="card"><h2>Audio templates</h2>
-    <p class="muted">A template is a voice plus how it is read: the style, an intro and outro, and pauses. All topics share them; each topic picks one. Audio is made with Gemini TTS on Replicate (Flash, or the cheaper Flash-Lite)${audioInfo.mock ? ' (development mode: silent test audio)' : ''}. Prices are shown per template.</p>
+    <p class="muted">A voice plus how it is read. All briefings share the templates; each briefing picks one.</p>
+    <details class="about" data-about="audio-templates"><summary>How audio templates work</summary><div><p>A template is a voice plus how it is read: the style, an intro and outro, and pauses. Audio is made with Gemini TTS on Replicate (Flash, or the cheaper Flash-Lite)${audioInfo.mock ? ' (development mode: silent test audio)' : ''}. Prices are shown per template.</p></div></details>
     ${audioInfo.configured ? '' : '<p class="perr">Audio is not set up: add the <code>REPLICATE_API_TOKEN</code> secret (see DEPLOY.md). You can still edit templates.</p>'}
     <div style="display:grid;gap:10px">${templates.map((x) => `<div class="card" style="padding:12px 14px" data-tid="${esc(x.id)}"><div class="actions"><b>${esc(x.name)}</b>
         <span class="spill">${esc(x.voice)}</span><span class="spill">${esc(ttsModels.find((m) => m.id === x.model)?.label.replace(/ \(.*/, '') ?? x.model)}</span><span class="spill">≈ ${usd(audioPrice(x.model))} per 3,000 characters</span>
@@ -3043,8 +3067,8 @@ function renderTplEditor(t) {
 function syncTplCost() {
   const f = $('#pubTplForm'), el = $('#pubTplCost'); if (f && el) el.textContent = `${audioNote(f.elements.model.value)} A sample costs about ${usd(audioPrice(f.elements.model.value, 450))}.`;
 }
-$('#pubDetail').addEventListener('input', (e) => { if (e.target.closest('#pubTplForm')) syncTplCost(); });
-$('#pubDetail').addEventListener('change', (e) => { if (e.target.closest('#pubTplForm')) syncTplCost(); });
+$('#libTpl').addEventListener('input', (e) => { if (e.target.closest('#pubTplForm')) syncTplCost(); });
+$('#libTpl').addEventListener('change', (e) => { if (e.target.closest('#pubTplForm')) syncTplCost(); });
 const formTpl = (f) => ({ ...Object.fromEntries(new FormData(f)), id: f.dataset.id });
 
 // Returns true if the click was for the template manager.
@@ -3077,9 +3101,10 @@ async function saveTemplate(f) {
 
 // ---- Image templates: an image model plus a prompt that is combined with the briefing text. Shared by all topics.
 function renderImgTemplates() {
-  const d = $('#pubDetail');
+  const d = $('#libTpl');
   d.innerHTML = `<div class="card"><h2>Image templates</h2>
-    <p class="muted">A template is an image model plus a prompt. The prompt is combined with the briefing: <code>{title}</code>, <code>{date}</code>, <code>{tldr}</code> (the headline summary) and <code>{briefing}</code> (the start of the text) are filled in, and a prompt that uses neither of the last two gets the start of the briefing added after it. All topics share the templates; each topic picks one. Pictures are made on Replicate${imgInfo.mock ? ' (development mode: placeholder pictures)' : ''}; the price is per picture and depends on the model.</p>
+    <p class="muted">An image model plus a prompt. All briefings share the templates; each briefing picks one.</p>
+    <details class="about" data-about="image-templates"><summary>How image templates work</summary><div><p>A template is an image model plus a prompt. The prompt is combined with the briefing: <code>{title}</code>, <code>{date}</code>, <code>{tldr}</code> (the headline summary) and <code>{briefing}</code> (the start of the text) are filled in, and a prompt that uses neither of the last two gets the start of the briefing added after it. Pictures are made on Replicate${imgInfo.mock ? ' (development mode: placeholder pictures)' : ''}; the price is per picture and depends on the model.</p></div></details>
     ${imgInfo.configured ? '' : '<p class="perr">Pictures are not set up: add the <code>REPLICATE_API_TOKEN</code> secret (see DEPLOY.md). You can still edit templates.</p>'}
     <div style="display:grid;gap:10px">${imgTemplates.map((x) => `<div class="card" style="padding:12px 14px" data-tid="${esc(x.id)}"><div class="actions"><b>${esc(x.name)}</b>
         <span class="spill">${esc(imgModelOf(x.model)?.label ?? x.model)}</span><span class="spill">${esc(x.aspect)}</span><span class="spill">≈ ${usd(imgModelOf(x.model)?.usd ?? 0)} per picture</span>
@@ -3107,7 +3132,7 @@ function renderImgEditor(t) {
 function syncImgCost() {
   const f = $('#pubImgForm'), el = $('#pubImgCost'); if (f && el) el.textContent = `A picture costs about ${usd(imgModelOf(f.elements.model.value)?.usd ?? 0)}; a sample costs the same.`;
 }
-$('#pubDetail').addEventListener('change', (e) => { if (e.target.closest('#pubImgForm')) syncImgCost(); });
+$('#libTpl').addEventListener('change', (e) => { if (e.target.closest('#pubImgForm')) syncImgCost(); });
 const formImgTpl = (f) => ({ ...Object.fromEntries(new FormData(f)), id: f.dataset.id });
 // Returns true if the click was for the image template manager.
 function imgTplClick(e) {
@@ -3137,6 +3162,22 @@ async function saveImgTemplate(f) {
   catch (err) { toast(err.message); }
 }
 
+// The template managers live under Lists and templates; they render into #libTpl.
+$('#libTpl').addEventListener('click', async (e) => { if (!tplClick(e)) imgTplClick(e); });
+$('#libTpl').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (e.target.id === 'pubTplForm') saveTemplate(e.target); else if (e.target.id === 'pubImgForm') saveImgTemplate(e.target);
+});
+function openLibrary(kind) {
+  const r = document.querySelector(`input[name=lmode][value=${kind}]`);
+  show('lists'); if (r) { r.checked = true; r.dispatchEvent(new Event('change')); }
+}
+document.addEventListener('click', (e) => { const g = e.target.closest('[data-libgo]'); if (g) { e.preventDefault(); openLibrary(g.dataset.libgo); } });
+window.openTemplates = async (kind) => {
+  if (!started) { started = true; await init(); } else { await loadTemplates(); await loadImgTemplates(); }
+  if (kind === 'audio') renderTemplates(); else renderImgTemplates();
+  window.restoreFolds?.($('#libTpl'));
+};
 let started = false;
 window.loadPublish = async () => { if (!started) { started = true; await init(); } else await load().catch((err) => toast(err.message)); };
 })();
