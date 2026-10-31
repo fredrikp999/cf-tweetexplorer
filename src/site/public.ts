@@ -22,7 +22,11 @@ interface PubReport { report: { slug: string; title: string; description: string
 interface PubTweet { id: string; url: string; text: string; createdAt: string; lang: string; isReply: boolean; likeCount: number; retweetCount: number; replyCount: number; viewCount: number; author: { userName: string; name: string } }
 interface PubTweets { total: number; pages: number; page: number; sort: 'new' | 'top'; tweets: PubTweet[] }
 /** What every page needs for the rail. */
-interface Ctx { topics: PubTopic[]; lists: PubXList[]; reports: PubReportBrief[] }
+interface PubAList { id: string; name: string; topic: string; handles: string[] }
+interface PubFList { id: string; name: string; topic: string; feeds: { source: 'rss' | 'youtube' | 'hn'; label: string; query: string; hnTag?: string; minPoints?: number }[] }
+// lists: X lists (live on x.com); alists: curated sets of X accounts; flists: curated sets of feeds (RSS, YouTube, Hacker News)
+interface Ctx { topics: PubTopic[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[] }
+const listTotal = (c: Ctx) => c.lists.length + c.alists.length + c.flists.length;
 type PubPage = { topic: TopicInfo; issue: IssueFull; archive: Brief[] };
 
 const ISSUE_ID = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
@@ -81,7 +85,8 @@ h2.sect{font-size:20px;margin:30px 0 12px}
 .listen{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 24px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:12px}
 .listen .lbl{font-size:12.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}.listen audio{flex:1 1 260px;min-width:0;height:38px}.listen .dur{color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 28px}.chips a{padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--text);text-decoration:none;font-size:13.5px}.chips a:hover{border-color:var(--accent)}
-.lgroup{margin:0 0 32px;scroll-margin-top:20px}.lgroup h2{font-size:20px;letter-spacing:-.01em;margin:0 0 12px}.lgroup h2 small{color:var(--muted);font-weight:400;font-size:14px}
+.lgroup{margin:0 0 28px;scroll-margin-top:20px}.lgroup h3{font-size:17px;letter-spacing:-.01em;margin:0 0 10px}.lgroup h3 small,.sect small{color:var(--muted);font-weight:400;font-size:14px}
+.lists .k{color:var(--muted);font-size:13px}.lists details{margin-top:6px;font-size:14px}.lists summary{cursor:pointer;color:var(--muted)}.lists ul.srcs{margin:6px 0 0;padding-left:1.2em}
 .gnote{margin:-4px 0 12px;color:var(--muted);font-size:14.5px;max-width:44rem}
 .lists{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px}
 .lists li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}.lists .lname{font-weight:600;color:var(--text);text-decoration:none}.lists .lname:hover{color:var(--accent)}
@@ -129,7 +134,7 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history'): string {
 <a href="/${esc(t.slug)}/archive"${active!.view === 'archive' ? ' aria-current="page"' : ''}>Previous days${active!.earlier ? ` <small>${active!.earlier}</small>` : ''}</a></div>` : '');
   }).join('');
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Signals<small>Agent Cortex</small></span></a>
-<nav aria-label="Topics"><a href="/"${active || page ? '' : ' aria-current="page"'}>Overview</a>${items ? `<div class="grp">Topics</div>${items}` : ''}${ctx.lists.length || ctx.reports.length || page === 'history' ? '<div class="grp">More</div>' : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${ctx.lists.length ? `<a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>X lists <small>${ctx.lists.length}</small></a>` : ''}</nav>
+<nav aria-label="Topics"><a href="/"${active || page ? '' : ' aria-current="page"'}>Overview</a>${items ? `<div class="grp">Topics</div>${items}` : ''}${listTotal(ctx) || ctx.reports.length || page === 'history' ? '<div class="grp">More</div>' : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${listTotal(ctx) ? `<a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}</nav>
 <div class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.</div></aside>`;
 }
 
@@ -154,10 +159,10 @@ export function landingHtml(ctx: Ctx): string {
 ${t.latest.tldr ? `<p class="tldr">${inline(t.latest.tldr)}</p>` : ''}<div class="foot"><span>${facts}</span><span>Updated ${date(t.latest.publishedAt)}</span></div></a></li>`;
   }).join('');
   return shell('Signals · Agent Cortex', rail(ctx), `<header class="pagehead"><div class="eyebrow">${topics.length ? `${topics.length} topic${topics.length === 1 ? '' : 's'}` : 'Briefings'}</div><h1>Signals</h1>
-<p class="lede">Short briefings on what is being said on X, kept up to date.${ctx.lists.length ? ` <a href="/lists">Browse the ${ctx.lists.length} X lists they draw from &rarr;</a>` : ''}</p></header>
+<p class="lede">Short briefings on what is being said online, drawn from X, news and blog feeds, YouTube and Hacker News, and kept up to date.${listTotal(ctx) ? ` <a href="/lists">Browse the ${listTotal(ctx)} lists they draw from &rarr;</a>` : ''}</p></header>
 ${cards ? `<ul class="topics">${cards}</ul>` : ctx.reports.length ? '' : '<p class="lede">Nothing published yet.</p>'}
 ${ctx.reports.length ? `<h2 class="sect">Reports</h2><ul class="topics">${reportCards(ctx.reports)}</ul>` : ''}`,
-  { description: 'Short briefings on what is being said on X, kept up to date.' });
+  { description: 'Short briefings on what is being said online, from X, feeds, YouTube and Hacker News, kept up to date.' });
 }
 
 // ---- History reports: a collection of tweets with its statistics, published from the admin. Never cost.
@@ -326,22 +331,37 @@ ${days ? `<div class="days">${days}</div>` : '<p class="lede">No earlier briefin
     { title: `${topic.title} · previous days`, description: topic.description, canonical: `${origin}/${topic.slug}/archive` }, ctx);
 }
 
-// The X lists behind the briefings, grouped, each linking out to x.com. Only lists the admin marked public arrive here.
+// The lists behind the briefings: X lists (grouped, each opening on x.com), curated sets of X accounts, and curated sets of feeds.
+// Only lists the admin marked public arrive here.
+const HN_TAGS: Record<string, string> = { front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' };
+function feedLine(f: PubFList['feeds'][number]): string {
+  if (f.source === 'hn') return `<li><b>Hacker News</b> <span class="k">${esc(HN_TAGS[f.hnTag ?? ''] ?? 'stories')}${f.query ? `, matching <code>${esc(f.query)}</code>` : ''}${f.minPoints ? `, ${n(f.minPoints)}+ points` : ''}</span></li>`;
+  const u = (() => { try { const x = new URL(f.query); return x.protocol === 'https:' || x.protocol === 'http:' ? x : null; } catch { return null; } })();
+  const page = f.source === 'youtube' ? pageOfFeed(f.query) : u ? u.origin : null;
+  return `<li>${page ? `<a href="${esc(page)}" rel="noopener noreferrer nofollow" target="_blank">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`} <span class="k">${f.source === 'youtube' ? 'YouTube' : 'RSS feed'}</span></li>`;
+}
 export function listsHtml(ctx: Ctx): string {
   const groups = new Map<string, PubXList[]>();
   for (const l of ctx.lists) for (const g of l.groups.length ? l.groups : ['Other']) (groups.get(g) ?? groups.set(g, []).get(g)!).push(l);
   const entries = [...groups];
-  const sections = entries.map(([g, ls], i) => {
+  const xSections = entries.map(([g, ls], i) => {
     // A sentence shared by three or more lists in a group (e.g. AI Community #1-#8) is said once, under the group's name.
     const counts = new Map<string, number>(); for (const l of ls) if (l.description) counts.set(l.description, (counts.get(l.description) ?? 0) + 1);
     const shared = [...counts].find(([, c]) => c >= 3)?.[0];
-    return `<section class="lgroup" id="g${i}"><h2>${esc(g)} <small>${ls.length}</small></h2>${shared ? `<p class="gnote">${esc(shared)}</p>` : ''}<ul class="lists">${ls.map((l) =>
+    return `<section class="lgroup" id="g${i}"><h3>${esc(g)} <small>${ls.length}</small></h3>${shared ? `<p class="gnote">${esc(shared)}</p>` : ''}<ul class="lists">${ls.map((l) =>
       `<li>${listLink(l.id, l.name).replace('<a ', '<a class="lname" ').replace(/<\/a>$/, ' <span aria-hidden="true">&#8599;</span></a>')}${l.description && l.description !== shared ? `<p>${esc(l.description)}</p>` : ''}</li>`).join('')}</ul></section>`;
   }).join('');
-  return shell('X lists · Signals', rail(ctx, undefined, 'lists'), `<header class="pagehead"><div class="eyebrow">${ctx.lists.length} lists in ${entries.length} groups</div><h1>X lists</h1>
-<p class="lede">The lists on X that these briefings draw from, grouped by theme. Each one opens on X.</p></header>
-<nav class="chips" aria-label="Groups">${entries.map(([g], i) => `<a href="#g${i}">${esc(g)}</a>`).join('')}</nav>${sections}`,
-  { description: 'The lists on X that the Signals briefings draw from, grouped by theme.' });
+  const kinds: { id: string; title: string; count: number; intro: string; body: string }[] = [];
+  if (ctx.lists.length) kinds.push({ id: 'x', title: 'X lists', count: ctx.lists.length, intro: 'Lists kept on X, grouped by theme. Each one opens on X.', body: xSections });
+  if (ctx.alists.length) kinds.push({ id: 'accounts', title: 'Account lists', count: ctx.alists.length, intro: 'Hand-picked sets of X accounts, followed together.',
+    body: `<ul class="lists">${ctx.alists.map((l) => `<li><b>${esc(l.name)}</b> <span class="k">${n(l.handles.length)} accounts</span>${l.topic ? `<p>${esc(l.topic)}</p>` : ''}<details><summary>The accounts</summary><p>${l.handles.map(handleLink).join(', ')}</p></details></li>`).join('')}</ul>` });
+  if (ctx.flists.length) kinds.push({ id: 'feeds', title: 'Feed lists', count: ctx.flists.length, intro: 'Sets of news and blog feeds, YouTube channels and Hacker News searches.',
+    body: `<ul class="lists">${ctx.flists.map((l) => `<li><b>${esc(l.name)}</b> <span class="k">${n(l.feeds.length)} ${l.feeds.length === 1 ? 'source' : 'sources'}</span>${l.topic ? `<p>${esc(l.topic)}</p>` : ''}<details><summary>The sources</summary><ul class="srcs">${l.feeds.map(feedLine).join('')}</ul></details></li>`).join('')}</ul>` });
+  const sections = kinds.map((k) => `<section id="${k.id}"><h2 class="sect">${k.title} <small class="dim">${k.count}</small></h2><p class="gnote">${k.intro}</p>${k.body}</section>`).join('');
+  return shell('Lists · Signals', rail(ctx, undefined, 'lists'), `<header class="pagehead"><div class="eyebrow">${listTotal(ctx)} lists</div><h1>Lists</h1>
+<p class="lede">The sets of accounts and sources that these briefings draw from.</p></header>
+${kinds.length > 1 ? `<nav class="chips" aria-label="Kinds of list">${kinds.map((k) => `<a href="#${k.id}">${k.title}</a>`).join('')}</nav>` : ''}${sections}`,
+  { description: 'The lists of accounts, feeds and channels that the Signals briefings draw from.' });
 }
 
 export const notFoundHtml = (ctx: Ctx) => shell('Not found', rail(ctx), '<header class="pagehead"><h1>Not found</h1><p class="lede">There is no such page. <a href="/">See all topics</a>.</p></header>');
@@ -360,16 +380,17 @@ async function render(env: Env, url: URL): Promise<Response> {
   const parts = url.pathname.split('/').filter(Boolean);
   const html = (body: string, status = 200) => new Response(body, { status, headers: { ...PUBLIC_HEADERS, ...(status === 200 ? { 'cache-control': 'public, max-age=60' } : NO_STORE) } });
   // The rail on every page needs the topics and the public lists.
-  const [topics, lists, reports] = await Promise.all([
+  const listsDo = (path: string) => env.LISTS.getByName('main').fetch(new Request('https://internal/lists/' + path)).then((r) => r.json()).catch(() => []);
+  const [topics, lists, alists, flists, reports] = await Promise.all([
     publish(env, '/pub/topics').then((r) => r.json() as Promise<PubTopic[]>),
-    env.LISTS.getByName('main').fetch(new Request('https://internal/lists/x-public')).then((r) => r.json() as Promise<PubXList[]>).catch(() => [] as PubXList[]),
+    listsDo('x-public') as Promise<PubXList[]>, listsDo('a-public') as Promise<PubAList[]>, listsDo('f-public') as Promise<PubFList[]>,
     env.HISTORY.getByName('main').fetch(new Request('https://internal/hist/pub-reports')).then((r) => r.json() as Promise<PubReportBrief[]>).catch(() => [] as PubReportBrief[]),
   ]);
-  const ctx: Ctx = { topics, lists, reports };
+  const ctx: Ctx = { topics, lists, alists, flists, reports };
   const missing = () => html(notFoundHtml(ctx), 404);
 
   if (parts.length === 0) return html(landingHtml(ctx));
-  if (parts.length === 1 && parts[0] === 'lists') return lists.length ? html(listsHtml(ctx)) : missing();
+  if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
   if (parts[0] === 'history') {
     if (parts.length === 1) return reports.length ? html(historyIndexHtml(ctx)) : missing();
     let sort: 'new' | 'top' = 'new', pageNo = 1;

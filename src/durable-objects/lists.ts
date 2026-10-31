@@ -12,7 +12,8 @@ interface Member {
   handle: string; note: string; addedAt: number; missing: boolean;
   profile: { name: string; avatar: string; followers: number; description: string } | null;
 }
-interface List { id: string; name: string; topic: string; members: Member[]; created: number; updated: number }
+// `public` (account lists and feed lists): shown on the public Lists page. Unset counts as private: only lists you tick are shown.
+interface List { id: string; name: string; topic: string; members: Member[]; created: number; updated: number; public?: boolean }
 
 // X Lists: lists that live on x.com, kept by reference. We store the id, a name, the groups it belongs to and a note;
 // the tweets are read from X's own list timeline when needed, so no accounts are copied.
@@ -21,7 +22,7 @@ export interface XList { id: string; name: string; groups: string[]; description
 const MAX_XLISTS = 300;
 
 // Feed lists: curated sets of feeds (RSS, YouTube, Hacker News searches), read on demand or watched in Monitor.
-export interface FeedList { id: string; name: string; topic: string; members: FeedMember[]; created: number; updated: number }
+export interface FeedList { id: string; name: string; topic: string; members: FeedMember[]; created: number; updated: number; public?: boolean }
 const MAX_FEED_LISTS = 100;
 
 const str = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n);
@@ -44,8 +45,14 @@ function cleanList(raw: Record<string, unknown>, prev?: List): List {
       profile: p ? { name: str(p.name, 80), avatar: https(p.avatar), followers: num(p.followers), description: str(p.description, 200) } : null,
     });
   }
-  return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), name, topic: str(raw.topic, 300), members, created: prev?.created ?? Date.now(), updated: Date.now() };
+  return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), name, topic: str(raw.topic, 300), members, created: prev?.created ?? Date.now(), updated: Date.now(), ...visibility(raw, prev) };
 }
+
+/** `public` is kept when the browser does not mention it, so an older page cannot hide a list by accident. */
+const visibility = (raw: Record<string, unknown>, prev?: { public?: boolean }) => {
+  const v = typeof raw.public === 'boolean' ? raw.public : prev?.public;
+  return v === undefined ? {} : { public: v };
+};
 
 // Whole-list validation, as for lists above: the browser only sends what it found out by asking /lists/f-resolve, and it is checked again here.
 function cleanFeedList(raw: Record<string, unknown>, prev?: FeedList): FeedList {
@@ -65,7 +72,7 @@ function cleanFeedList(raw: Record<string, unknown>, prev?: FeedList): FeedList 
     if (seen.has(k)) continue;
     seen.add(k); members.push(member);
   }
-  return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), name, topic: str(raw.topic, 300), members, created: prev?.created ?? Date.now(), updated: Date.now() };
+  return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), name, topic: str(raw.topic, 300), members, created: prev?.created ?? Date.now(), updated: Date.now(), ...visibility(raw, prev) };
 }
 
 function cleanX(raw: unknown): XList | null {
@@ -106,6 +113,10 @@ export class ListsDO extends DurableObject<Env> {
       if (request.method === 'GET' && name === 'f-all') return json(this.fall());
       // What the public Lists page may show: only lists marked public, and only name, groups and description.
       if (request.method === 'GET' && name === 'x-public') return json(this.xall().filter((x) => x.public !== false).map(({ id, name, groups, description }) => ({ id, name, groups, description })));
+      // Account lists and feed lists marked public: names, topic and members only (no notes, profiles or dates).
+      if (request.method === 'GET' && name === 'a-public') return json(this.all().filter((l) => l.public === true && l.members.length).map((l) => ({ id: l.id, name: l.name, topic: l.topic, handles: l.members.filter((m) => !m.missing).map((m) => m.handle) })));
+      if (request.method === 'GET' && name === 'f-public') return json(this.fall().filter((l) => l.public === true && l.members.length).map((l) => ({ id: l.id, name: l.name, topic: l.topic,
+        feeds: l.members.map((m) => ({ source: m.source, label: m.label, query: m.query, ...(m.source === 'hn' ? { hnTag: m.hnTag, minPoints: m.minPoints } : {}) })) })));
       if (request.method !== 'POST') return json({ error: 'GET or POST required' }, 405);
       const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
       if (name === 'save') {

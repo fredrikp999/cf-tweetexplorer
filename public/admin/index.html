@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tweet Explorer</title>
+<title>Signals admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&display=swap" rel="stylesheet">
@@ -357,7 +357,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 </head>
 <body>
 <aside class="rail">
-  <div class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c9265f"/><polyline pathLength="1" points="5,17 11,17 14,8 18,24 21,14 23,17 27,17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Tweet Explorer</span></div>
+  <div class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c9265f"/><polyline pathLength="1" points="5,17 11,17 14,8 18,24 21,14 23,17 27,17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Signals admin</span></div>
   <nav id="tabs" aria-label="Sections">
     <div class="grp">Work</div>
     <button data-tab="search" class="on"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span>Find tweets</span></button>
@@ -602,7 +602,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
   </section>
 
   <section id="publish" hidden>
-    <header class="page"><h1>Briefings</h1><p>What is summarized on a schedule and published to <a href="/" target="_blank" rel="noopener">the public site</a>. <a href="#costs" data-tabgo="costs">What it costs</a></p></header>
+    <header class="page"><h1>Briefings</h1><p>Summaries of X, feeds, YouTube and Hacker News, written on a schedule and published to <a href="/" target="_blank" rel="noopener">the public site</a>. <a href="#costs" data-tabgo="costs">What it costs</a></p></header>
     <div class="layout">
       <aside><div id="pubTopics"></div><p><button class="primary" id="pubNew">New topic</button></p>
       <div id="pubReports"></div><p class="muted" style="font-size:13px">Voices and picture styles are managed under <a href="#" data-libgo="audio">Audio templates</a> and <a href="#" data-libgo="image">Image templates</a>.</p></aside>
@@ -634,12 +634,12 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
     <header class="page"><h1>Ask AI</h1><p>Have AI read a source and write you the gist.</p>
     <div class="seg askmode" role="tablist" aria-label="Ask AI mode"><label><input type="radio" name="askmode" value="summarize" checked><span>Summarize a source</span></label><label data-feature="agent" hidden><input type="radio" name="askmode" value="agent"><span>Chat with Claude Code</span></label></div></header>
     <details class="about" data-about="summarize"><summary>How this works and what it costs</summary>
-      <div><p>Pick what to summarize and the agent fetches the tweets itself with read-only tools, then writes a summary with links back to the tweets it used.</p>
+      <div><p>Pick what to summarize and the agent fetches the posts or items itself with read-only tools (from X, feeds, YouTube or Hacker News), then writes a summary with links back to what it used.</p>
       <ul><li>Sources: the latest from one of your lists, a search, what the Live feed has captured, the tweets already on your screen (use <b>Summarize these tweets</b> under Find tweets or list results), or just describe what you want.</li>
       <li>It can look up replies or more tweets when it needs context. Everything it does is shown under <i>What the agent did</i>.</li>
       <li>The agent is built with the Strands Agents SDK, and the same code runs here and on Cloudflare. Each run is capped (turns, tokens and tweets) so it can't run away, and it stops if you click Stop or leave the page.</li>
       <li>Pick the AI model under <b>Model</b>; each shows its context size, price and what testing showed. The tweets it reads go to the model provider (OpenRouter, or Anthropic if you configure that).</li></ul>
-      <p class="cost">Cost: the usual twitterapi.io price for the tweets it fetches (about $0.15 per 1,000), plus the model's usage. A typical list summary is about 6,000 tokens in and 1,000 out, roughly $0.002 with the default model; the actual tokens and cost are shown after each run.</p></div></details>
+      <p class="cost">Cost: the usual twitterapi.io price for any X tweets it fetches (about $0.15 per 1,000; feeds, YouTube and Hacker News are free), plus the model's usage. A typical list summary is about 6,000 tokens in and 1,000 out, roughly $0.002 with the default model; the actual tokens and cost are shown after each run.</p></div></details>
 
     <div class="card" id="sumSetup" hidden>
       <h3>One more step to turn this on</h3>
@@ -964,6 +964,7 @@ function renderListDetail() {
   box.innerHTML = `<div class="card">
       <div class="ldh"><input class="ltitle" data-lf="name" value="${esc(l.name)}" maxlength="80" aria-label="List name"><button class="link" data-lact="delete">Delete list</button></div>
       <input class="ltopic" data-lf="topic" value="${esc(l.topic)}" maxlength="300" placeholder="Topic: what is this list for?" aria-label="Topic">
+      <label class="chk"><input type="checkbox" data-lpub ${l.public ? 'checked' : ''}> Show on the public Lists page (the accounts and the topic)</label>
       <form id="addForm" class="addrow"><label class="grow"><span>Add accounts</span>
         <textarea name="handles" rows="2" placeholder="@anthropicai, openai, https://x.com/googledeepmind (paste as many as you like)"></textarea></label>
         <button class="go">Add</button></form>
@@ -1078,7 +1079,8 @@ $('#listDetail').addEventListener('submit', (e) => {
 $('#listDetail').addEventListener('change', async (e) => {
   const l = curList(); if (!l) return;
   try {
-    if (e.target.dataset.lf) { l[e.target.dataset.lf] = e.target.value.trim(); if (!l.name) { l.name = 'Untitled list'; e.target.value = l.name; } await saveList(l); renderLists(); }
+    if (e.target.matches('[data-lpub]')) { l.public = e.target.checked; await saveList(l); toast(l.public ? 'Shown on the public Lists page' : 'Hidden from the public Lists page'); }
+    else if (e.target.dataset.lf) { l[e.target.dataset.lf] = e.target.value.trim(); if (!l.name) { l.name = 'Untitled list'; e.target.value = l.name; } await saveList(l); renderLists(); }
     if (e.target.matches('[data-mnote]')) { l.members.find((m) => m.handle === e.target.closest('.mrow').dataset.h).note = e.target.value.trim(); await saveList(l); }
   } catch (err) { toast(err.message); }
 });
@@ -1396,9 +1398,9 @@ function itemBlock(t, src, { cls = '', extra = '' } = {}) {
 }
 function bumpUnseen(n) {
   if (monVisible()) return;
-  monUnseen += n; const b = $('#monBadge'); b.textContent = monUnseen; b.hidden = false; document.title = `(${monUnseen}) Tweet Explorer`;
+  monUnseen += n; const b = $('#monBadge'); b.textContent = monUnseen; b.hidden = false; document.title = `(${monUnseen}) Signals admin`;
 }
-function clearUnseen() { monUnseen = 0; $('#monBadge').hidden = true; document.title = 'Tweet Explorer'; }
+function clearUnseen() { monUnseen = 0; $('#monBadge').hidden = true; document.title = 'Signals admin'; }
 document.addEventListener('visibilitychange', () => { if (monVisible()) clearUnseen(); });
 
 let notifyOn = false;
@@ -1551,6 +1553,7 @@ function renderFLDetail() {
   box.innerHTML = `<div class="card">
     <div class="ldh"><input class="ltitle" data-flf="name" value="${esc(l.name)}" maxlength="80" aria-label="List name"><button class="link" data-flact="delete">Delete list</button></div>
     <input class="ltopic" data-flf="topic" value="${esc(l.topic)}" maxlength="300" placeholder="Topic: what is this list for?" aria-label="Topic">
+    <label class="chk"><input type="checkbox" data-flpub ${l.public ? 'checked' : ''}> Show on the public Lists page (the sources and the topic)</label>
     <form id="flAdd" class="addrow"><label class="grow"><span>Add channels and feeds</span>
       <textarea name="lines" rows="3" placeholder="One per line: @Fireship, https://www.youtube.com/@TED, a playlist link, or an RSS / Atom address"></textarea></label><button class="go">Add</button></form>
     <details><summary>Add a Hacker News search</summary>
@@ -1606,7 +1609,8 @@ $('#flDetail').addEventListener('submit', async (e) => {
 $('#flDetail').addEventListener('change', async (e) => {
   const l = curFL(); if (!l) return;
   try {
-    if (e.target.dataset.flf) { l[e.target.dataset.flf] = e.target.value; if (!l.name.trim()) return toast('A list needs a name'); await saveFL(l); renderFLists(); refreshSummarize(); }
+    if (e.target.matches('[data-flpub]')) { l.public = e.target.checked; await saveFL(l); toast(l.public ? 'Shown on the public Lists page' : 'Hidden from the public Lists page'); }
+    else if (e.target.dataset.flf) { l[e.target.dataset.flf] = e.target.value; if (!l.name.trim()) return toast('A list needs a name'); await saveFL(l); renderFLists(); refreshSummarize(); }
     else if (e.target.matches('[data-flnote]')) { l.members[+e.target.closest('[data-i]').dataset.i].note = e.target.value; await saveFL(l); }
   } catch (err) { toast(err.message); }
 });
