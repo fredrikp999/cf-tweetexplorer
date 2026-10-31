@@ -417,3 +417,29 @@ describe('expandShorthand', async () => {
     assert.throws(() => expandShorthand('github:nonsense'), /could not read/);
   });
 });
+
+describe('more shorthand and JSON feeds', async () => {
+  const { expandShorthand } = await import('../src/sources/presets.ts');
+  const { parseJsonFeed, withDates } = await import('../src/sources/json.ts');
+  const hash = async (s) => String(s.length);
+  test('expands the further kinds', () => {
+    assert.equal(expandShorthand('trends:se'), 'https://trends.google.com/trending/rss?geo=SE');
+    assert.equal(expandShorthand('trends:'), 'https://trends.google.com/trending/rss?geo=US');
+    assert.equal(expandShorthand('pypi:httpx'), 'https://pypi.org/rss/project/httpx/releases.xml');
+    assert.equal(expandShorthand('npm:@hono/node-server'), 'https://registry.npmjs.org/@hono/node-server');
+    assert.equal(expandShorthand('huggingface:blog'), 'https://huggingface.co/blog/feed.xml');
+    assert.equal(expandShorthand('status:https://www.githubstatus.com/'), 'https://www.githubstatus.com/history.atom');
+    assert.equal(expandShorthand('devto:@ann'), 'https://dev.to/feed/ann');
+    assert.equal(expandShorthand('tildes:~comp'), 'https://tildes.net/~comp/topics.atom');
+    assert.equal(expandShorthand('usgs:4.5_day'), 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.atom');
+    assert.throws(() => expandShorthand('huggingface:nope'), /could not read/);
+  });
+  test('{7d} becomes a date', () => assert.match(withDates('https://x.test/?q=a+created:%3E%7B7d%7D'), /created:%3E\d{4}-\d\d-\d\d$/));
+  test('reads GitHub search and Mastodon trending JSON', async () => {
+    const gh = await parseJsonFeed(JSON.stringify({ items: [{ id: 1, html_url: 'https://github.com/a/b', full_name: 'a/b', description: 'D', owner: { login: 'a' }, created_at: '2026-01-01T00:00:00Z', stargazers_count: 9, open_issues_count: 2 }] }), 'https://api.github.com/search/repositories?q=llm', hash);
+    assert.equal(gh.items[0].title, 'a/b'); assert.equal(gh.items[0].points, 9); assert.equal(gh.items[0].comments, 2);
+    const m = await parseJsonFeed(JSON.stringify([{ id: '1', url: 'https://m.test/@a/1', content: '<p>Hi &amp; bye</p>', account: { acct: 'a' }, created_at: '2026-01-01T00:00:00Z', favourites_count: 5, replies_count: 1 }]), 'https://m.test/api/v1/trends/statuses', hash);
+    assert.equal(m.items[0].text, 'Hi & bye'); assert.equal(m.items[0].points, 5);
+  });
+  test('leaves other addresses to the XML reader', async () => assert.equal(await parseJsonFeed('{}', 'https://example.com/x.json', hash), null));
+});

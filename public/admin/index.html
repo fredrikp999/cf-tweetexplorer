@@ -1295,20 +1295,36 @@ const FEED_TPL = [
   ['Social', [
     ['bsky', 'Bluesky account', 'Handle', 'bsky.app', (v) => `bluesky:${v}`],
     ['mastoU', 'Mastodon account', 'Account', '@name@mastodon.social', (v) => `mastodon:${v}`],
-    ['mastoT', 'Mastodon hashtag', 'Hashtag and server', 'rust@fosstodon.org', (v) => `mastodon:#${v.replace(/^#/, '')}`]]],
+    ['mastoT', 'Mastodon hashtag', 'Hashtag and server', 'rust@fosstodon.org', (v) => `mastodon:#${v.replace(/^#/, '')}`],
+    ['mastoR', 'Mastodon trending posts', 'Server', 'mastodon.social', (v) => `trending:${v}`]]],
   ['News and reference', [
+    ['trends', 'Google Trends (what people search for)', 'Country code (optional)', 'SE', (v) => `trends:${v}`, true],
     ['news', 'Google News search', 'Keywords', 'climate policy', (v) => `news:${v}`],
     ['wikinews', 'Wikinews (new articles)', '', '', () => 'wikinews:', true, true],
     ['wikiP', 'Wikipedia page edits', 'Page title', 'Large language model', (v) => `wikipedia:${v}`],
     ['wikiR', 'Wikipedia recent changes', '', '', () => 'wikipedia:', true, true]]],
   ['Code and research', [
+    ['ghs', 'GitHub new repositories (past week, by stars)', 'Keywords', 'llm agents', (v) => `githubsearch:${v}`],
     ['gh', 'GitHub releases', 'Repository', 'cloudflare/workers-sdk', (v) => `github:${v}`],
     ['arxivC', 'arXiv category', 'Category', 'cs.AI', (v) => `arxiv:${v}`],
-    ['arxivQ', 'arXiv search', 'Keywords', 'diffusion models', (v) => `arxivsearch:${v}`]]],
+    ['arxivQ', 'arXiv search', 'Keywords', 'diffusion models', (v) => `arxivsearch:${v}`],
+    ['hfp', 'Hugging Face daily papers', '', '', () => 'huggingface:papers', true, true],
+    ['hfm', 'Hugging Face trending models', '', '', () => 'huggingface:models', true, true],
+    ['hfs', 'Hugging Face trending spaces', '', '', () => 'huggingface:spaces', true, true],
+    ['hfb', 'Hugging Face blog', '', '', () => 'huggingface:blog', true, true],
+    ['pypi', 'PyPI releases', 'Package', 'httpx', (v) => `pypi:${v}`],
+    ['npm', 'npm releases', 'Package', 'hono', (v) => `npm:${v}`]]],
+  ['Security and status', [
+    ['kev', 'CISA exploited vulnerabilities', '', '', () => 'cisa:kev', true, true],
+    ['status', 'Service status page (incidents)', 'Status page address', 'www.githubstatus.com', (v) => `status:${v}`],
+    ['usgs', 'Earthquakes (USGS)', 'Feed', '4.5_day', (v) => `usgs:${v}`]]],
   ['Writing', [
     ['substack', 'Substack publication', 'Name', 'platformer', (v) => `substack:${v}`],
     ['mediumU', 'Medium author', 'Name', 'name', (v) => `medium:@${v.replace(/^@/, '')}`],
     ['mediumT', 'Medium topic', 'Topic', 'javascript', (v) => `medium:${v}`],
+    ['devtoT', 'DEV.to tag', 'Tag', 'rust', (v) => `devto:${v}`],
+    ['devtoU', 'DEV.to author', 'Name', 'name', (v) => `devto:@${v.replace(/^@/, '')}`],
+    ['tildes', 'Tildes group', 'Group', 'comp', (v) => `tildes:${v}`],
     ['ph', 'Product Hunt (new products)', '', '', () => 'producthunt:', true, true]]],
 ].map(([g, items]) => [g, items.map(([id, name, label, ph, make, optional, none]) => ({ id, name, label, ph, make, optional: !!optional, none: !!none }))]);
 const FEED_TPL_BY_ID = Object.fromEntries(FEED_TPL.flatMap(([, items]) => items.map((t) => [t.id, t])));
@@ -1440,6 +1456,7 @@ function itemBlock(t, src, { cls = '', extra = '' } = {}) {
       ${url ? `<a class="ext" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open" aria-label="Open">${ICON.ext}</a>` : ''}</div>
     <p>${url ? `<a class="tlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><b>${esc(title)}</b></a>` : `<b>${esc(title)}</b>`}${rest ? `\n${esc(rest)}` : ''}</p>
     ${src === 'youtube' ? `<div class="ts"><span title="Views">${cmp(t.viewCount)} views</span></div>` : ''}
+    ${src === 'rss' && (t.likeCount || t.replyCount) ? `<div class="ts"><span title="Stars, upvotes, likes">▲ ${cmp(t.likeCount)}</span><span>${cmp(t.replyCount)} comments</span></div>` : ''}
     ${src === 'hn' ? `<div class="ts"><span title="Points">▲ ${cmp(t.likeCount)}</span>${talk ? `<a href="${esc(talk)}" target="_blank" rel="noopener noreferrer">${cmp(t.replyCount)} comments</a>` : `<span>${cmp(t.replyCount)} comments</span>`}</div>` : ''}
     ${extra}</div></article>`;
 }

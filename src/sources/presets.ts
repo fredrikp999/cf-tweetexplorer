@@ -27,9 +27,20 @@ const PRESETS: Record<string, Preset> = {
   redditsearch: (a) => (a ? `https://www.reddit.com/search.rss?q=${e(a)}&sort=new` : null),
   arxivsearch: (a) => (a ? `https://export.arxiv.org/api/query?search_query=all:${e(a)}&sortBy=submittedDate&sortOrder=descending&max_results=50` : null),
   mastodon: (a) => mastodon(a),
+  trending: (a) => (/^[\w.-]+\.[a-z]{2,}$/i.test(a) ? `https://${a}/api/v1/trends/statuses?limit=40` : null),   // the posts a Mastodon server is talking about
+  trends: (a) => (!a || /^[a-z]{2}$/i.test(a) ? `https://trends.google.com/trending/rss?geo=${(a || 'US').toUpperCase()}` : null),
+  huggingface: (a) => ({ papers: 'https://huggingface.co/api/daily_papers?limit=50', models: 'https://huggingface.co/api/models?sort=trendingScore&limit=40', spaces: 'https://huggingface.co/api/spaces?sort=trendingScore&limit=40', blog: 'https://huggingface.co/blog/feed.xml' } as Record<string, string>)[a.toLowerCase()] ?? null,
+  pypi: (a) => (NAME.test(a) ? `https://pypi.org/rss/project/${a}/releases.xml` : null),
+  npm: (a) => (/^(@[\w.-]+\/)?[\w.-]{1,100}$/.test(a) ? `https://registry.npmjs.org/${a}` : null),
+  cisa: (a) => (!a || a.toLowerCase() === 'kev' ? 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json' : null),
+  devto: (a) => (/^@[\w.-]+$/.test(a) ? `https://dev.to/feed/${a.slice(1)}` : NAME.test(a) ? `https://dev.to/feed/tag/${a}` : null),
+  tildes: (a) => (/^~?[\w.-]{1,40}$/.test(a) ? `https://tildes.net/~${a.replace(/^~/, '')}/topics.atom` : null),
+  status: (a) => { const h = a.replace(/^https?:\/\//i, '').replace(/\/.*$/, ''); return /^[\w.-]+\.[a-z]{2,}$/i.test(h) ? `https://${h}/history.atom` : null; },
+  usgs: (a) => (/^(significant|4\.5|2\.5|1\.0|all)_(hour|day|week|month)$/.test(a) ? `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/${a}.atom` : null),
+  githubsearch: (a) => (a ? `https://api.github.com/search/repositories?q=${e(a)}+created:%3E%7B7d%7D&sort=stars&order=desc&per_page=30` : null),   // new repositories, most starred first
 };
 // Spellings that mean the same.
-const ALIAS: Record<string, string> = { r: 'reddit', so: 'stackoverflow', gh: 'github', bsky: 'bluesky', gnews: 'news', ph: 'producthunt', fediverse: 'mastodon' };
+const ALIAS: Record<string, string> = { r: 'reddit', so: 'stackoverflow', hf: 'huggingface', gh: 'github', bsky: 'bluesky', gnews: 'news', ph: 'producthunt', fediverse: 'mastodon' };
 
 /** `#tag@instance` → the tag's feed; `@user@instance` → the account's feed. */
 function mastodon(a: string): string | null {
@@ -75,6 +86,8 @@ export function expandShorthand(input: string): string | null {
 const EXAMPLES: Record<string, string> = {
   reddit: 'r/rust or reddit: some keywords', lobsters: 'lobsters:rust', github: 'github:owner/repo', arxiv: 'arxiv:cs.AI or arxiv: diffusion models',
   news: 'news: climate policy', stackoverflow: 'stackoverflow:rust', substack: 'substack:name', medium: 'medium:@name or medium:tag',
+  trends: 'trends:SE', huggingface: 'huggingface:papers, models, spaces or blog', pypi: 'pypi:httpx', npm: 'npm:hono', cisa: 'cisa:kev',
+  devto: 'devto:rust or devto:@name', tildes: 'tildes:comp', status: 'status:www.githubstatus.com', usgs: 'usgs:4.5_day', githubsearch: 'githubsearch: llm agents', trending: 'trending:mastodon.social',
   bluesky: 'bluesky:name.bsky.social', mastodon: 'mastodon:#rust@mastodon.social or @name@mastodon.social',
 };
 

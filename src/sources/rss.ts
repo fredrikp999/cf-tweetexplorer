@@ -1,7 +1,8 @@
 // RSS 2.0 and Atom. Workers have no DOMParser, and feeds are regular enough that a small tolerant reader will do.
+import { isJsonFeed, parseJsonFeed, withDates } from './json.ts';
 import type { FetchResult, SourceItem } from './types';
 
-const MAX_BYTES = 3_000_000;
+const MAX_BYTES = 3_000_000, MAX_JSON_BYTES = 12_000_000;
 const MAX_ITEMS = 50;
 
 const NAMED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', mdash: '—', ndash: '–', hellip: '…', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“' };
@@ -77,17 +78,20 @@ export function checkFeedUrl(raw: string): string {
 }
 
 export async function fetchRss(opts: { url: string; etag?: string; lastModified?: string }): Promise<FetchResult & { title: string }> {
-  const headers: Record<string, string> = { accept: 'application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5', 'user-agent': 'TweetExplorer/1.0 (feed reader)' };
+  const headers: Record<string, string> = { accept: 'application/rss+xml, application/json;q=0.9, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5', 'user-agent': 'TweetExplorer/1.0 (feed reader)' };
   if (opts.etag) headers['if-none-match'] = opts.etag;
   if (opts.lastModified) headers['if-modified-since'] = opts.lastModified;
-  const res = await fetch(opts.url, { headers, signal: AbortSignal.timeout(20_000), redirect: 'follow' });
+  const res = await fetch(withDates(opts.url), { headers, signal: AbortSignal.timeout(20_000), redirect: 'follow' });
   if (res.status === 304) { await res.body?.cancel(); return { items: [], unchanged: true, title: '' }; }
   if (!res.ok) { await res.body?.cancel(); throw new Error(`the feed answered HTTP ${res.status}`); }
   const buf = await res.arrayBuffer();
-  if (buf.byteLength > MAX_BYTES) throw new Error('the feed is larger than 3 MB');
+  const limit = isJsonFeed(opts.url) ? MAX_JSON_BYTES : MAX_BYTES;   // an npm package's whole history is several MB of JSON
+  if (buf.byteLength > limit) throw new Error(`the feed is larger than ${limit / 1_000_000} MB`);
   const charset = /charset=([\w-]+)/i.exec(res.headers.get('content-type') ?? '')?.[1] ?? /<\?xml[^>]*encoding=["']([\w-]+)["']/i.exec(new TextDecoder().decode(buf.slice(0, 200)))?.[1] ?? 'utf-8';
   let xml: string;
   try { xml = new TextDecoder(charset).decode(buf); } catch { xml = new TextDecoder().decode(buf); }
+  const json = /^\s*[{[]/.test(xml.slice(0, 50)) ? await parseJsonFeed(xml, opts.url, sha) : null;
+  if (json) return { ...json, cache: { etag: res.headers.get('etag') ?? undefined, lastModified: res.headers.get('last-modified') ?? undefined } };
   if (!/<(rss|feed|rdf:RDF)[\s>]/i.test(xml.slice(0, 3000))) throw new Error('that address is not an RSS or Atom feed');
   const parsed = await parseFeed(xml, opts.url);
   return { ...parsed, cache: { etag: res.headers.get('etag') ?? undefined, lastModified: res.headers.get('last-modified') ?? undefined } };
