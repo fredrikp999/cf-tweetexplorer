@@ -6,9 +6,11 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
 import costsHtml from './apps/costs';
+import signalHtml from './apps/signal';
 
 const MAX_TWEETS = 200;
 const COSTS_UI = 'ui://tweet-explorer/costs-v6.html';
+const SIGNAL_UI = 'ui://tweet-explorer/signal-v1.html';
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const failure = (message: string) => ({ isError: true, content: [{ type: 'text' as const, text: message }] });
@@ -95,12 +97,6 @@ function buildServer(env: Env): McpServer {
     annotations: readOnly,
   }, ({ limit, source }) => ask(env.MONITOR, '/mon/feed', { limit, ...(source ? { source } : {}) }));
 
-  server.registerTool('get_signal', {
-    description: 'Signal: the topics across all watched sources combined into one weighted score. Each source group (a feed list, a kind of source, or a name you gave it) has a weight; a term is scored by how large a share of each group\'s items mention it. Returns the groups, the top terms, the rising terms, the terms found in most groups ("shared") and the terms found almost only in one group ("single"), each with the groups it comes from.',
-    inputSchema: { days: z.number().int().min(1).max(14).default(7).describe('The window; it is compared with the same number of days before it') },
-    annotations: readOnly,
-  }, ({ days }) => ask(env.MONITOR, '/mon/signal', { days }));
-
   // MCP Apps: hosts that support them show the Costs view inline; the others still get the JSON text.
   registerAppTool(server, 'get_costs', {
     description: 'Spend by feature over the last N days (twitterapi.io, language models, audio, pictures).',
@@ -111,6 +107,17 @@ function buildServer(env: Env): McpServer {
 
   registerAppResource(server, 'Costs', COSTS_UI, { mimeType: RESOURCE_MIME_TYPE },
     async () => ({ contents: [{ uri: COSTS_UI, mimeType: RESOURCE_MIME_TYPE, text: costsHtml }] }));
+
+  // The Signal view: the same JSON as the get_signal text, drawn as bars by group. Registered here, after the Costs view, so the two apps sit together.
+  registerAppTool(server, 'get_signal', {
+    description: 'Signal: the topics across all watched sources combined into one weighted score. Each source group (a feed list, a kind of source, or a name you gave it) has a weight; a term is scored by how large a share of each group\'s items mention it. Returns the groups, the top terms, the rising terms, the terms found in most groups ("shared") and the terms found almost only in one group ("single"), each with the groups it comes from.',
+    inputSchema: { days: z.number().int().min(1).max(14).default(7).describe('The window; it is compared with the same number of days before it'), steady: z.boolean().default(false).describe('Also list topics that are at the same level as in the period before (background); by default they are left out'), board: z.string().optional().describe('Only the groups of one top-level Signal (its id or address); the answer lists them under `boards`') },
+    annotations: readOnly,
+    _meta: { ui: { resourceUri: SIGNAL_UI } },
+  }, ({ days, board, steady }) => ask(env.MONITOR, '/mon/signal', { days, board, steady: steady ? 1 : 0 }));
+
+  registerAppResource(server, 'Signal', SIGNAL_UI, { mimeType: RESOURCE_MIME_TYPE },
+    async () => ({ contents: [{ uri: SIGNAL_UI, mimeType: RESOURCE_MIME_TYPE, text: signalHtml }] }));
 
   return server;
 }

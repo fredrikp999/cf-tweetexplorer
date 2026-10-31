@@ -25,7 +25,12 @@ interface PubTweets { total: number; pages: number; page: number; sort: 'new' | 
 interface PubAList { id: string; name: string; topic: string; handles: string[] }
 interface PubFList { id: string; name: string; topic: string; feeds: { source: 'rss' | 'youtube' | 'hn'; label: string; query: string; hnTag?: string; minPoints?: number }[] }
 // lists: X lists (live on x.com); alists: curated sets of X accounts; flists: curated sets of feeds (RSS, YouTube, Hacker News)
-interface Ctx { topics: PubTopic[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[] }
+interface Ctx { topics: PubTopic[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[] }
+interface PubBoard { slug: string; title: string; description: string; groups: string[] }
+// Signal, as the Monitor gives it for the public page: group names and counts, and terms. `parts` is each group's share of a term's score, in the order of `groups`.
+interface PubSigTerm { term: string; label: string; related: string[]; members: string[]; signal: number; change: number | null; isNew: boolean; kind: 'shared' | 'single' | 'mixed'; breadth: number; active: number; top: number; parts: number[] }
+interface PubSignal { slug: string; title: string; description: string; days: number; from: string; to: string; baselineOk: boolean; volumeDays: string[]; groups: Array<{ name: string; weight: number; items: number; perDay: number[] }>;
+  top: PubSigTerm[]; rising: PubSigTerm[]; shared: PubSigTerm[]; single: PubSigTerm[] }
 const listTotal = (c: Ctx) => c.lists.length + c.alists.length + c.flists.length;
 type PubPage = { topic: TopicInfo; issue: IssueFull; archive: Brief[] };
 
@@ -119,13 +124,22 @@ figure.bars span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}figur
 .rail nav{flex-direction:row;overflow-x:auto;gap:6px;padding-bottom:6px}.rail nav a{white-space:nowrap;border:1px solid rgba(255,255,255,.14)}
 .rail .grp,.rail .sub,.railfoot{display:none}.page{padding:24px 18px 56px}.views{display:flex}}
 @media(max-width:520px){.days summary{grid-template-columns:1fr 1rem}.days summary time{grid-column:1}.days summary span{grid-column:1}.days summary::after{grid-row:1/3;grid-column:2}
-figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-template-columns:1fr}}`;
+figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-template-columns:1fr}}
+.sgwin{display:flex;gap:4px;margin:0 0 12px;flex-wrap:wrap}.sgwin a{padding:5px 14px;border-radius:999px;border:1px solid var(--line);color:var(--text);text-decoration:none;font-size:14px;background:var(--card)}.sgwin a[aria-current=page]{border-color:var(--accent);color:var(--accent);font-weight:600}
+.sglegend{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:14px;margin:6px 0 4px}.sglegend i,.sgrow .bar i{display:inline-block}.sglegend i{width:11px;height:11px;border-radius:3px;margin-right:6px}.sglegend small{color:var(--muted)}
+.sgrows{display:flex;flex-direction:column;gap:6px}.sgrow{display:grid;grid-template-columns:minmax(90px,200px) minmax(0,1fr) 3.4rem minmax(0,200px);gap:12px;align-items:center;font-size:15px}
+.sgrow .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.sgrow .t small{display:block;font-weight:400;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}.sgrow .bar{display:flex;height:16px;border-radius:4px;overflow:hidden}.sgrow .bar i{display:block;min-width:2px}
+.sgrow b{text-align:right;font-weight:500;font-variant-numeric:tabular-nums;color:var(--muted)}.sgrow .cs{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+.chip{font-size:12px;padding:0 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}.chip.shared{color:#1a7f5a;border-color:#1a7f5a}.chip.single{color:#7c5cbf;border-color:#7c5cbf}.chip.up{color:var(--accent);border-color:var(--accent)}
+.sglist{list-style:none;margin:0;padding:0}.sglist li{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line);font-size:14.5px}.sglist small{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act.stack>div i{min-height:0}
+@media(max-width:700px){.sgrow{grid-template-columns:minmax(0,1fr) 3.4rem}.sgrow .bar,.sgrow .cs{grid-column:1/-1}.sgrow .cs{justify-content:flex-start}}`;
 
 const MARK = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c9265f"/><polyline points="5,17 11,17 14,8 18,24 21,14 23,17 27,17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 // The left rail on every public page: the brand, the topics (the one you are in opens its views), and a note.
 interface Active { slug: string; title: string; view: 'latest' | 'archive' | 'issue'; earlier: number }
-function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history'): string {
+function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal', board?: string): string {
   const list = [...ctx.topics].sort((a, b) => a.title.localeCompare(b.title));
   if (active && !list.some((t) => t.slug === active.slug)) list.push({ slug: active.slug, title: active.title } as PubTopic);   // an unlisted topic, reached by its link
   const items = list.map((t) => {
@@ -134,7 +148,7 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history'): string {
 <a href="/${esc(t.slug)}/archive"${active!.view === 'archive' ? ' aria-current="page"' : ''}>Previous days${active!.earlier ? ` <small>${active!.earlier}</small>` : ''}</a></div>` : '');
   }).join('');
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Signals<small>Agent Cortex</small></span></a>
-<nav aria-label="Topics"><a href="/"${active || page ? '' : ' aria-current="page"'}>Overview</a>${items ? `<div class="grp">Topics</div>${items}` : ''}${listTotal(ctx) || ctx.reports.length || page === 'history' ? '<div class="grp">More</div>' : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${listTotal(ctx) ? `<a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}</nav>
+<nav aria-label="Topics"><a href="/"${active || page ? '' : ' aria-current="page"'}>Overview</a>${items ? `<div class="grp">Topics</div>${items}` : ''}${listTotal(ctx) || ctx.reports.length || ctx.boards.length || page === 'history' ? '<div class="grp">More</div>' : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>${page === 'signal' && ctx.boards.length > 1 ? `<div class="sub">${ctx.boards.map((b) => `<a href="/signal/${esc(b.slug)}"${b.slug === board ? ' aria-current="page"' : ''}>${esc(b.title)}</a>`).join('')}</div>` : ''}` : ''}${listTotal(ctx) ? `<a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}</nav>
 <div class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.</div></aside>`;
 }
 
@@ -163,6 +177,52 @@ ${t.latest.tldr ? `<p class="tldr">${inline(t.latest.tldr)}</p>` : ''}<div class
 ${cards ? `<ul class="topics">${cards}</ul>` : ctx.reports.length ? '' : '<p class="lede">Nothing published yet.</p>'}
 ${ctx.reports.length ? `<h2 class="sect">Reports</h2><ul class="topics">${reportCards(ctx.reports)}</ul>` : ''}`,
   { description: 'Short briefings on what is being said online, from X, feeds, YouTube and Hacker News, kept up to date.' });
+}
+
+
+// ---- Signal: what the watched sources are talking about, combined. Counted automatically (no AI), from the groups marked public in the admin.
+const SIG_COLORS = ['#1f7a8c', '#e3a008', '#7c5cbf', '#c2410c', '#2f9e6b', '#d6336c', '#4263eb', '#868e96'];
+const sigColor = (i: number) => SIG_COLORS[i % SIG_COLORS.length];
+const sigPct = (x: number) => { const p = x * 100; return (p < 10 ? p.toFixed(1) : String(Math.round(p))) + '%'; };
+
+export function signalIndexHtml(ctx: Ctx): string {
+  const cards = ctx.boards.map((b) => `<li><a class="card" href="/signal/${esc(b.slug)}"><span class="eyebrow">${b.groups.length} group${b.groups.length === 1 ? '' : 's'}</span><h2>${esc(b.title)}</h2>${b.description ? `<p>${esc(b.description)}</p>` : ''}
+<div class="foot"><span>${esc(b.groups.join(' · '))}</span></div></a></li>`).join('');
+  return shell('Signal · Signals', rail(ctx, undefined, 'signal'), `<header class="pagehead"><div class="eyebrow">${ctx.boards.length} signal${ctx.boards.length === 1 ? '' : 's'}</div><h1>Signal</h1>
+<p class="lede">What is being talked about across news, blogs, X and Hacker News, combined into one score per topic, and where each topic shows up.</p></header>
+<ul class="topics">${cards}</ul>`, { description: 'What is being talked about across news, blogs, X and Hacker News, combined into one score per topic.' });
+}
+
+export function signalPageHtml(d: PubSignal, ctx: Ctx): string {
+  const gname = (i: number) => d.groups[i]?.name ?? '';
+  const chips = (t: PubSigTerm) => [
+    d.groups.length > 1 ? (t.kind === 'shared' ? '<span class="chip shared">everywhere</span>' : t.kind === 'single' ? `<span class="chip single">only ${esc(gname(t.top))}</span>` : '<span class="chip">mixed</span>') : '',
+    t.isNew ? '<span class="chip up">new</span>' : t.change !== null && t.change >= 1.5 ? `<span class="chip up">&uarr; &times;${t.change.toFixed(1)}</span>` : '',
+  ].join('');
+  const max = Math.max(1e-9, ...d.top.map((t) => t.signal));
+  const rows = d.top.map((t) => `<div class="sgrow"><span class="t" title="${esc([t.label, ...t.members].join(', '))}">${esc(t.label)}${t.related.length ? `<small>${esc(t.related.join(' · '))}</small>` : ''}</span>
+<span class="bar" style="width:${Math.max(2, (100 * t.signal) / max).toFixed(1)}%" role="img" aria-label="${esc(t.parts.map((p, i) => `${gname(i)} ${Math.round(p * 100)}%`).join(', '))}">${t.parts.map((p, i) => (p >= 0.02 ? `<i style="flex:${p.toFixed(3)};background:${sigColor(i)}" title="${esc(gname(i))}"></i>` : '')).join('')}</span>
+<b>${sigPct(t.signal)}</b><span class="cs">${chips(t)}</span></div>`).join('');
+  const list = (title: string, hint: string, ts: PubSigTerm[], note: (t: PubSigTerm) => string) =>
+    `<section class="panel"><h3>${title}</h3><p class="meta" style="margin:-4px 0 8px">${hint}</p>${ts.length ? `<ul class="sglist">${ts.map((t) => `<li><span>${esc(t.label)}</span><small>${note(t)}</small></li>`).join('')}</ul>` : '<p class="meta">Nothing yet.</p>'}</section>`;
+  const peak = Math.max(1, ...d.volumeDays.map((_, i) => d.groups.reduce((n, g) => n + (g.perDay[i] ?? 0), 0)));
+  const volume = `<div class="act stack" role="img" aria-label="Items per day by group">${d.volumeDays.map((day, i) => {
+    const total = d.groups.reduce((n, g) => n + (g.perDay[i] ?? 0), 0);
+    return `<div style="height:${total ? Math.max(3, (100 * total) / peak) : 0}%" title="${esc(day)}: ${n(total)} items">${d.groups.map((g, j) => `<i style="flex:${g.perDay[i] ?? 0};background:${sigColor(j)}"></i>`).join('')}</div>`;
+  }).join('')}</div><div class="axis"><span>${esc(d.volumeDays[0])}</span><span>${esc(d.volumeDays[d.volumeDays.length - 1])}</span></div>`;
+  const win = [[1, 'Today'], [3, '3 days'], [7, '7 days'], [14, '14 days']].map(([k, label]) => `<a href="/signal/${esc(d.slug)}${k === 7 ? '' : '/' + k}"${d.days === k ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+  return shell(`${d.title} · Signal · Signals`, rail(ctx, undefined, 'signal', d.slug), `<header class="pagehead"><div class="eyebrow">${esc(d.from)}${d.from === d.to ? '' : ' to ' + esc(d.to)}</div><h1>${esc(d.title)}</h1>
+<p class="lede">${d.description ? esc(d.description) + ' ' : ''}What is being talked about across ${d.groups.length === 1 ? 'one group of sources' : `${d.groups.length} groups of sources`}, combined into one score, and where each topic shows up.</p></header>
+<nav class="sgwin" aria-label="Period">${win}</nav>
+<div class="sglegend">${d.groups.map((g, i) => `<span><i style="background:${sigColor(i)}"></i>${esc(g.name)} <small>${n(g.items)} items${g.weight === 1 ? '' : ` &middot; counts &times;${g.weight}`}</small></span>`).join('')}</div>
+<h2 class="sect">What is in the signal</h2>
+${rows ? `<div class="sgrows">${rows}</div><p class="note">Each bar is split by the group the topic comes from, so a bar of one colour is a topic only that group is talking about.</p>` : '<p class="meta">No topic is mentioned often enough yet.</p>'}
+<div class="panels">${list('Everywhere', 'Mentioned in most groups at once', d.shared, (t) => `${t.breadth} of ${t.active} groups`)}
+${d.groups.length > 1 ? list('Only in one group', 'What one kind of source is talking about alone', d.single, (t) => esc(gname(t.top))) : ''}
+${list('Rising', d.baselineOk ? 'More than in the period before' : 'Needs a few more days of data', d.rising, (t) => (t.isNew ? 'new' : `&times;${(t.change ?? 0).toFixed(1)}`))}</div>
+<h2 class="sect">Items per day</h2><section class="panel">${volume}</section>
+<p class="note">Counted automatically from the titles and text of public posts and articles, with no AI involved. A topic's score is the share of a group's items that mention it, averaged over the groups. Topics that are always around at the same level as in the period before are left out, so what is new or growing stands out. It reflects only the sources watched here.</p>`,
+  { description: 'What is being talked about across news, blogs, X and Hacker News, combined into one score, and where each topic shows up.' });
 }
 
 // ---- History reports: a collection of tweets with its statistics, published from the admin. Never cost.
@@ -381,16 +441,25 @@ async function render(env: Env, url: URL): Promise<Response> {
   const html = (body: string, status = 200) => new Response(body, { status, headers: { ...PUBLIC_HEADERS, ...(status === 200 ? { 'cache-control': 'public, max-age=60' } : NO_STORE) } });
   // The rail on every page needs the topics and the public lists.
   const listsDo = (path: string) => env.LISTS.getByName('main').fetch(new Request('https://internal/lists/' + path)).then((r) => r.json()).catch(() => []);
-  const [topics, lists, alists, flists, reports] = await Promise.all([
+  const [topics, lists, alists, flists, reports, boards] = await Promise.all([
     publish(env, '/pub/topics').then((r) => r.json() as Promise<PubTopic[]>),
     listsDo('x-public') as Promise<PubXList[]>, listsDo('a-public') as Promise<PubAList[]>, listsDo('f-public') as Promise<PubFList[]>,
     env.HISTORY.getByName('main').fetch(new Request('https://internal/hist/pub-reports')).then((r) => r.json() as Promise<PubReportBrief[]>).catch(() => [] as PubReportBrief[]),
+    env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/signal-public-boards')).then((r) => r.json() as Promise<PubBoard[]>).catch(() => [] as PubBoard[]),
   ]);
-  const ctx: Ctx = { topics, lists, alists, flists, reports };
+  const ctx: Ctx = { topics, lists, alists, flists, reports, boards };
   const missing = () => html(notFoundHtml(ctx), 404);
 
   if (parts.length === 0) return html(landingHtml(ctx));
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
+  if (parts[0] === 'signal') {
+    if (parts.length === 1) return ctx.boards.length ? html(signalIndexHtml(ctx)) : missing();
+    const days = parts.length === 2 ? 7 : Number(parts[2]);
+    if (parts.length > 3 || !SLUG.test(parts[1]) || ![1, 3, 7, 14].includes(days) || !ctx.boards.some((b) => b.slug === parts[1])) return missing();
+    const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public?slug=${parts[1]}&days=${days}`));
+    const d = (await r.json().catch(() => null)) as PubSignal | null;
+    return r.ok && d?.groups?.length ? html(signalPageHtml(d, ctx)) : missing();
+  }
   if (parts[0] === 'history') {
     if (parts.length === 1) return reports.length ? html(historyIndexHtml(ctx)) : missing();
     let sort: 'new' | 'top' = 'new', pageNo = 1;

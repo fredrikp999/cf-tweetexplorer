@@ -36,6 +36,8 @@ export interface ScoreInput {
   items: Record<string, number>; prevItems: Record<string, number>;
   cur: Counts; prev: Counts;
   minDocs?: number;
+  /** term -> how many different sources mention it; with `minVoices`, terms that fewer sources mention are left out (one source repeating itself is not a signal). */
+  voices?: Map<string, number>; minVoices?: number;
 }
 
 export function scoreTerms(inp: ScoreInput): { terms: ScoredTerm[]; baselineOk: boolean; active: GroupInfo[] } {
@@ -53,7 +55,7 @@ export function scoreTerms(inp: ScoreInput): { terms: ScoredTerm[]; baselineOk: 
   const terms: ScoredTerm[] = [];
   for (const [term, c] of inp.cur) {
     const docs = active.reduce((n, g) => n + (c[g.key] ?? 0), 0);
-    if (docs < minDocs) continue;
+    if (docs < minDocs || (inp.minVoices && (inp.voices?.get(term) ?? 0) < inp.minVoices)) continue;
     const signal = signalOf(c, inp.items), prev = signalOf(inp.prev.get(term), inp.prevItems);
     const parts = active.map((g) => ({ key: g.key, docs: c[g.key] ?? 0, share: share(c[g.key] ?? 0, inp.items[g.key] ?? 0) }));
     const total = parts.reduce((n, p, i) => n + active[i].weight * p.share, 0) || 1;
@@ -98,3 +100,6 @@ export function distinctive(terms: ScoredTerm[], key: string, n: number, minDocs
   }
   return out.filter((t) => t.lift >= 2).sort((a, b) => b.own * Math.log(b.lift) - a.own * Math.log(a.lift)).slice(0, n);
 }
+
+/** Not just always there: more than before, new, or too little history to tell. A topic at the same level as in the period before is background ("ai" on a feed about AI). */
+export const notSteady = (t: ScoredTerm): boolean => t.change === null || t.isNew || t.change >= 1.15;

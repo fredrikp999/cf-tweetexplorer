@@ -4,7 +4,7 @@
 // from token counts. This is shown only in /admin, never on the public pages.
 import { DurableObject } from 'cloudflare:workers';
 
-export type CostKind = 'explore' | 'history' | 'monitor' | 'summarize' | 'publish' | 'audio' | 'image' | 'analysis';
+export type CostKind = 'explore' | 'history' | 'monitor' | 'summarize' | 'publish' | 'audio' | 'image' | 'analysis' | 'signal';
 export interface CostEntry {
   kind: CostKind; ref?: string; label?: string;
   twitter?: number; llm?: number; tweets?: number; calls?: number; tokensIn?: number; tokensOut?: number; model?: string;

@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractTerms } from '../src/signal/terms.ts';
-import { distinctive, dropParts, rising, scoreTerms } from '../src/signal/score.ts';
+import { distinctive, dropParts, notSteady, rising, scoreTerms } from '../src/signal/score.ts';
 
 describe('extractTerms', () => {
   test('hashtags, words, phrases and acronyms; no links, mentions or stop words', () => {
@@ -83,6 +83,36 @@ describe('scoreTerms', () => {
   });
 });
 
+describe('corroboration', () => {
+  test('a term only one source mentions is left out when two are needed', () => {
+    const cur = counts({ footer: { x: 12 }, topic: { x: 8, news: 6 } });
+    const voices = new Map([['footer', 1], ['topic', 3]]);
+    const base = { groups: [G('x'), G('news')], items: { x: 100, news: 100 }, prevItems: {}, prev: counts({}), cur };
+    assert.deepEqual(scoreTerms({ ...base, voices, minVoices: 2 }).terms.map((t) => t.term), ['topic']);
+    assert.deepEqual(scoreTerms({ ...base, voices, minVoices: 1 }).terms.map((t) => t.term).sort(), ['footer', 'topic']);
+    assert.equal(scoreTerms(base).terms.length, 2, 'no voices given: nothing is dropped');
+  });
+});
+
+describe('steady background', () => {
+  test('a topic at its usual level is background; new, growing or unknown ones are not', () => {
+    const cur = counts({ steady: { x: 30, news: 30 }, grow: { x: 30, news: 30 }, fresh: { x: 15, news: 15 } });
+    const prev = counts({ steady: { x: 30, news: 30 }, grow: { x: 10, news: 10 } });
+    const r = scoreTerms({ groups: [G('x'), G('news')], items: { x: 100, news: 100 }, prevItems: { x: 100, news: 100 }, cur, prev });
+    assert.deepEqual(r.terms.filter(notSteady).map((t) => t.term).sort(), ['fresh', 'grow']);
+    const none = scoreTerms({ groups: [G('x')], items: { x: 100 }, prevItems: {}, cur: counts({ t: { x: 30 } }), prev: counts({}) });
+    assert.deepEqual(none.terms.filter(notSteady).map((t) => t.term), ['t'], 'no earlier period: nothing is called background');
+  });
+});
+
+describe('boilerplate words', () => {
+  test('footer verbs of video descriptions are not terms', () => {
+    const t = extractTerms('Join our newsletter, follow links below for sponsorship inquiries. Claude Code review');
+    for (const no of ['join', 'newsletter', 'links', 'sponsorship', 'inquiries', 'sponsorship inquiries']) assert.ok(!t.includes(no), no);
+    assert.ok(t.includes('claude code'));
+  });
+});
+
 describe('dropParts and distinctive', () => {
   test('keeps the phrase when it carries almost all of the word\'s mentions', () => {
     const t = (term, docs) => ({ term, docs, groups: [] });
@@ -93,5 +123,93 @@ describe('dropParts and distinctive', () => {
       cur: counts({ mine: { x: 30, news: 1 }, both: { x: 20, news: 20 }, theirs: { x: 1, news: 30 } }) });
     assert.deepEqual(distinctive(terms, 'x', 5).map((t) => t.term), ['mine']);
     assert.deepEqual(distinctive(terms, 'news', 5).map((t) => t.term), ['theirs']);
+  });
+});
+
+import { indexItems, mergeTopics, relatedTerms, topicItems } from '../src/signal/topics.ts';
+describe('topics', () => {
+  const T = (term, signal) => ({ term, signal, docs: 5, prev: 0, change: null, isNew: false, breadth: 1, active: 1, exclusivity: 1, topGroup: 'x', kind: 'single', groups: [] });
+  const item = (ts, ...terms) => ({ ts, terms: new Set(terms) });
+  const items = [
+    item(1, 'kimi', 'kimi k2', 'moonshot', 'thinking', 'model'),
+    item(2, 'kimi', 'kimi k2', 'moonshot', 'benchmark', 'model'),
+    item(3, 'kimi', 'moonshot', 'open source', 'model'),
+    item(4, 'deepseek', 'deepseek v4', 'model', 'release'),
+    item(5, 'deepseek', 'model', 'release', 'chips'),
+    item(6, 'model', 'weather'), item(7, 'model', 'sports'), item(8, 'model', 'news'),
+  ];
+  const post = indexItems(items);
+
+  test('terms in the same items become one topic, named by its strongest phrase', () => {
+    const c = mergeTopics([T('model', 9), T('kimi', 8), T('moonshot', 7), T('kimi k2', 6), T('deepseek', 5)], post, 10);
+    assert.deepEqual(c.map((x) => x.lead.term), ['model', 'kimi', 'deepseek']);
+    const kimi = c.find((x) => x.lead.term === 'kimi');
+    assert.deepEqual(kimi.members.map((m) => m.term), ['kimi', 'moonshot', 'kimi k2']);
+    assert.equal(kimi.label, 'kimi k2');
+    assert.equal(c.find((x) => x.lead.term === 'model').label, 'model', 'a word in everything stays alone');
+  });
+  test('a term in a single item stands alone, and at most n topics are made', () => {
+    const c = mergeTopics([T('thinking', 3), T('chips', 2), T('weather', 1)], post, 2);
+    assert.equal(c.length, 2);
+  });
+  test('related terms are the ones that go with it, rarer ones first, and not its own parts', () => {
+    const r = relatedTerms(['kimi', 'kimi k2'], items, post, 4);
+    assert.ok(r.includes('moonshot'));
+    assert.ok(!r.includes('kimi') && !r.includes('kimi k2'));
+    assert.ok(r.indexOf('moonshot') < r.indexOf('model'), 'moonshot is more specific than model');
+    assert.deepEqual(relatedTerms(['weather'], items, post), [], 'one item is not enough to say what goes with it');
+  });
+  test('the best items carry most of the topic\'s terms, then the newest', () => {
+    assert.deepEqual(topicItems(['kimi', 'kimi k2', 'moonshot'], items, post, 3), [1, 0, 2]);
+  });
+});
+
+import { estimatePer1000, normTopic, parseTopics, topicUser } from '../src/signal/ai.ts';
+describe('AI topics', () => {
+  test('topic names are cleaned and generic ones dropped', () => {
+    assert.equal(normTopic('  Kimi K2! '), 'kimi k2');
+    assert.equal(normTopic('"Rust 2.0"'), 'rust 2.0');
+    assert.equal(normTopic('ai'), null);
+    assert.equal(normTopic('News'), null);
+    assert.equal(normTopic('one two three four five'), null);
+    assert.equal(normTopic('2024'), null);
+    assert.equal(normTopic(''), null);
+    assert.equal(normTopic('x'.repeat(50)), null);
+    assert.equal(normTopic('Ångström'), 'ångström');
+  });
+  test('parses the answer, wrapped or not, and keeps only what is valid', () => {
+    const m = parseTopics('Sure:\n```json\n{"items":[{"i":1,"t":["Kimi K2","moonshot","kimi k2","video","a b c","d"]},{"i":3,"t":["openai"]},{"i":9,"t":["out of range"]},{"i":1,"t":["dup"]}]}\n```', 3);
+    assert.deepEqual(m.get(0), ['kimi k2', 'moonshot', 'a b c']);
+    assert.deepEqual(m.get(2), ['openai']);
+    assert.equal(m.has(1), false, 'an item the model skipped is absent, not empty');
+    assert.equal(m.size, 2);
+    assert.equal(parseTopics('not json at all', 3).size, 0);
+    assert.equal(parseTopics('{"items":"nope"}', 3).size, 0);
+  });
+  test('the prompt numbers the items from 1 and strips links', () => {
+    assert.equal(topicUser(['Hello https://x.co/a world', '']).content, '1. Hello world\n2. (no text)');
+  });
+  test('a thousand items cost a few cents on a cheap model', () => {
+    const c = estimatePer1000(0.06, 0.18);
+    assert.ok(c > 0.005 && c < 0.05, String(c));
+  });
+});
+
+import { cleanFilter, makeBlocker } from '../src/signal/filter.ts';
+describe('filter', () => {
+  test('a list from the browser is cleaned', () => {
+    assert.deepEqual(cleanFilter([' AI ', { term: 'Model*', phrases: true }, 'ai', '', 'a b c d e', 'x'.repeat(41), { term: '#Hype' }]),
+      [{ term: 'ai', phrases: false }, { term: 'model', phrases: true }, { term: '#hype', phrases: false }]);
+    assert.deepEqual(cleanFilter(null), []);
+    assert.equal(cleanFilter(Array.from({ length: 300 }, (_, i) => 'w' + i)).length, 200);
+  });
+  test('exact entries hide the term only; phrase entries hide phrases that contain the word', () => {
+    const b = makeBlocker(cleanFilter([{ term: 'ai' }, { term: 'model', phrases: true }]));
+    assert.equal(b('ai'), true);
+    assert.equal(b('ai agents'), false, 'a legitimate topic that contains a filtered word stays');
+    assert.equal(b('model'), true);
+    assert.equal(b('open model release'), true);
+    assert.equal(b('modeling'), false, 'whole words only');
+    assert.equal(makeBlocker([])('anything'), false);
   });
 });

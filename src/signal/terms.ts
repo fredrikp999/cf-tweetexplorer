@@ -4,13 +4,17 @@ import { STOP } from '../history/stats.ts';
 const MAX_TERMS = 40;
 // Words that are everywhere in news and chat and say nothing about a topic, on top of the stop words History uses. Left in, they top the
 // "everywhere" list. (Feed boilerplate such as "Show HN" is here too.)
-const GENERIC = new Set(('said says told tell tells know knows known called calls call first last next best biggest largest new newest latest people person time times week weeks month months year years '
+export const GENERIC = new Set(('said says told tell tells know knows known called calls call first last next best biggest largest new newest latest people person time times week weeks month months year years '
   + 'today yesterday tomorrow tonight monday tuesday wednesday thursday friday saturday sunday january february march april june july august september october november december '
   + 'make makes made making take takes took taking back many even still think thinks thing things work works working like likes look looks want wants going really using used uses show shows '
   + 'found find finds need needs help helps give gives gave come comes came good great better well much more most some than then them they their there these those other another '
-  + 'part year-old according report reports reported says video photo photos image watch read news story stories update updates live hn ask').split(' '));
+  + 'part year-old according report reports reported says video photo photos image watch read news story stories update updates live hn ask world global full complete guide ultimate official intro introduction episode part parts '
+  + 'links link join free subscribe subscribed subscriber subscribers sponsor sponsors sponsored sponsorship inquiries inquiry newsletter follow click description channel contact email comment comments check visit sign').split(' '));
 // Clause breaks: a phrase does not run across them, so "rates. Apple" never becomes the phrase "rates apple".
 const BREAK = /[.!?;:,()[\]{}"“”‘’|\n\r–—•·…]+|\s[-/]\s/;
+
+/** A word that says nothing about a topic (a stop word or a generic one). */
+export const isGenericWord = (w: string): boolean => STOP.has(w) || GENERIC.has(w);
 
 /** A word worth counting: long enough to carry meaning, or a short all-capitals acronym (AI, EU, GPU). */
 function keep(raw: string): string | null {
