@@ -2,6 +2,7 @@ import { verifyAccess } from './access';
 import { json } from './lib/twitterapi';
 import { handleSummarize, summarizerFeatures } from './summarize/worker';
 import { handlePublic } from './site/public';
+import { handleMcp } from './mcp';
 import { recordCost } from './lib/costs';
 import { serveAudio, serveImage } from './media/audio-serve';
 import { PROFILE_PRICE, tweetCallCost } from './summarize/pricing.ts';
@@ -55,6 +56,13 @@ const PRIVATE = /^\/(admin|custom)(\/|$)/;
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
+    // The MCP server has its own Access application (and audience), so a service token for it reaches nothing else.
+    if (url.pathname === '/mcp') {
+      const who = await verifyAccess(request, env, env.MCP_POLICY_AUD);
+      if (!who.ok) return json({ error: who.reason }, who.status);
+      if (request.headers.has('Origin')) return json({ error: 'browsers are not accepted here' }, 403);   // MCP clients are not web pages
+      return await handleMcp(request, env);
+    }
     if (!PRIVATE.test(url.pathname)) return handlePublic(request, env, url);
     // The old address: send people (and bookmarks) to the new one. Nothing is served or revealed here.
     if (url.pathname === '/custom' || url.pathname.startsWith('/custom/')) {

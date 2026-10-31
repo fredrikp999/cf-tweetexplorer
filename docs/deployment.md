@@ -9,7 +9,7 @@ The site has three parts:
   `/admin/#lists` and so on open a given tab. The old `/custom` addresses redirect to `/admin`.
   Agent and Account only exist when you run the app locally (`npm start`, which serves it at `/`).
 
-Everything that is not `/admin*` is public, so new private features must live under that prefix. (`/custom*` still counts as private and only redirects.)
+Everything that is not `/admin*` (or `/mcp`, which has its own Access application) is public, so new private features must live under one of those. (`/custom*` still counts as private and only redirects.)
 
 ## One-time setup
 1. `npx wrangler login`
@@ -220,6 +220,24 @@ Notes
 - The browser can only pick models from the built-in list; the ids in `wrangler.jsonc` are trusted. Locally, put `OPENROUTER_API_KEY` in `.env`.
 - The AI analysis of History jobs and the model fallback logic are described in their own sections; the fallback to OpenRouter is no longer
   needed now that OpenRouter is the main provider (`SUMMARY_FALLBACK_MODEL` was removed).
+
+## MCP server (read-only)
+`https://tweets.example.com/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server (Streamable HTTP, stateless) over the
+app's data. It only reads: History jobs, tweets and analyses; Briefing topics and issues (drafts included); your lists and X Lists; Monitor
+watches and feed; Costs. Nothing that starts a job or spends money is exposed.
+
+It has its own Access application, separate from `/admin*`, so its credentials open nothing else. MCP clients cannot sign in through a
+browser, so they use a **service token**:
+1. Zero Trust → Access → Applications → Add → Self-hosted: destination `tweets.example.com/mcp`, one policy with action **Service Auth**
+   that includes your service token. Copy this application's **AUD tag**.
+2. Zero Trust → Access → Service credentials → Create service token. Copy the Client ID and Secret (shown once).
+3. Store the AUD tag as a secret and deploy: `npx wrangler secret put MCP_POLICY_AUD` (`TEAM_DOMAIN` is shared). Without it `/mcp` refuses everything.
+4. Add it to Claude Code:
+   ```sh
+   claude mcp add --transport http tweet-explorer https://tweets.example.com/mcp \
+     --header "CF-Access-Client-Id: <id>" --header "CF-Access-Client-Secret: <secret>"
+   ```
+   Locally (`npm run dev`) there is no token to send: `http://localhost:8787/mcp`.
 
 ## Security model
 - Every request, including static files, must carry a valid Cloudflare Access JWT (checked in the Worker).

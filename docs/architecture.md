@@ -66,6 +66,7 @@ Audio (MP3) and briefing pictures are stored in the R2 bucket `AUDIO`.
 src/
   index.ts                 Routing, Access check, read-only twitterapi.io proxy; exports the Durable Objects
   access.ts                Verifies the Cloudflare Access JWT
+  mcp.ts                   Read-only MCP server at /mcp
   durable-objects/         history · publish · lists · monitor · cost  (one SQLite-backed object each)
   history/                 analysis.ts (prompts, parsing, estimates, aggregation) · stats.ts (statistics for a collection)
   llm/                     analysis.ts (chat models for History) · decisions.ts (decision-model client)

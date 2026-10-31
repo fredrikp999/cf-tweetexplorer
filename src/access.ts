@@ -36,13 +36,13 @@ async function keyFor(team: string, kid: string): Promise<CryptoKey | undefined>
   return keyCache.keys.get(kid);
 }
 
-export async function verifyAccess(request: Request, env: Env): Promise<Verdict> {
+export async function verifyAccess(request: Request, env: Env, audience: string = env.POLICY_AUD): Promise<Verdict> {
   // Local `wrangler dev` only. The flag lives in .dev.vars (never deployed), and it is ignored whenever a
   // CF-Ray header is present: Cloudflare's edge adds that to every production request and overwrites any
   // client-supplied value, so the bypass cannot work in production even if the flag were set there.
   if (env.DEV_BYPASS_ACCESS === '1' && !request.headers.has('CF-Ray')) return { ok: true, email: 'dev@localhost' };
 
-  const team: string = env.TEAM_DOMAIN, aud: string = env.POLICY_AUD;
+  const team: string = env.TEAM_DOMAIN, aud: string = audience;
   if (!team || !aud) return { ok: false, status: 503, reason: 'Access is not configured for this deployment' };
 
   const token = request.headers.get('Cf-Access-Jwt-Assertion');

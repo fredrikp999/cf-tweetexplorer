@@ -8,6 +8,7 @@ Everything you can set: secrets, variables, and the options in the app. Step-by-
 | --- | --- |
 | `TWITTERAPI_IO_KEY` | All tweet data. Required. |
 | `TEAM_DOMAIN`, `POLICY_AUD` | From your Cloudflare Access application: `<team>.cloudflareaccess.com` and the audience (AUD) tag. If either is missing, every request is refused. Required. |
+| `MCP_POLICY_AUD` | The audience tag of the separate Access application for `/mcp`. If missing, `/mcp` refuses every request. Optional. |
 | `OPENROUTER_API_KEY` | Summaries, briefings, History analysis, and screening. Without it these are switched off. |
 | `REPLICATE_API_TOKEN` | Audio versions and briefing pictures. Without it they are not offered. |
 | `ANTHROPIC_API_KEY` | Only if `SUMMARY_PROVIDER` is `anthropic`. |

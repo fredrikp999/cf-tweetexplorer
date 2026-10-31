@@ -4,6 +4,8 @@ interface Env {
   /** From the Cloudflare Access application: `<team>.cloudflareaccess.com` and the application's audience tag. Secrets. */
   TEAM_DOMAIN: string;
   POLICY_AUD: string;
+  /** The audience tag of the separate Access application for /mcp (service tokens only). Secret. */
+  MCP_POLICY_AUD: string;
   TWITTERAPI_IO_KEY: string;
   ANTHROPIC_API_KEY: string;
   /** Local only (.dev.vars): skip the Access check / use scripted model answers. */
