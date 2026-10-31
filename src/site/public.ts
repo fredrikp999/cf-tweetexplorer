@@ -99,7 +99,7 @@ article .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums
 figure.bars{margin:1.4em 0;font:14px var(--ui)}figure.bars figcaption{font-weight:600;margin-bottom:6px}
 figure.bars div{display:grid;grid-template-columns:9rem 1fr 3rem;align-items:center;gap:8px;margin:3px 0}
 figure.bars span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}figure.bars i{display:block;height:12px;background:var(--bar);border-radius:3px}figure.bars b{font-weight:600;text-align:right}
-.src{margin-top:36px;padding-top:22px;border-top:1px solid var(--line);font-size:15px;color:var(--muted)}.src h2{font-size:16px;margin:0 0 10px;color:var(--text)}
+.src{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-size:15px;color:var(--muted)}.src>summary{cursor:pointer;font-size:16px;font-weight:600;color:var(--text);margin:0 0 10px}.src>summary small{display:block;font-weight:400;font-size:14px;color:var(--muted);margin-top:2px}
 .src p{margin:0 0 10px}.src ul{margin:0 0 12px;padding-left:1.2em}.src li{margin:4px 0}.src ul ul{margin:4px 0 6px}.src .c{white-space:nowrap}.src .k{opacity:.85}
 .src .c::before{content:"· "}.src code{font-size:.9em;overflow-wrap:anywhere}.src details{margin:4px 0}.src summary{cursor:pointer}
 .note{margin-top:40px;padding:14px 16px;background:var(--soft);border-radius:10px;color:var(--muted);font-size:14px}
@@ -129,7 +129,7 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history'): string {
 <a href="/${esc(t.slug)}/archive"${active!.view === 'archive' ? ' aria-current="page"' : ''}>Previous days${active!.earlier ? ` <small>${active!.earlier}</small>` : ''}</a></div>` : '');
   }).join('');
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Signals<small>Agent Cortex</small></span></a>
-<nav aria-label="Topics"><a href="/"${active || page ? '' : ' aria-current="page"'}>Overview</a>${ctx.lists.length ? `<a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>X Lists <small>${ctx.lists.length}</small></a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>History${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${items ? `<div class="grp">Topics</div>${items}` : ''}</nav>
+<nav aria-label="Topics"><a href="/"${active || page ? '' : ' aria-current="page"'}>Overview</a>${items ? `<div class="grp">Topics</div>${items}` : ''}${ctx.lists.length || ctx.reports.length || page === 'history' ? '<div class="grp">More</div>' : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${ctx.lists.length ? `<a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>X lists <small>${ctx.lists.length}</small></a>` : ''}</nav>
 <div class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.</div></aside>`;
 }
 
@@ -156,7 +156,7 @@ ${t.latest.tldr ? `<p class="tldr">${inline(t.latest.tldr)}</p>` : ''}<div class
   return shell('Signals · Agent Cortex', rail(ctx), `<header class="pagehead"><div class="eyebrow">${topics.length ? `${topics.length} topic${topics.length === 1 ? '' : 's'}` : 'Briefings'}</div><h1>Signals</h1>
 <p class="lede">Short briefings on what is being said on X, kept up to date.${ctx.lists.length ? ` <a href="/lists">Browse the ${ctx.lists.length} X lists they draw from &rarr;</a>` : ''}</p></header>
 ${cards ? `<ul class="topics">${cards}</ul>` : ctx.reports.length ? '' : '<p class="lede">Nothing published yet.</p>'}
-${ctx.reports.length ? `<h2 class="sect">History</h2><ul class="topics">${reportCards(ctx.reports)}</ul>` : ''}`,
+${ctx.reports.length ? `<h2 class="sect">Reports</h2><ul class="topics">${reportCards(ctx.reports)}</ul>` : ''}`,
   { description: 'Short briefings on what is being said on X, kept up to date.' });
 }
 
@@ -171,7 +171,7 @@ function reportCards(list: PubReportBrief[]): string {
 }
 
 export function historyIndexHtml(ctx: Ctx): string {
-  return shell('History · Signals', rail(ctx, undefined, 'history'), `<header class="pagehead"><div class="eyebrow">${ctx.reports.length} report${ctx.reports.length === 1 ? '' : 's'}</div><h1>History</h1>
+  return shell('Reports · Signals', rail(ctx, undefined, 'history'), `<header class="pagehead"><div class="eyebrow">${ctx.reports.length} report${ctx.reports.length === 1 ? '' : 's'}</div><h1>Reports</h1>
 <p class="lede">Collections of public posts on X over longer periods, with the numbers behind them and every post.</p></header>
 <ul class="topics">${reportCards(ctx.reports)}</ul>`, { description: 'Collections of public posts on X over longer periods, with statistics.' });
 }
@@ -224,7 +224,7 @@ export function reportHtml(r: PubReport, tw: PubTweets, origin: string, ctx: Ctx
 ${s.heat.map((row, d) => `<span class="d">${WD[d]}</span>${row.map((c, h) => `<i title="${WD[d]} ${h}:00, ${n(c)} tweets" style="opacity:${(0.06 + (0.94 * c) / maxHeat).toFixed(2)}"></i>`).join('')}`).join('')}</div></section>`;
   const nav = (sort: 'new' | 'top') => `<a href="${href(sort, 1)}"${tw.sort === sort ? ' aria-current="page"' : ''}>${sort === 'new' ? 'Newest' : 'Most liked'}</a>`;
   const pager = tw.pages > 1 ? `<nav class="pager" aria-label="Pages">${tw.page > 1 ? `<a href="${href(tw.sort, tw.page - 1)}" rel="prev">&larr; Previous</a>` : '<span></span>'}<span>Page ${n(tw.page)} of ${n(tw.pages)}</span>${tw.page < tw.pages ? `<a href="${href(tw.sort, tw.page + 1)}" rel="next">Next &rarr;</a>` : '<span></span>'}</nav>` : '';
-  const body = `<header class="pagehead"><div class="eyebrow">History &middot; ${rangeText(job.fromTs, job.toTs)}</div><h1>${esc(report.title)}</h1>${report.description ? `<p class="lede">${esc(report.description)}</p>` : ''}</header>
+  const body = `<header class="pagehead"><div class="eyebrow">Report &middot; ${rangeText(job.fromTs, job.toTs)}</div><h1>${esc(report.title)}</h1>${report.description ? `<p class="lede">${esc(report.description)}</p>` : ''}</header>
 <p class="meta">Collected from X with <code>${esc(job.query)}</code>${flags ? ` (${esc(flags)})` : ''}. Published ${date(report.publishedAt)}.</p>${partial}
 <div class="kpis">${kpi.map(([l, v]) => `<div><b>${n(v)}</b><span>${esc(l)}</span></div>`).join('')}</div>
 <div class="panels">${chart}${heat}
@@ -235,7 +235,7 @@ ${analysisHtml(r)}
 <nav class="views" aria-label="Order">${nav('new')}${nav('top')}</nav>
 ${pager}<div class="tws">${tw.tweets.map(tweetHtml).join('')}</div>${pager}
 <p class="note">Public posts collected from X, shown as they were when collected. Counts are from the time of collection. The statistics are computed from the collected tweets only, in UTC.</p>`;
-  return shell(`${report.title} · History`, rail(ctx, undefined, 'history'), body,
+  return shell(`${report.title} · Reports`, rail(ctx, undefined, 'history'), body,
     { description: report.description || `${n(s.tweets)} tweets, ${rangeText(job.fromTs, job.toTs)}`, canonical: `${origin}${href(tw.sort, tw.page)}` });
 }
 
@@ -279,13 +279,13 @@ export function sourcesHtml(i: IssueFull): string {
   const basis = !feeds.length ? `<b>${n(p.used)} posts</b> from <b>${n(p.accounts)} accounts</b>`
     : !xPosts ? `<b>${n(feedItems)} items</b> from <b>${n(feeds.length)} ${feeds.length === 1 ? 'feed' : 'feeds'}</b>`
     : `<b>${n(p.used)} posts and items</b>: ${n(xPosts)} posts from ${n(p.accounts)} accounts on X, and ${n(feedItems)} items from ${n(feeds.length)} ${feeds.length === 1 ? 'feed' : 'feeds'}`;
-  return `<section class="src"><h2>Where this comes from</h2>
+  return `<details class="src"><summary>Where this comes from <small>${basis.replace(/<\/?b>/g, '')}</small></summary>
 <p>Based on ${basis}, ${feeds.length ? 'published' : 'posted'} between ${when(p.from)} and ${when(p.to)} UTC.${p.truncated ? ` Of ${n(p.fetched)} collected, the ${n(p.used)} that drew the most reaction were used.` : ''}</p>
 ${rows ? `<ul class="srcs">${rows}</ul>` : ''}
 ${feedRows ? `<p>The feeds it drew on:</p><ul class="srcs">${feedRows}</ul>` : ''}
 ${p.partial ? '<p>Collection stopped early, so some lists are only partly covered.</p>' : ''}
 ${p.topAccounts.length ? `<p>Most posts in the analysis: ${p.topAccounts.map((a) => `${handleLink(a.handle)} (${a.count})`).join(', ')}.</p>` : ''}
-${model ? `<p>Written by ${esc(model)}.</p>` : ''}</section>`;
+${model ? `<p>Written by ${esc(model)}.</p>` : ''}</details>`;
 }
 
 const plain = (tldr: string) => inline(tldr).replace(/<\/?a[^>]*>/g, '');
@@ -338,7 +338,7 @@ export function listsHtml(ctx: Ctx): string {
     return `<section class="lgroup" id="g${i}"><h2>${esc(g)} <small>${ls.length}</small></h2>${shared ? `<p class="gnote">${esc(shared)}</p>` : ''}<ul class="lists">${ls.map((l) =>
       `<li>${listLink(l.id, l.name).replace('<a ', '<a class="lname" ').replace(/<\/a>$/, ' <span aria-hidden="true">&#8599;</span></a>')}${l.description && l.description !== shared ? `<p>${esc(l.description)}</p>` : ''}</li>`).join('')}</ul></section>`;
   }).join('');
-  return shell('X Lists · Signals', rail(ctx, undefined, 'lists'), `<header class="pagehead"><div class="eyebrow">${ctx.lists.length} lists in ${entries.length} groups</div><h1>X Lists</h1>
+  return shell('X lists · Signals', rail(ctx, undefined, 'lists'), `<header class="pagehead"><div class="eyebrow">${ctx.lists.length} lists in ${entries.length} groups</div><h1>X lists</h1>
 <p class="lede">The lists on X that these briefings draw from, grouped by theme. Each one opens on X.</p></header>
 <nav class="chips" aria-label="Groups">${entries.map(([g], i) => `<a href="#g${i}">${esc(g)}</a>`).join('')}</nav>${sections}`,
   { description: 'The lists on X that the Signals briefings draw from, grouped by theme.' });
