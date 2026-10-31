@@ -9,6 +9,8 @@ import { expandShorthand } from '../sources/presets';
 import { checkFeedUrl, fetchRss } from '../sources/rss';
 import { isYoutubeFeed, resolveYoutubeFeed } from '../sources/youtube';
 import { isSource, toFeedShape, type FetchResult, type SourceKind } from '../sources/types';
+import { extractTerms } from '../signal/terms';
+import { distinctive, rising, scoreTerms, type Counts, type GroupInfo } from '../signal/score';
 
 const OVERLAP = 90;        // seconds re-read before the checkpoint; duplicates removed by id
 const MAX_PAGES = 5;
@@ -18,6 +20,9 @@ const MAX_WATCHES = 50;
 const FIRST_CHECK_ITEMS = 10; // a new RSS or Hacker News watch shows the latest few items, not nothing until the next post
 const MIN_INTERVAL = 15, MAX_INTERVAL = 86_400;
 const MAX_INFLIGHT = 3;
+const SIGNAL_KEEP_DAYS = 30;   // Signal keeps daily term counts this long: two windows of at most SIGNAL_MAX_DAYS, with room to spare
+const SIGNAL_MAX_DAYS = 14;
+const SOURCE_NAME: Record<SourceKind, string> = { x: 'X', rss: 'RSS and blogs', hn: 'Hacker News', youtube: 'YouTube' };
 
 interface Watch {
   id: string; label: string; query: string; originalsOnly: boolean; includeRetweets: boolean;
@@ -29,6 +34,7 @@ interface Watch {
   etag?: string; lastModified?: string;        // RSS: conditional requests, so an unchanged feed costs nothing
   autoLabel?: boolean;                         // the label is a placeholder until the first fetch names the feed
   list?: string;                               // the feed list this watch was made from, so the feed can be shown per list
+  group?: string;                              // Signal: a name you gave, so watches with the same name vote together
 }
 const sourceOf = (w: Watch): SourceKind => w.source ?? 'x';
 // What one check found, whatever the source: the id (for de-duplication), its time and the JSON the feed stores.
@@ -36,6 +42,8 @@ interface Found { id: string; ts: number; json: unknown }
 interface Spend { day: string; cost: number }
 
 const today = () => new Date().toISOString().slice(0, 10); // UTC day
+const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+const cleanGroup = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
 
 export class MonitorDO extends DurableObject<Env> {
   private running = new Set<string>();
@@ -48,6 +56,10 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('CREATE TABLE IF NOT EXISTS feed (seq INTEGER PRIMARY KEY AUTOINCREMENT, watch TEXT NOT NULL, label TEXT NOT NULL, seen_at INTEGER NOT NULL, json TEXT NOT NULL)');
     try { sql.exec("ALTER TABLE feed ADD COLUMN source TEXT NOT NULL DEFAULT 'x'"); } catch { /* the column is already there */ }
     sql.exec('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
+    // Signal: how many items per day (per watch) mention each term. Groups and weights are applied when reading, so they can change freely.
+    sql.exec('CREATE TABLE IF NOT EXISTS terms (day TEXT NOT NULL, watch TEXT NOT NULL, term TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (day, watch, term)) WITHOUT ROWID');
+    sql.exec('CREATE TABLE IF NOT EXISTS day_items (day TEXT NOT NULL, watch TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (day, watch)) WITHOUT ROWID');
+    this.backfillSignal();
   }
 
   // ---- storage helpers
@@ -107,6 +119,7 @@ export class MonitorDO extends DurableObject<Env> {
     } catch (err) {
       console.error('monitor alarm failed', err instanceof Error ? err.message : String(err));
     }
+    this.pruneSignal();
     await this.reschedule();
   }
 
@@ -192,6 +205,7 @@ export class MonitorDO extends DurableObject<Env> {
           const json = source === 'x' ? f.json : { ...(f.json as object), feed: w.label, feedUrl: source === 'hn' ? 'https://news.ycombinator.com/' : w.query };
           sql.exec('INSERT INTO feed (watch, label, seen_at, json, source) VALUES (?, ?, ?, ?, ?)', id, w.label, Date.now(), JSON.stringify(json), source);
         }
+        this.countTerms(id, found);
         // Each source keeps its own FEED_KEEP items, so a busy one cannot push the others out.
         sql.exec('DELETE FROM feed WHERE source = ?1 AND seq <= (SELECT MAX(seq) FROM feed WHERE source = ?1) - ?2', source, FEED_KEEP);
         sql.exec('DELETE FROM seen WHERE watch = ?1 AND rowid NOT IN (SELECT rowid FROM seen WHERE watch = ?1 ORDER BY at DESC LIMIT ?2)', id, SEEN_KEEP);
@@ -199,6 +213,154 @@ export class MonitorDO extends DurableObject<Env> {
       });
     }
     this.running.delete(id);
+  }
+
+  // ---- Signal: counting
+  /** Counts one item under each of its terms, on the day it was published. */
+  private countTerms(watch: string, items: Found[]): void {
+    const sql = this.ctx.storage.sql, now = Date.now(), floor = now - SIGNAL_KEEP_DAYS * 86_400_000;
+    const days = new Map<string, number>(), terms = new Map<string, number>();
+    for (const f of items) {
+      const ts = Number.isFinite(f.ts) ? Math.min(f.ts, now) : now;
+      if (ts < floor) continue;
+      const day = dayOf(ts);
+      days.set(day, (days.get(day) ?? 0) + 1);
+      for (const t of extractTerms(String((f.json as { text?: unknown }).text ?? ''))) terms.set(`${day}\n${t}`, (terms.get(`${day}\n${t}`) ?? 0) + 1);
+    }
+    for (const [day, n] of days) sql.exec('INSERT INTO day_items (day, watch, n) VALUES (?, ?, ?) ON CONFLICT (day, watch) DO UPDATE SET n = n + excluded.n', day, watch, n);
+    for (const [k, n] of terms) {
+      const i = k.indexOf('\n');
+      sql.exec('INSERT INTO terms (day, watch, term, n) VALUES (?, ?, ?, ?) ON CONFLICT (day, watch, term) DO UPDATE SET n = n + excluded.n', k.slice(0, i), watch, k.slice(i + 1), n);
+    }
+  }
+  /** Once: count what the feed already holds, so Signal has something to show the day it is first opened. */
+  private backfillSignal(): void {
+    if (this.getMeta('signalBackfill', false)) return;
+    const rows = this.ctx.storage.sql.exec<{ watch: string; seen_at: number; json: string }>('SELECT watch, seen_at, json FROM feed').toArray();
+    const by = new Map<string, Found[]>();
+    for (const r of rows) {
+      const j = JSON.parse(r.json) as { createdAt?: string };
+      const ts = Date.parse(j.createdAt ?? '');
+      (by.get(r.watch) ?? by.set(r.watch, []).get(r.watch)!).push({ id: '', ts: Number.isFinite(ts) ? ts : r.seen_at, json: j });
+    }
+    this.ctx.storage.transactionSync(() => { for (const [watch, items] of by) this.countTerms(watch, items); this.setMeta('signalBackfill', true); });
+  }
+  /** Once a day: drop what is older than the window, and terms mentioned a single time after a week (most of the rows, none of the signal). */
+  private pruneSignal(): void {
+    if (this.getMeta('signalPruned', '') === today()) return;
+    const sql = this.ctx.storage.sql, now = Date.now();
+    sql.exec('DELETE FROM terms WHERE day < ?', dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
+    sql.exec('DELETE FROM day_items WHERE day < ?', dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
+    sql.exec('DELETE FROM terms WHERE n = 1 AND day < ?', dayOf(now - 7 * 86_400_000));
+    this.setMeta('signalPruned', today());
+  }
+
+  // ---- Signal: reading
+  /** Names of the feed lists, for the groups made from them. */
+  private async listNames(): Promise<Map<string, string>> {
+    try {
+      const r = await this.env.LISTS.getByName('main').fetch(new Request('https://internal/lists/f-all'));
+      return new Map(((await r.json()) as Array<{ id: string; name: string }>).map((l) => [l.id, l.name]));
+    } catch { return new Map(); }
+  }
+  /** Which group a watch votes in: a name you gave, else the feed list it came from, else its kind of source. */
+  private groupOf(w: Watch, names: Map<string, string>): { key: string; name: string } {
+    if (w.group) return { key: 'g:' + w.group.toLowerCase(), name: w.group };
+    if (w.list) return { key: 'list:' + w.list, name: names.get(w.list) ?? 'Feed list' };
+    return { key: 'src:' + sourceOf(w), name: SOURCE_NAME[sourceOf(w)] };
+  }
+  private async groups() {
+    const names = await this.listNames(), weights = this.getMeta<Record<string, number>>('signalWeights', {});
+    const of = new Map<string, string>(), groups = new Map<string, GroupInfo & { watches: Array<{ id: string; label: string; source: SourceKind; enabled: boolean; group?: string }> }>();
+    for (const w of this.watches()) {
+      const g = this.groupOf(w, names);
+      of.set(w.id, g.key);
+      const cur = groups.get(g.key) ?? groups.set(g.key, { key: g.key, name: g.name, weight: weights[g.key] ?? 1, watches: [] }).get(g.key)!;
+      cur.watches.push({ id: w.id, label: w.label, source: sourceOf(w), enabled: w.enabled, group: w.group });
+    }
+    return { of, groups: [...groups.values()] };
+  }
+  /** Items per group over the days from..to (UTC, inclusive). */
+  private itemsIn(of: Map<string, string>, from: string, to: string): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const r of this.ctx.storage.sql.exec<{ watch: string; n: number }>('SELECT watch, SUM(n) AS n FROM day_items WHERE day >= ? AND day <= ? GROUP BY watch', from, to)) {
+      const g = of.get(r.watch); if (g) out[g] = (out[g] ?? 0) + r.n;
+    }
+    return out;
+  }
+  /** Per group, the number of items mentioning each term over from..to, for the terms mentioned at least 3 times in candFrom..candTo. */
+  private countsIn(of: Map<string, string>, from: string, to: string, candFrom: string, candTo: string): Counts {
+    const out: Counts = new Map();
+    const rows = this.ctx.storage.sql.exec<{ term: string; watch: string; n: number }>(
+      `SELECT term, watch, SUM(n) AS n FROM terms WHERE day >= ?1 AND day <= ?2 AND term IN
+         (SELECT term FROM terms WHERE day >= ?3 AND day <= ?4 GROUP BY term HAVING SUM(n) >= 3 ORDER BY SUM(n) DESC LIMIT 3000)
+       GROUP BY term, watch`, from, to, candFrom, candTo);
+    for (const r of rows) {
+      const g = of.get(r.watch); if (!g) continue;
+      const c = out.get(r.term) ?? out.set(r.term, {}).get(r.term)!;
+      c[g] = (c[g] ?? 0) + r.n;
+    }
+    return out;
+  }
+  private async compute(daysIn: number) {
+    const days = Math.min(SIGNAL_MAX_DAYS, Math.max(1, Math.floor(daysIn) || 7)), now = Date.now(), DAY = 86_400_000;
+    const to = dayOf(now), from = dayOf(now - (days - 1) * DAY), prevTo = dayOf(now - days * DAY), prevFrom = dayOf(now - (2 * days - 1) * DAY);
+    const { of, groups } = await this.groups();
+    const items = this.itemsIn(of, from, to), prevItems = this.itemsIn(of, prevFrom, prevTo);
+    const scored = scoreTerms({ groups, items, prevItems, cur: this.countsIn(of, from, to, from, to), prev: this.countsIn(of, prevFrom, prevTo, from, to) });
+    return { days, from, to, of, groups, items, prevItems, ...scored };
+  }
+  /** Items per day for the last SIGNAL_MAX_DAYS days, per group (oldest first). */
+  private volume(of: Map<string, string>, groups: GroupInfo[]) {
+    const now = Date.now(), days = Array.from({ length: SIGNAL_MAX_DAYS }, (_, i) => dayOf(now - (SIGNAL_MAX_DAYS - 1 - i) * 86_400_000));
+    const by: Record<string, number[]> = Object.fromEntries(groups.map((g) => [g.key, days.map(() => 0)]));
+    for (const r of this.ctx.storage.sql.exec<{ day: string; watch: string; n: number }>('SELECT day, watch, n FROM day_items WHERE day >= ?', days[0])) {
+      const g = of.get(r.watch), i = days.indexOf(r.day);
+      if (g && i >= 0) by[g][i] += r.n;
+    }
+    return { days, by };
+  }
+  private async signalOverview(daysIn: number) {
+    const c = await this.compute(daysIn);
+    const pick = (list: ReturnType<typeof rising>) => list.map((t) => t.term);
+    const top = c.terms.slice(0, 40), rise = rising(c.terms, 25);
+    const shared = c.terms.filter((t) => t.kind === 'shared').slice(0, 15), single = c.terms.filter((t) => t.kind === 'single').slice(0, 20);
+    const terms: Record<string, (typeof c.terms)[number]> = {};
+    for (const t of [...top, ...rise, ...shared, ...single]) terms[t.term] = t;
+    const { days, by } = this.volume(c.of, c.groups);
+    return {
+      days: c.days, from: c.from, to: c.to, baselineOk: c.baselineOk,
+      groups: c.groups.map((g) => ({ ...g, items: c.items[g.key] ?? 0, prevItems: c.prevItems[g.key] ?? 0, perDay: by[g.key] })),
+      volumeDays: days, lists: { top: pick(top), rising: pick(rise), shared: pick(shared), single: pick(single) }, terms,
+      scored: c.terms.length,
+    };
+  }
+  private async signalTerm(term: string) {
+    const { of, groups } = await this.groups(), { days, by } = this.volume(of, groups);
+    const docs: Record<string, number[]> = Object.fromEntries(groups.map((g) => [g.key, days.map(() => 0)]));
+    for (const r of this.ctx.storage.sql.exec<{ day: string; watch: string; n: number }>('SELECT day, watch, n FROM terms WHERE term = ? AND day >= ?', term, days[0])) {
+      const g = of.get(r.watch), i = days.indexOf(r.day);
+      if (g && i >= 0) docs[g][i] += r.n;
+    }
+    // A few recent items that mention it. The feed holds the latest items only, so older mentions are counted but not shown.
+    const samples: unknown[] = [];
+    for (const r of this.ctx.storage.sql.exec<{ watch: string; label: string; seen_at: number; json: string; source: string }>('SELECT watch, label, seen_at, json, source FROM feed ORDER BY seq DESC LIMIT 2000')) {
+      const tweet = JSON.parse(r.json) as { text?: string; feed?: string; feedUrl?: string };
+      if (!extractTerms(String(tweet.text ?? '')).includes(term)) continue;
+      if (r.source !== 'x') tweet.feed ??= r.label;
+      samples.push({ watchId: r.watch, group: of.get(r.watch) ?? '', label: r.label, seenAt: r.seen_at, source: r.source, tweet });
+      if (samples.length >= 12) break;
+    }
+    return { term, days, groups: groups.map((g) => ({ key: g.key, name: g.name, docs: docs[g.key], items: by[g.key] })), samples };
+  }
+  private async signalGroup(key: string, daysIn: number) {
+    const c = await this.compute(daysIn), g = c.groups.find((x) => x.key === key);
+    if (!g) throw new Error('unknown group');
+    const own = (t: (typeof c.terms)[number]) => t.groups.find((x) => x.key === key)?.share ?? 0;
+    const strongest = c.terms.filter((t) => (t.groups.find((x) => x.key === key)?.docs ?? 0) >= 3).sort((a, b) => own(b) - own(a)).slice(0, 15);
+    return { key, name: g.name, weight: g.weight, items: c.items[key] ?? 0, watches: g.watches, active: c.active.some((a) => a.key === key),
+      strongest: strongest.map((t) => ({ term: t.term, docs: t.groups.find((x) => x.key === key)?.docs ?? 0, share: own(t), kind: t.kind, breadth: t.breadth, active: t.active })),
+      distinctive: distinctive(c.terms, key, 15).map((t) => ({ term: t.term, docs: t.groups.find((x) => x.key === key)?.docs ?? 0, own: t.own, others: t.others, lift: t.lift })) };
   }
 
   // ---- HTTP API (same routes and JSON as the local server)
@@ -224,6 +386,13 @@ export class MonitorDO extends DurableObject<Env> {
             return { watchId: r.watch, label: r.label, seenAt: r.seen_at, source: r.source, tweet };
           }));
         }
+        if (name === 'signal') return json(await this.signalOverview(Number(url.searchParams.get('days'))));
+        if (name === 'signal-term') {
+          const term = (url.searchParams.get('term') ?? '').trim().toLowerCase().slice(0, 80);
+          if (!term) throw new Error('term required');
+          return json(await this.signalTerm(term));
+        }
+        if (name === 'signal-group') return json(await this.signalGroup(url.searchParams.get('key') ?? '', Number(url.searchParams.get('days'))));
         return json({ error: 'unknown monitor route' }, 404);
       }
       if (request.method !== 'POST') return json({ error: 'GET or POST required' }, 405);
@@ -269,6 +438,7 @@ export class MonitorDO extends DurableObject<Env> {
           w.query = query; w.label = b.kind === 'account' ? '@' + query.slice(5) : given || query;
         }
         if (listId) w.list = listId;
+        const group = cleanGroup(b.group); if (group) w.group = group;   // Signal: the group this watch votes in
         this.saveWatch(w); await this.reschedule();
         return json(this.view(w));
       }
@@ -278,12 +448,29 @@ export class MonitorDO extends DurableObject<Env> {
         await this.reschedule();
         return json(this.snapshot());
       }
+      if (name === 'signal-weight') {
+        const key = String(b.key ?? '').slice(0, 80), weight = Math.round(Math.min(3, Math.max(0, Number(b.weight))) * 100) / 100;
+        if (!key || !Number.isFinite(weight)) throw new Error('key and weight required');
+        this.setMeta('signalWeights', { ...this.getMeta<Record<string, number>>('signalWeights', {}), [key]: weight });
+        return json({ ok: true });
+      }
+      if (name === 'signal-regroup') {   // every watch in one group moves to a name you give (an existing group's name merges them); no name puts them back
+        const key = String(b.key ?? ''), group = cleanGroup(b.group), names = await this.listNames();
+        let n = 0;
+        for (const w of this.watches()) {
+          if (this.groupOf(w, names).key !== key) continue;
+          if (group) w.group = group; else delete w.group;
+          this.saveWatch(w); n++;
+        }
+        return json({ ok: true, moved: n });
+      }
       if (name === 'clear') { this.ctx.storage.sql.exec('DELETE FROM feed'); return json({ ok: true }); }
 
       const w = this.watch(String(b.id ?? ''));
       if (!w) return json({ error: 'unknown watch' }, 404);
       if (name === 'update') {
         if (b.enabled !== undefined) { w.enabled = !!b.enabled; if (w.enabled) { w.errors = 0; w.lastError = ''; w.nextRun = 0; } }
+        if (b.group !== undefined) { const g = cleanGroup(b.group); if (g) w.group = g; else delete w.group; }
         if (b.intervalSec !== undefined) w.intervalSec = Math.min(MAX_INTERVAL, Math.max(MIN_INTERVAL, Math.floor(Number(b.intervalSec)) || w.intervalSec));
         this.saveWatch(w); await this.reschedule();
         return json(this.view(w));
@@ -291,6 +478,8 @@ export class MonitorDO extends DurableObject<Env> {
       if (name === 'delete') {
         this.ctx.storage.sql.exec('DELETE FROM watches WHERE id = ?', w.id);
         this.ctx.storage.sql.exec('DELETE FROM seen WHERE watch = ?', w.id);
+        this.ctx.storage.sql.exec('DELETE FROM terms WHERE watch = ?', w.id);
+        this.ctx.storage.sql.exec('DELETE FROM day_items WHERE watch = ?', w.id);
         await this.reschedule();
         return json({ ok: true });
       }

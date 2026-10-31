@@ -55,7 +55,7 @@ survive eviction and deploys and carry on where they stopped.
 | `HistoryDO` | History jobs, their tweets (sharded by time window and query), labels, analyses, saved reports | Collection slices (10 min) and analysis slices (8 min) |
 | `PublishDO` | Briefing topics, issues (drafts and published), audio and image templates | The schedule: a topic's next run |
 | `ListsDO` | Your curated lists of accounts, X Lists kept by reference (with groups), and feed lists (RSS, YouTube, Hacker News) | |
-| `MonitorDO` | Watches (X searches and accounts, RSS feeds, Hacker News), their checkpoints and the combined feed | Polling |
+| `MonitorDO` | Watches (X searches and accounts, RSS feeds, Hacker News), their checkpoints, the combined feed, and Signal's daily term counts (30 days) | Polling |
 | `CostDO` | The spend ledger behind the Costs tab | |
 
 Audio (MP3) and briefing pictures are stored in the R2 bucket `AUDIO`.
@@ -74,6 +74,7 @@ src/
   media/                   Replicate text to speech and images, audio script, serving audio and pictures from R2
   site/public.ts           The public HTML pages
   sources/                 Non-X sources: types.ts (the neutral item and its feed shape) · rss.ts (RSS/Atom) · youtube.ts (channel and playlist feeds) · hn.ts (Hacker News via Algolia) · read.ts (article and comment reading) · presets.ts (shorthand such as `r/rust` or `github:owner/repo`, expanded to the feed address it stands for) · feedlist.ts (curated feed lists) · transcript.ts (video transcripts)
+  signal/                  terms.ts (words, phrases and hashtags of an item) · score.ts (weighted score per term across groups; shared / single / rising)
   lib/                     twitterapi.ts (API client) · costs.ts (ledger writes) · pool.ts
 server/                    The same app for running locally with Node (npm start): index.js, History, Lists, Monitor, Agent
 public/admin/              The admin app (one HTML page, no build step)

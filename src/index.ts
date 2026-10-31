@@ -26,7 +26,7 @@ const ALLOWED = [
 ];
 
 // What this deployment offers. The UI hides the rest.
-const FEATURES = { agent: false, account: false, push: false, local: false, deployed: true, xlists: true, costs: true, publish: true, sources: true };
+const FEATURES = { agent: false, account: false, push: false, local: false, deployed: true, xlists: true, costs: true, publish: true, sources: true, signal: true };
 
 // What a passthrough call cost, estimated from the size of the answer (the API bills per tweet / profile returned).
 function exploreCost(path: string, text: string): { ref: string; label: string; twitter: number; tweets: number } {

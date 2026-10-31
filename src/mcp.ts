@@ -95,6 +95,12 @@ function buildServer(env: Env): McpServer {
     annotations: readOnly,
   }, ({ limit, source }) => ask(env.MONITOR, '/mon/feed', { limit, ...(source ? { source } : {}) }));
 
+  server.registerTool('get_signal', {
+    description: 'Signal: the topics across all watched sources combined into one weighted score. Each source group (a feed list, a kind of source, or a name you gave it) has a weight; a term is scored by how large a share of each group\'s items mention it. Returns the groups, the top terms, the rising terms, the terms found in most groups ("shared") and the terms found almost only in one group ("single"), each with the groups it comes from.',
+    inputSchema: { days: z.number().int().min(1).max(14).default(7).describe('The window; it is compared with the same number of days before it') },
+    annotations: readOnly,
+  }, ({ days }) => ask(env.MONITOR, '/mon/signal', { days }));
+
   // MCP Apps: hosts that support them show the Costs view inline; the others still get the JSON text.
   registerAppTool(server, 'get_costs', {
     description: 'Spend by feature over the last N days (twitterapi.io, language models, audio, pictures).',

@@ -1,0 +1,100 @@
+// Signal: turns per-group document counts into one weighted score per term, and says where each term shows up.
+// Pure functions (no Worker APIs), so Node can test them. The Monitor Durable Object (durable-objects/monitor.ts) does the storage.
+//
+// A "group" is a set of sources that vote together (a feed list, a kind of source, or a name you gave). For a term in a window:
+//   share(g)  = items in g that mention the term / (items in g + SMOOTH)      so a busy group does not drown a quiet one
+//   signal    = sum(weight(g) * share(g)) / sum(weight(g))                    over the groups that have items and a weight
+// Compared with the previous window of the same length, that gives the change. Where the signal comes from gives the kind.
+
+export interface GroupInfo { key: string; name: string; weight: number }
+/** term -> group key -> number of items that mention it. */
+export type Counts = Map<string, Record<string, number>>;
+
+export interface TermGroup { key: string; docs: number; share: number; /** This group's part of the weighted signal, 0 to 1. */ part: number }
+export interface ScoredTerm {
+  term: string; docs: number; signal: number; prev: number;
+  /** Signal now divided by signal before (smoothed); null when there is no earlier window to compare with. */
+  change: number | null; isNew: boolean;
+  /** Groups that really mention it, and how many groups could have. */
+  breadth: number; active: number;
+  /** The share of the weighted signal that comes from the strongest group. */
+  exclusivity: number; topGroup: string;
+  /** shared: in most groups; single: nearly all in one; mixed: in between. */
+  kind: 'shared' | 'single' | 'mixed';
+  groups: TermGroup[];
+}
+
+export const SMOOTH = 5;        // added to a group's item count, so three items cannot make a 100% share
+const EPS = 0.002;              // a share this small counts as nothing when comparing windows
+const MIN_BASELINE_ITEMS = 10;  // fewer items than this in the earlier window and a change means nothing
+
+/** A group counts as having the term when two items mention it, or one in a group too small to expect more. */
+const present = (docs: number, items: number) => docs >= 2 || (docs >= 1 && items < 40);
+
+export interface ScoreInput {
+  groups: GroupInfo[];
+  items: Record<string, number>; prevItems: Record<string, number>;
+  cur: Counts; prev: Counts;
+  minDocs?: number;
+}
+
+export function scoreTerms(inp: ScoreInput): { terms: ScoredTerm[]; baselineOk: boolean; active: GroupInfo[] } {
+  const minDocs = inp.minDocs ?? 3;
+  const active = inp.groups.filter((g) => g.weight > 0 && (inp.items[g.key] ?? 0) > 0);
+  const wsum = active.reduce((n, g) => n + g.weight, 0);
+  const prevTotal = Object.values(inp.prevItems).reduce((n, v) => n + v, 0);
+  const baselineOk = prevTotal >= MIN_BASELINE_ITEMS;
+  if (!wsum) return { terms: [], baselineOk, active };
+  const share = (docs: number, items: number) => docs / (items + SMOOTH);
+  const signalOf = (c: Record<string, number> | undefined, items: Record<string, number>) =>
+    c ? active.reduce((n, g) => n + g.weight * share(c[g.key] ?? 0, items[g.key] ?? 0), 0) / wsum : 0;
+  const sharedAt = Math.max(2, Math.ceil(active.length * 0.6));
+
+  const terms: ScoredTerm[] = [];
+  for (const [term, c] of inp.cur) {
+    const docs = active.reduce((n, g) => n + (c[g.key] ?? 0), 0);
+    if (docs < minDocs) continue;
+    const signal = signalOf(c, inp.items), prev = signalOf(inp.prev.get(term), inp.prevItems);
+    const parts = active.map((g) => ({ key: g.key, docs: c[g.key] ?? 0, share: share(c[g.key] ?? 0, inp.items[g.key] ?? 0) }));
+    const total = parts.reduce((n, p, i) => n + active[i].weight * p.share, 0) || 1;
+    const groups: TermGroup[] = parts.map((p, i) => ({ ...p, part: (active[i].weight * p.share) / total }));
+    const top = groups.reduce((a, b) => (b.part > a.part ? b : a), groups[0]);
+    const breadth = active.filter((g) => present(c[g.key] ?? 0, inp.items[g.key] ?? 0)).length;
+    const kind = active.length < 2 ? 'single' : breadth >= sharedAt && top.part < 0.6 ? 'shared' : top.part >= 0.75 || breadth <= 1 ? 'single' : 'mixed';
+    const prevDocs = Object.values(inp.prev.get(term) ?? {}).reduce((n, v) => n + v, 0);
+    terms.push({ term, docs, signal, prev, change: baselineOk ? (signal + EPS) / (prev + EPS) : null, isNew: baselineOk && prevDocs === 0,
+      breadth, active: active.length, exclusivity: top.part, topGroup: top.key, kind, groups });
+  }
+  terms.sort((a, b) => b.signal - a.signal || b.docs - a.docs || a.term.localeCompare(b.term));
+  return { terms: dropParts(terms), baselineOk, active };
+}
+
+/** "interest" next to "interest rates" with almost the same count is one topic: keep the phrase, drop the word. */
+export function dropParts(sorted: ScoredTerm[]): ScoredTerm[] {
+  const phrases = sorted.filter((t) => t.term.includes(' '));
+  const covered = new Set<string>();
+  for (const p of phrases) {
+    for (const w of p.term.split(' ')) {
+      const one = sorted.find((t) => t.term === w);
+      if (one && p.docs >= 0.7 * one.docs) covered.add(w);
+    }
+  }
+  return sorted.filter((t) => !covered.has(t.term));
+}
+
+/** Terms that are rising: more signal than before, weighted by how much signal there is. */
+export const rising = (terms: ScoredTerm[], n: number): ScoredTerm[] =>
+  terms.filter((t) => t.change !== null && t.change >= 1.5).sort((a, b) => b.signal * Math.log(b.change!) - a.signal * Math.log(a.change!)).slice(0, n);
+
+/** What one group talks about that the others do not: its share against the average share elsewhere. */
+export function distinctive(terms: ScoredTerm[], key: string, n: number, minDocs = 3): Array<ScoredTerm & { own: number; others: number; lift: number }> {
+  const out: Array<ScoredTerm & { own: number; others: number; lift: number }> = [];
+  for (const t of terms) {
+    const g = t.groups.find((x) => x.key === key);
+    if (!g || g.docs < minDocs) continue;
+    const rest = t.groups.filter((x) => x.key !== key);
+    const others = rest.length ? rest.reduce((s, x) => s + x.share, 0) / rest.length : 0;
+    out.push({ ...t, own: g.share, others, lift: (g.share + EPS) / (others + EPS) });
+  }
+  return out.filter((t) => t.lift >= 2).sort((a, b) => b.own * Math.log(b.lift) - a.own * Math.log(a.lift)).slice(0, n);
+}

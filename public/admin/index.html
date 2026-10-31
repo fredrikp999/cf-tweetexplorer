@@ -353,6 +353,51 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 #publish th { font-size: 12px; color: var(--muted); border-top: 0; }
 #publish a { color: var(--accent); }
 #pubEditor textarea { min-height: 360px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+
+/* ----- signal ----- */
+.sigsteps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; } .sigsteps .go { margin-left: 6px; }
+.sigctl { display: flex; gap: 10px 16px; flex-wrap: wrap; align-items: center; margin: 0 0 16px; }
+.siggrp { display: flex; flex-direction: column; gap: 8px; border-top: 3px solid var(--gc); }
+.siggrp.off { opacity: .55; }
+.siggrp .gname .link { font-size: 15px; font-weight: 650; color: var(--text); text-align: left; }
+.siggrp .gname { font-weight: 650; display: flex; justify-content: space-between; gap: 8px; }
+.siggrp .gnum { font-size: 26px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.siggrp svg { width: 100%; height: 34px; display: block; }
+.siggrp .wt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.siggrp .wt input { flex: 1; min-width: 0; accent-color: var(--gc); }
+.siggrp .wt output { width: 34px; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.sigleg { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: -4px 0 12px; }
+.sigleg i, .sigdot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--gc); margin-right: 6px; vertical-align: -1px; }
+.sigrows { display: flex; flex-direction: column; gap: 3px; }
+.sigrow { display: grid; grid-template-columns: minmax(120px, 210px) minmax(0, 1fr) 54px minmax(0, 190px); gap: 12px; align-items: center; width: 100%; background: none; border: 0; border-radius: 8px; padding: 5px 8px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.sigrow:hover, .sigrow.on { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.sigrow .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.sigrow .bar { display: flex; height: 16px; border-radius: 4px; overflow: hidden; background: transparent; }
+.sigrow .bar b { min-width: 2px; background: var(--gc); }
+.sigrow .v { text-align: right; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+.sigrow .cs { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+.sigrow .cells { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 3px; }
+.sigrow .cells span { height: 20px; border-radius: 4px; font-size: 11.5px; line-height: 20px; text-align: center; overflow: hidden; color: var(--text); background: color-mix(in srgb, var(--gc) calc(var(--a) * 100%), transparent); }
+.sigcap { display: grid; grid-template-columns: minmax(120px, 210px) minmax(0, 1fr) 54px minmax(0, 190px); gap: 12px; padding: 0 8px 4px; font-size: 12px; color: var(--muted); }
+.sigcap .cells { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 3px; text-align: center; }
+.sigcap .cells span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sigchip { font-size: 11.5px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.sigchip.shared { color: var(--ok); border-color: var(--ok); } .sigchip.single { color: var(--bar3); border-color: var(--bar3); } .sigchip.up { color: var(--accent); border-color: var(--accent); }
+.siglist { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.siglist button { display: flex; justify-content: space-between; gap: 10px; width: 100%; background: none; border: 0; border-radius: 7px; padding: 5px 8px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.siglist button:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.siglist small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sigsamples { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 10px; }
+.sigsamples li { font-size: 14px; border-left: 3px solid var(--gc); padding-left: 10px; }
+.sigsamples .by { font-size: 12.5px; color: var(--muted); }
+.sigwatch { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.sigwatch:first-of-type { border-top: 0; }
+.sigwatch .grow { flex: 1; min-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sigwatch input { width: 190px; }
+@media (max-width: 800px) {
+  .sigrow, .sigcap { grid-template-columns: minmax(0, 1fr) 54px; } .sigrow .bar, .sigrow .cells, .sigrow .cs, .sigcap .cells { grid-column: 1 / -1; }
+  .sigcap > :nth-child(3) { display: none; }
+}
 </style>
 </head>
 <body>
@@ -366,6 +411,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
     <button data-tab="summarize"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 11h8M5 16h14"/><path d="M18.5 8.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></svg><span>Ask AI</span></button>
     <div class="grp">Watch</div>
     <button data-tab="monitor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg><span>Live feed</span><span id="monBadge" class="badge" hidden></span></button>
+    <button data-tab="signal" data-feature="signal" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19v-6M10 19V5M15 19v-9M20 19V8"/></svg><span>Signal</span></button>
     <button data-tab="history"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Archives</span></button>
     <div class="grp" data-feature="publish" hidden>Publish</div>
     <button data-tab="publish" data-feature="publish" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12.5h5"/></svg><span>Briefings</span></button>
@@ -542,8 +588,11 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
           <option value="300" selected>5 min</option><option value="900">15 min</option><option value="1800">30 min</option><option value="3600">1 hour</option></select></label>
       <label class="chk" data-src="x"><input type="checkbox" name="originalsOnly"> no replies</label>
       <label class="chk" data-src="x"><input type="checkbox" name="includeRetweets"> include retweets</label>
+      <label>Signal group <input name="group" list="sigNames" placeholder="optional" maxlength="40" style="width:150px" title="Watches with the same group name vote together on the Signal tab"></label>
       <button class="go">Add watch</button>
     </form>
+    <datalist id="sigNames"></datalist>
+    <div class="hint">Watches feed the <a href="#signal" data-tabgo="signal" data-feature="signal">Signal</a> tab, where they are combined by group. Leave <b>Signal group</b> empty to use the feed list or kind of source; arrange and weigh groups on the Signal tab.</div>
     <div class="hint" id="monCost"></div>
     <div class="card monbar">
       <span id="monSpend"></span>
@@ -564,6 +613,43 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
       <select id="monListFilter" data-feature="sources" hidden style="padding:2px 6px;font-size:12px"><option value="">all feed lists</option></select>
       <select id="monFilter" style="padding:2px 6px;font-size:12px"><option value="">all watches</option></select></h3>
       <div id="monFeed"><div class="empty">Nothing yet. New items appear here as they are posted.</div></div></div>
+  </section>
+
+  <section id="signal" hidden>
+    <header class="page"><h1>Signal</h1><p>Everything you watch, combined into one read of what is being talked about, and where.</p></header>
+    <details class="about" data-about="signal"><summary>How the score works</summary>
+      <div><ul>
+        <li>Every watch belongs to a <b>group</b>: the feed list it was made from, or its kind of source (X, RSS, Hacker News, YouTube), or a name you give it. Groups vote.</li>
+        <li>A word, two-word phrase or hashtag is scored by the <b>share of a group's items that mention it</b>, averaged over the groups, each counted by its <b>weight</b> (0 mutes a group, 3 triples its voice). It is shares, not counts, so a busy group cannot drown a small one.</li>
+        <li><b>Everywhere</b> means most groups mention it. <b>Only in …</b> means nearly all of it comes from one group. <b>Rising</b> compares the window with the one before it.</li>
+        <li>Terms are counted for free as items are captured (no language model) and kept for 30 days. Only what your watches capture is counted, so a topic shows up here only if something you watch covers it.</li></ul></div></details>
+    <div class="card" id="sigSetup" style="margin-bottom:14px">
+      <h3>Set up your sources</h3>
+      <ol class="sigsteps">
+        <li><b>Choose what to watch.</b> Add X accounts and searches, RSS feeds, YouTube, Hacker News, or a whole feed list. <button class="go ghost" data-tabgo="monitor" type="button">Add watches in Live feed</button></li>
+        <li><b>Put them in groups.</b> By default a feed list is one group and each kind of source is one group. Give watches your own group names (for example “News” or “Researchers”) under <a href="#sigManage" data-sigjump="sigManage">Sources and groups</a> below.</li>
+        <li><b>Weigh the groups.</b> Use the slider on each group card; 0 mutes it. Then compare what the groups say.</li>
+      </ol>
+    </div>
+    <div class="sigctl">
+      <div class="seg" role="radiogroup" aria-label="Window"><label><input type="radio" name="sigdays" value="1"><span>Today</span></label><label><input type="radio" name="sigdays" value="3"><span>3 days</span></label><label><input type="radio" name="sigdays" value="7" checked><span>7 days</span></label><label><input type="radio" name="sigdays" value="14"><span>14 days</span></label></div>
+      <span class="note" id="sigNote"></span>
+    </div>
+    <div id="sigGroups" class="grid"></div>
+    <div id="sigBody">
+      <div class="card" style="margin-bottom:14px">
+        <h3 style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between">What is in the signal
+          <div class="seg" role="radiogroup" aria-label="View" style="font-weight:400"><label><input type="radio" name="sigview" value="strength" checked><span>Strength</span></label><label><input type="radio" name="sigview" value="spread"><span>Where it shows up</span></label></div></h3>
+        <div class="sigleg" id="sigLegend"></div>
+        <div id="sigRows"></div>
+      </div>
+      <div class="grid" id="sigLists"></div>
+    </div>
+    <div id="sigDetail"></div>
+    <details class="card" id="sigManage" style="margin-top:14px"><summary style="cursor:pointer;font-weight:650">Sources and groups <span class="note" style="font-weight:400">· every watch and the group it votes in</span></summary>
+      <div class="note" style="margin:8px 0">Type a group name to move a source. Sources with the same name vote together; leave it empty to use the default (its feed list, or its kind of source).</div>
+      <div id="sigManageRows"></div>
+      <button class="go ghost" data-tabgo="monitor" type="button" style="margin-top:10px">Add more watches</button></details>
   </section>
 
   <section id="history" hidden>
@@ -1359,7 +1445,7 @@ mf.addEventListener('submit', async (e) => {
   if (src === 'flist') {
     const l = flists.find((x) => x.id === mf.flist.value);
     if (!l || !l.members.length) return toast('Pick a feed list that has feeds (Lists and templates, Feed lists)');
-    const r = await watchFeedList(l, sec);
+    const r = await watchFeedList(l, sec, mf.group.value);
     toast([r.added && `Added ${r.added}`, r.had && `${r.had} already watched`, r.failed.length && `could not add: ${r.failed.join('; ')}`].filter(Boolean).join(', ') + '. The first check runs now.');
     return;
   }
@@ -1368,7 +1454,7 @@ mf.addEventListener('submit', async (e) => {
     if (src === 'rss' && mf.tpl.value) { try { address = tplLine(mf.tpl.value, address); } catch (err) { return toast(err.message); } }
     else if ((src === 'rss' || src === 'youtube') && !mf.query.value.trim()) return toast(src === 'youtube' ? 'Enter a channel, an @handle or a playlist' : 'Enter the address of the feed');
     try {
-      await post('/mon/add', { source: src, query: address, intervalSec: sec, hnTag: mf.hnTag.value, minPoints: +mf.minPoints.value || 0 });
+      await post('/mon/add', { source: src, query: address, intervalSec: sec, hnTag: mf.hnTag.value, minPoints: +mf.minPoints.value || 0, group: mf.group.value });
       mf.query.value = ''; toast('Watch added; the first check runs now');
     } catch (err) { toast(err.message); }
     return;
@@ -1380,7 +1466,7 @@ mf.addEventListener('submit', async (e) => {
     if (!confirm(`Create ${n} watch${n > 1 ? 'es' : ''} for "${l.name}", checking every ${ivl(sec)}?\n\nAbout ${money(total)} a month while idle, plus $0.15 per 1,000 tweets found.`)) return;
     try {
       for (let i = 0; i < n; i++) await post('/mon/add', { kind: 'query', query: queries[i], label: `List: ${l.name}` + (n > 1 ? ` (${i + 1}/${n})` : ''),
-        intervalSec: sec, originalsOnly: mf.originalsOnly.checked, includeRetweets: mf.includeRetweets.checked });
+        intervalSec: sec, originalsOnly: mf.originalsOnly.checked, includeRetweets: mf.includeRetweets.checked, group: mf.group.value });
       toast(`Added ${n} watch${n > 1 ? 'es' : ''}; the first check runs now`);
     } catch (err) { toast(err.message); }
     return;
@@ -1388,7 +1474,7 @@ mf.addEventListener('submit', async (e) => {
   if (!mf.query.value.trim()) return toast('Enter a handle or a search');
   if (perMonth > 5 && !confirm(`Checking every ${sec}s costs about ${money(perMonth)} per month even when nothing is posted. Continue?`)) return;
   try {
-    await post('/mon/add', { kind: mf.kind.value, query: mf.query.value, intervalSec: sec, originalsOnly: mf.originalsOnly.checked, includeRetweets: mf.includeRetweets.checked });
+    await post('/mon/add', { kind: mf.kind.value, query: mf.query.value, intervalSec: sec, originalsOnly: mf.originalsOnly.checked, includeRetweets: mf.includeRetweets.checked, group: mf.group.value });
     mf.query.value = ''; toast('Watch added; the first check runs now');
   } catch (err) { toast(err.message); }
 });
@@ -1402,7 +1488,7 @@ function renderWatches() {
     const src = srcOf(w), flags = src === 'x' ? [w.originalsOnly && 'no replies', w.includeRetweets && '+retweets'].filter(Boolean).join(', ')
       : src === 'rss' || src === 'youtube' ? safeUrl(w.query).replace(/^https?:\/\//, '') : [({ front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' })[w.hnTag], w.query, w.minPoints && `${w.minPoints}+ points`].filter(Boolean).join(' · ');
     return `<div class="card job" data-watch="${esc(w.id)}">
-      <div class="top"><b>${esc(w.label)}</b><span class="badge">${esc(SRC_NAME[src])}</span>${w.list && flists.find((l) => l.id === w.list) ? `<span class="badge">${esc(flists.find((l) => l.id === w.list).name)}</span>` : ''}<span class="badge ${status === 'checking' ? 'running' : status}">${status}</span>${flags ? `<span class="meta2">${esc(flags)}</span>` : ''}</div>
+      <div class="top"><b>${esc(w.label)}</b><span class="badge">${esc(SRC_NAME[src])}</span>${w.group ? `<span class="badge" title="Signal group">${esc(w.group)}</span>` : ''}${w.list && flists.find((l) => l.id === w.list) ? `<span class="badge">${esc(flists.find((l) => l.id === w.list).name)}</span>` : ''}<span class="badge ${status === 'checking' ? 'running' : status}">${status}</span>${flags ? `<span class="meta2">${esc(flags)}</span>` : ''}</div>
       <div class="meta2">every <select data-wint style="padding:1px 4px;font-size:12px">${[15, 30, 60, 300, 900, 1800, 3600].map((v) => `<option value="${v}" ${v === w.intervalSec ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select>
         · checked <span data-ago="${w.lastRun}">${ago(w.lastRun)}</span>${w.enabled && w.nextRun ? ` · next in <span data-next="${w.nextRun}"></span>` : ''}</div>
       <div class="meta2">${fmt(w.checks)} checks · ${fmt(w.found)} ${src === 'x' ? 'tweets' : 'items'}${src === 'x' ? ` · ${money(w.cost)} spent` : ' · free'}${w.lastError ? ` · <span class="err">${esc(w.lastError)}</span>` : ''}</div>
@@ -1566,10 +1652,10 @@ async function saveFL(l) {
   return saved;
 }
 // Watches for every member of a list, remembering the list so the Monitor feed can be shown per list.
-async function watchFeedList(l, sec) {
+async function watchFeedList(l, sec, group) {
   let added = 0, had = 0; const failed = [];
   for (const m of l.members) {
-    try { const r = await post('/mon/add', { source: m.source, query: m.query, label: m.label, hnTag: m.hnTag, minPoints: m.minPoints, intervalSec: sec, list: l.id }); if (r.existing) had++; else added++; }
+    try { const r = await post('/mon/add', { source: m.source, query: m.query, label: m.label, hnTag: m.hnTag, minPoints: m.minPoints, intervalSec: sec, list: l.id, group }); if (r.existing) had++; else added++; }
     catch (err) { if (/already watched/.test(err.message)) had++; else failed.push(`${m.label} (${err.message})`); }
   }
   return { added, had, failed };
@@ -2763,7 +2849,8 @@ function show(tab) {
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === navTab));
   document.querySelectorAll('input[name=askmode]').forEach((r) => { r.checked = r.value === tab; });
   if (tab === 'history') pollJobs();
-  if (tab === 'monitor') { clearUnseen(); renderFeed(); }
+  if (tab === 'monitor') { clearUnseen(); renderFeed(); if (features.signal && !sig) loadSignal(); }
+  if (tab === 'signal') loadSignal();
   if (tab === 'lists') loadLists();
   if (tab === 'summarize') refreshSummarize();
   if (tab === 'costs') loadCosts();
@@ -2782,6 +2869,139 @@ async function loadBalance() {
   } catch { $('#balance').textContent = ''; }
 }
 loadBalance();
+
+// ---------- signal tab ----------
+let sig = null, sigDays = 7, sigView = 'strength', sigPick = null, sigAll = false;
+const sigPalette = () => [css('--bar'), css('--bar2'), css('--bar3'), css('--bar4'), '#2f9e6b', '#d6336c', '#4263eb', '#868e96', '#0ca678', '#e8590c'];
+const sigCol = (key) => sigPalette()[Math.max(0, sig.groups.findIndex((g) => g.key === key)) % 10];
+const sigName = (key) => sig.groups.find((g) => g.key === key)?.name ?? key;
+const sigPct = (x) => { const p = x * 100; return (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'; };
+const sigActive = () => sig.groups.filter((g) => g.weight > 0 && g.items > 0);
+const sigHref = (u) => (/^https:\/\//.test(u ?? '') ? u : '');
+function sigSpark(arr, color) {
+  const max = Math.max(1, ...arr), w = 140, h = 34, step = w / Math.max(1, arr.length - 1);
+  const pts = arr.map((v, i) => `${(i * step).toFixed(1)},${(h - 2 - (v / max) * (h - 6)).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Items per day, last ${arr.length} days"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
+}
+async function loadSignal() {
+  try { sig = await (await fetch('/mon/signal?days=' + sigDays)).json(); } catch { return; }
+  if (sig.error) return toast(sig.error);
+  sig.groups.sort((a, b) => a.key.localeCompare(b.key));
+  renderSignal();
+  if (sigPick) openSigPick();
+}
+function sigChips(t) {
+  const c = [];
+  if (t.active > 1) c.push(t.kind === 'shared' ? '<span class="sigchip shared">everywhere</span>' : t.kind === 'single' ? `<span class="sigchip single">only ${esc(sigName(t.topGroup))}</span>` : '<span class="sigchip">mixed</span>');
+  if (t.isNew) c.push('<span class="sigchip up">new</span>'); else if (t.change >= 1.5) c.push(`<span class="sigchip up">↑ ×${t.change.toFixed(1)}</span>`);
+  return c.join('');
+}
+function renderSignal() {
+  const act = sigActive(), total = sig.groups.reduce((n, g) => n + g.items, 0);
+  $('#sigNames').innerHTML = sig.groups.map((g) => `<option value="${esc(g.name)}">`).join('');
+  $('#sigManageRows').innerHTML = sig.groups.length ? sig.groups.map((g) => `<div class="note" style="margin-top:10px"><span class="sigdot" style="--gc:${sigCol(g.key)}"></span><b>${esc(g.name)}</b></div>`
+    + g.watches.map((w) => `<div class="sigwatch" data-wid="${esc(w.id)}"><span class="grow" title="${esc(w.label)}">${esc(w.label)}</span><span class="note">${esc({ x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube' }[w.source] ?? w.source)}${w.enabled ? '' : ' · paused'}</span>
+      <input list="sigNames" value="${esc(w.group ?? '')}" placeholder="${esc(g.name)}" maxlength="40" aria-label="Group for ${esc(w.label)}"><button class="go ghost" data-wmove>Save</button></div>`).join('')).join('')
+    : '<div class="note">No watches yet.</div>';
+  $('#sigNote').textContent = sig.groups.length ? `${fmt(total)} items in ${act.length} of ${sig.groups.length} groups, ${sig.from === sig.to ? sig.to : sig.from + ' to ' + sig.to}${sig.baselineOk ? '' : ' · too little earlier data to say what is rising yet'}` : '';
+  $('#sigBody').hidden = !total;
+  $('#sigGroups').innerHTML = sig.groups.length ? sig.groups.map((g) => `<div class="card siggrp${g.weight > 0 && g.items ? '' : ' off'}" style="--gc:${sigCol(g.key)}">
+      <div class="gname"><button class="link" data-sgroup="${esc(g.key)}" title="What this group talks about, and its sources">${esc(g.name)}</button><span class="note">${g.watches.length} source${g.watches.length === 1 ? '' : 's'}</span></div>
+      <div><span class="gnum">${fmt(g.items)}</span> <span class="note">items${g.prevItems ? `, ${fmt(g.prevItems)} before` : ''}</span></div>
+      ${sigSpark(g.perDay, sigCol(g.key))}
+      <label class="wt">Weight <input type="range" min="0" max="3" step="0.25" value="${g.weight}" data-weight="${esc(g.key)}" aria-label="Weight of ${esc(g.name)}"><output>${g.weight === 0 ? 'off' : '×' + g.weight}</output></label></div>`).join('')
+    : '<div class="empty" style="grid-column:1/-1">Nothing is watched yet. Add watches (or watch a feed list) in the Live feed, and they appear here as groups.</div>';
+  if (!total) { $('#sigRows').innerHTML = ''; $('#sigLists').innerHTML = ''; return; }
+  if (act.length < 2) $('#sigNote').textContent += ' · only one group counts, so everything is “only” in it; watch another kind of source to compare';
+
+  // The ranked terms.
+  const names = sig.lists.top, shown = sigAll ? names : names.slice(0, 20), max = Math.max(1e-9, ...names.map((n) => sig.terms[n].signal));
+  $('#sigLegend').innerHTML = act.map((g) => `<span><i style="--gc:${sigCol(g.key)}"></i>${esc(g.name)}</span>`).join('');
+  const cap = sigView === 'spread' ? `<div class="sigcap"><span></span><div class="cells" style="--n:${act.length}">${act.map((g) => `<span title="${esc(g.name)}">${esc(g.name)}</span>`).join('')}</div><span></span><span></span></div>` : '';
+  $('#sigRows').innerHTML = names.length ? cap + `<div class="sigrows">${shown.map((n) => {
+    const t = sig.terms[n];
+    let mid;
+    if (sigView === 'spread') {
+      const row = Math.max(1e-9, ...t.groups.map((x) => x.share));
+      mid = `<div class="cells" style="--n:${act.length}">${act.map((g) => { const x = t.groups.find((y) => y.key === g.key); return x && x.docs ? `<span style="--gc:${sigCol(g.key)};--a:${Math.max(0.08, x.share / row).toFixed(2)}" title="${esc(g.name)}: ${fmt(x.docs)} items, ${sigPct(x.share)}">${sigPct(x.share)}</span>` : `<span style="--a:0"></span>`; }).join('')}</div>`;
+    } else {
+      mid = `<span class="bar" style="width:${Math.max(2, (t.signal / max) * 100).toFixed(1)}%">${t.groups.filter((x) => x.part >= 0.02).map((x) => `<b style="flex:${x.part.toFixed(3)};--gc:${sigCol(x.key)}" title="${esc(sigName(x.key))}: ${fmt(x.docs)} items"></b>`).join('')}</span>`;
+    }
+    return `<button class="sigrow${sigPick?.id === n ? ' on' : ''}" data-sterm="${esc(n)}"><span class="t" title="${esc(n)}">${esc(n)}</span><span>${mid}</span><span class="v" title="Weighted share of items that mention it">${sigPct(t.signal)}</span><span class="cs">${sigChips(t)}</span></button>`;
+  }).join('')}</div>${names.length > 20 ? `<button class="go ghost" data-sigmore style="margin-top:10px">${sigAll ? 'Show fewer' : `Show all ${names.length}`}</button>` : ''}`
+    : '<div class="empty">No term is mentioned often enough yet. Terms need three items in the window.</div>';
+
+  // Three short lists.
+  const list = (title, hint, keys, small) => `<div class="card"><h3>${title}</h3><div class="note" style="margin:-8px 0 8px">${hint}</div>${keys.length ? `<ul class="siglist">${keys.slice(0, 10).map((n) => `<li><button data-sterm="${esc(n)}"><span>${esc(n)}</span><small>${small(sig.terms[n])}</small></button></li>`).join('')}</ul>` : '<div class="note">Nothing yet.</div>'}</div>`;
+  $('#sigLists').innerHTML = list('Everywhere', 'Mentioned in most groups at once', sig.lists.shared, (t) => `${t.breadth} of ${t.active} groups`)
+    + list('Only in one group', 'What one kind of source is talking about alone', sig.lists.single.filter((n) => sig.terms[n].active > 1), (t) => `<i class="sigdot" style="--gc:${sigCol(t.topGroup)};margin-right:4px"></i>${esc(sigName(t.topGroup))}`)
+    + list('Rising', sig.baselineOk ? 'More than in the window before' : 'Needs a few more days of data', sig.lists.rising, (t) => (t.isNew ? 'new' : `↑ ×${t.change.toFixed(1)}`));
+}
+
+// Detail: one term over time and its items, or one group's talking points and sources.
+function openSigPick() { return sigPick.type === 'term' ? showSigTerm(sigPick.id, false) : showSigGroup(sigPick.id, false); }
+const sigClose = '<button class="link" data-sclose style="float:right;font-weight:400">Close</button>';
+async function showSigTerm(term, scroll) {
+  sigPick = { type: 'term', id: term };
+  let d; try { d = await (await fetch('/mon/signal-term?term=' + encodeURIComponent(term))).json(); } catch { return; }
+  if (d.error || sigPick?.id !== term) return;
+  const t = sig.terms[term], live = d.groups.filter((g) => g.docs.some((n) => n > 0));
+  $('#sigDetail').innerHTML = `<div class="card" style="margin-top:14px"><h3>${esc(term)} ${sigClose}</h3>
+    ${t ? `<div class="optrow" style="margin-bottom:8px">${sigChips(t)}<span class="note">${t.groups.filter((g) => g.docs).map((g) => `<span class="sigdot" style="--gc:${sigCol(g.key)}"></span>${esc(sigName(g.key))} ${fmt(g.docs)} (${sigPct(g.share)})`).join(' · ')}</span></div>` : ''}
+    <div style="height:210px"><canvas id="sigChart"></canvas></div>
+    <div class="note" style="margin-top:6px">Share of each group's items that mention it, per day (UTC).</div>
+    <ul class="sigsamples">${d.samples.length ? d.samples.map((s) => {
+      const x = s.tweet, link = sigHref(x.url) || (s.source === 'x' && /^\d+$/.test(x.id ?? '') ? `https://x.com/${x.author?.userName ?? 'i'}/status/${x.id}` : '');
+      const who = s.source === 'x' ? '@' + (x.author?.userName ?? '') : (x.feed || s.label), text = String(x.text ?? '').replace(/\s+/g, ' ').slice(0, 240);
+      return `<li style="--gc:${sigCol(s.group)}"><div class="by">${esc(sigName(s.group))} · ${esc(who)} · ${new Date(x.createdAt || s.seenAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</div>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(text)}</a>` : esc(text)}</li>`;
+    }).join('') : '<li class="note" style="border:0">No recent item in the live feed mentions it any more; older mentions are counted but not kept.</li>'}</ul></div>`;
+  chart($('#sigChart'), { type: 'line', legend: true, data: { labels: d.days.map((x) => x.slice(5)), datasets: live.map((g) => ({ label: g.name, borderColor: sigCol(g.key), backgroundColor: sigCol(g.key), tension: 0.25, pointRadius: 2,
+    data: g.docs.map((n, i) => (g.items[i] ? +((n / g.items[i]) * 100).toFixed(2) : 0)) })) },
+    options: { scales: { y: { beginAtZero: true, ticks: { precision: 1, callback: (v) => v + '%' } } }, plugins: { legend: { display: true }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}% of items` } } } } });
+  if (scroll) $('#sigDetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+async function showSigGroup(key, scroll) {
+  sigPick = { type: 'group', id: key };
+  let d; try { d = await (await fetch(`/mon/signal-group?key=${encodeURIComponent(key)}&days=${sigDays}`)).json(); } catch { return; }
+  if (d.error) { sigPick = null; $('#sigDetail').innerHTML = ''; return; }
+  const terms = (rows, extra) => rows.length ? `<ul class="siglist">${rows.map((r) => `<li><button data-sterm="${esc(r.term)}"><span>${esc(r.term)}</span><small>${extra(r)}</small></button></li>`).join('')}</ul>` : '<div class="note">Nothing yet.</div>';
+  const others = sig.groups.filter((g) => g.key !== key).map((g) => g.name);
+  $('#sigDetail').innerHTML = `<div class="card" style="margin-top:14px;--gc:${sigCol(key)}"><h3><span class="sigdot"></span>${esc(d.name)} ${sigClose}</h3>
+    <div class="note" style="margin-bottom:10px">${fmt(d.items)} items in this window${d.active ? '' : d.weight === 0 ? ' · weight is 0, so it does not count' : ' · nothing captured, so it does not count'}.</div>
+    <div class="grid"><div><h3 style="font-size:14px">Mentioned most</h3>${terms(d.strongest, (r) => `${fmt(r.docs)} items · ${sigPct(r.share)}`)}</div>
+      <div><h3 style="font-size:14px">Talked about here more than elsewhere</h3>${terms(d.distinctive, (r) => `×${r.lift.toFixed(1)} · ${sigPct(r.own)} vs ${sigPct(r.others)}`)}</div></div>
+    <h3 style="font-size:14px;margin-top:14px">Sources in this group</h3>
+    <div class="note" style="margin:-6px 0 8px">Sources with the same group name vote together. Type a name to move one (an existing name merges them); leave it empty to go back to the default.</div>
+    ${d.watches.map((w) => `<div class="sigwatch" data-wid="${esc(w.id)}"><span class="grow" title="${esc(w.label)}">${esc(w.label)}</span><span class="note">${esc({ x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube' }[w.source] ?? w.source)}${w.enabled ? '' : ' · paused'}</span>
+      <input list="sigNames" placeholder="Move to group…" maxlength="40" aria-label="Group for ${esc(w.label)}"><button class="go ghost" data-wmove>Move</button></div>`).join('')}
+    <div class="sigwatch" data-gkey="${esc(key)}"><span class="grow"><b>The whole group</b></span><input list="sigNames" placeholder="Rename or merge into…" maxlength="40" aria-label="New name for this group"><button class="go ghost" data-gmove>Rename</button></div></div>`;
+  if (scroll) $('#sigDetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+$('#signal').addEventListener('click', async (e) => {
+  const t = e.target.closest('[data-sterm]'), g = e.target.closest('[data-sgroup]');
+  try {
+    if (t) { await showSigTerm(t.dataset.sterm, true); renderSignal(); }
+    else if (g) await showSigGroup(g.dataset.sgroup, true);
+    else if (e.target.closest('[data-sigjump]')) { e.preventDefault(); const m = $('#sigManage'); m.open = true; m.scrollIntoView({ behavior: 'smooth' }); }
+    else if (e.target.closest('[data-sclose]')) { sigPick = null; $('#sigDetail').innerHTML = ''; renderSignal(); }
+    else if (e.target.closest('[data-sigmore]')) { sigAll = !sigAll; renderSignal(); }
+    else if (e.target.closest('[data-wmove]')) {
+      const row = e.target.closest('[data-wid]');
+      await post('/mon/update', { id: row.dataset.wid, group: row.querySelector('input').value }); sigPick = null; $('#sigDetail').innerHTML = ''; await loadSignal(); toast('Moved');
+    } else if (e.target.closest('[data-gmove]')) {
+      const row = e.target.closest('[data-gkey]');
+      await post('/mon/signal-regroup', { key: row.dataset.gkey, group: row.querySelector('input').value }); sigPick = null; $('#sigDetail').innerHTML = ''; await loadSignal(); toast('Renamed');
+    }
+  } catch (err) { toast(err.message); }
+});
+$('#signal').addEventListener('input', (e) => { const w = e.target.closest('[data-weight]'); if (w) w.nextElementSibling.textContent = +w.value === 0 ? 'off' : '×' + w.value; });
+$('#signal').addEventListener('change', async (e) => {
+  const w = e.target.closest('[data-weight]');
+  if (w) { try { await post('/mon/signal-weight', { key: w.dataset.weight, weight: +w.value }); await loadSignal(); } catch (err) { toast(err.message); } return; }
+  if (e.target.name === 'sigdays') { sigDays = +e.target.value; loadSignal(); }
+  if (e.target.name === 'sigview') { sigView = e.target.value; if (sig) renderSignal(); }
+});
 </script>
 <script>
 // ---------- Briefings: scheduled, published summaries (this used to be a separate page) ----------
