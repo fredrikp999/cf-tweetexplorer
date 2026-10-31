@@ -108,6 +108,13 @@ function buildServer(env: Env): McpServer {
   registerAppResource(server, 'Costs', COSTS_UI, { mimeType: RESOURCE_MIME_TYPE },
     async () => ({ contents: [{ uri: COSTS_UI, mimeType: RESOURCE_MIME_TYPE, text: costsHtml }] }));
 
+  server.registerTool('get_signal_items', {
+    description: 'The proof for a Signal topic: the actual items (title, link, source, date) that mention it, newest first, with how many come from each group and source. Use a term or topic name from get_signal; `terms` may list several that belong to one topic.',
+    inputSchema: { terms: z.array(z.string()).min(1).max(12).describe('The term(s) to find, as named by get_signal'), days: z.number().int().min(1).max(14).default(7), group: z.string().optional().describe('Only items from this group (its key from get_signal)'), watch: z.string().optional().describe('Only items from this source (a watch id)'),
+      limit: z.number().int().min(1).max(50).default(20), offset: z.number().int().min(0).default(0) },
+    annotations: readOnly,
+  }, ({ terms, days, group, watch, limit, offset }) => ask(env.MONITOR, '/mon/signal-items', { terms: terms.join('|'), days, group, watch, limit, offset }));
+
   // The Signal view: the same JSON as the get_signal text, drawn as bars by group. Registered here, after the Costs view, so the two apps sit together.
   registerAppTool(server, 'get_signal', {
     description: 'Signal: the topics across all watched sources combined into one weighted score. Each source group (a feed list, a kind of source, or a name you gave it) has a weight; a term is scored by how large a share of each group\'s items mention it. Returns the groups, the top terms, the rising terms, the terms found in most groups ("shared") and the terms found almost only in one group ("single"), each with the groups it comes from.',

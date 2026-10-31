@@ -56,7 +56,7 @@ survive eviction and deploys and carry on where they stopped.
 | `HistoryDO` | History jobs, their tweets (sharded by time window and query), labels, analyses, saved reports | Collection slices (10 min) and analysis slices (8 min) |
 | `PublishDO` | Briefing topics, issues (drafts and published), audio and image templates | The schedule: a topic's next run |
 | `ListsDO` | Your curated lists of accounts, X Lists kept by reference (with groups), and feed lists (RSS, YouTube, Hacker News) | |
-| `MonitorDO` | Watches (X searches and accounts, RSS feeds, Hacker News), their checkpoints, the combined feed, and Signal's daily term counts (30 days) | Polling |
+| `MonitorDO` | Watches (X searches and accounts, RSS feeds, Hacker News), their checkpoints, the combined feed, and Signal's daily term counts and a log of the items behind them (30 days) | Polling |
 | `CostDO` | The spend ledger behind the Costs tab | |
 
 Audio (MP3) and briefing pictures are stored in the R2 bucket `AUDIO`.

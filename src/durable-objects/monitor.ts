@@ -77,7 +77,11 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('CREATE TABLE IF NOT EXISTS ai_item (watch TEXT NOT NULL, item TEXT NOT NULL, day TEXT NOT NULL, topics TEXT NOT NULL, PRIMARY KEY (watch, item)) WITHOUT ROWID');
     sql.exec('CREATE TABLE IF NOT EXISTS ai_terms (day TEXT NOT NULL, watch TEXT NOT NULL, term TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (day, watch, term)) WITHOUT ROWID');
     sql.exec('CREATE TABLE IF NOT EXISTS ai_items (day TEXT NOT NULL, watch TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (day, watch)) WITHOUT ROWID');
+    // Proof for Signal: the items themselves (title, link, source, date) for 30 days, so any topic can be traced back to what was published.
+    sql.exec('CREATE TABLE IF NOT EXISTS item_log (watch TEXT NOT NULL, item TEXT NOT NULL, day TEXT NOT NULL, ts INTEGER NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, disc TEXT NOT NULL, by TEXT NOT NULL, match TEXT NOT NULL, PRIMARY KEY (watch, item)) WITHOUT ROWID');
+    sql.exec('CREATE INDEX IF NOT EXISTS item_log_day ON item_log (day)');
     this.backfillSignal();
+    this.backfillItemLog();
   }
 
   // ---- storage helpers
@@ -246,6 +250,7 @@ export class MonitorDO extends DurableObject<Env> {
       if (ts < floor) continue;
       const day = dayOf(ts);
       days.set(day, (days.get(day) ?? 0) + 1);
+      this.logItem(watch, f, ts, day);
       const j = f.json as { text?: unknown; title?: unknown; source?: unknown };
       // A video's description is mostly the channel's footer (links, sponsors, "join the Discord"), so only its title says what it is about.
       for (const t of extractTerms(String(j.source === 'youtube' && j.title ? j.title : j.text ?? ''))) terms.set(`${day}\n${t}`, (terms.get(`${day}\n${t}`) ?? 0) + 1);
@@ -255,6 +260,29 @@ export class MonitorDO extends DurableObject<Env> {
       const i = k.indexOf('\n');
       sql.exec('INSERT INTO terms (day, watch, term, n) VALUES (?, ?, ?, ?) ON CONFLICT (day, watch, term) DO UPDATE SET n = n + excluded.n', k.slice(0, i), watch, k.slice(i + 1), n);
     }
+  }
+  /** Keeps what is needed to show an item as proof of a topic. `match` is the text its terms were counted from. */
+  private logItem(watch: string, f: Found, ts: number, day: string): void {
+    const j = f.json as { id?: unknown; text?: unknown; title?: unknown; url?: unknown; discussionUrl?: unknown; source?: unknown; author?: { userName?: unknown } };
+    const id = String(j.id ?? f.id ?? ''); if (!id) return;
+    const x = !j.source, text = String(j.text ?? ''), user = String(j.author?.userName ?? '');
+    const safe = (u: unknown) => (/^https:\/\//.test(String(u ?? '')) ? String(u).slice(0, 400) : '');
+    const url = safe(j.url) || (x && /^\d+$/.test(id) ? `https://x.com/${user || 'i'}/status/${id}` : '');
+    this.ctx.storage.sql.exec('INSERT OR IGNORE INTO item_log (watch, item, day, ts, title, url, disc, by, match) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', watch, id, day, ts,
+      (x ? text : String(j.title ?? '') || text.split('\n')[0]).replace(/\s+/g, ' ').slice(0, 200), url, safe(j.discussionUrl), (x ? '@' : '') + user.slice(0, 60),
+      String(j.source === 'youtube' && j.title ? j.title : text).slice(0, 600));
+  }
+  /** Once: log what the live feed already holds. */
+  private backfillItemLog(): void {
+    if (this.getMeta('itemLogBackfill', false)) return;
+    const rows = this.ctx.storage.sql.exec<{ watch: string; seen_at: number; json: string }>('SELECT watch, seen_at, json FROM feed').toArray(), floor = Date.now() - SIGNAL_KEEP_DAYS * 86_400_000;
+    this.ctx.storage.transactionSync(() => {
+      for (const r of rows) {
+        const j = JSON.parse(r.json) as { createdAt?: string }, ts = Date.parse(j.createdAt ?? '') || r.seen_at;
+        if (ts >= floor) this.logItem(r.watch, { id: '', ts, json: j }, Math.min(ts, Date.now()), dayOf(Math.min(ts, Date.now())));
+      }
+      this.setMeta('itemLogBackfill', true);
+    });
   }
   /** Once: count what the feed already holds, so Signal has something to show the day it is first opened. */
   private backfillSignal(): void {
@@ -276,6 +304,7 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('DELETE FROM terms WHERE day < ?', dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
     sql.exec('DELETE FROM day_items WHERE day < ?', dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
     sql.exec('DELETE FROM terms WHERE n = 1 AND day < ?', dayOf(now - 7 * 86_400_000));
+    sql.exec('DELETE FROM item_log WHERE day < ?', dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
     for (const t of ['ai_terms', 'ai_items', 'ai_item']) sql.exec(`DELETE FROM ${t} WHERE day < ?`, dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
     sql.exec('DELETE FROM ai_terms WHERE n = 1 AND day < ?', dayOf(now - 7 * 86_400_000));
     this.setMeta('signalPruned', today());
@@ -596,6 +625,39 @@ export class MonitorDO extends DurableObject<Env> {
     }
     return { term, days, groups: groups.map((g) => ({ key: g.key, name: g.name, docs: docs[g.key], items: by[g.key] })), samples };
   }
+  /**
+   * The proof for a topic: every logged item in the window that mentions one of its terms, with the sources and groups they come from.
+   * `filter` narrows the list (and only the list) to one group or one source; the counts always cover the whole window.
+   */
+  private async signalItems(q: { terms: string[]; days: number; group: string; watch: string; offset: number; limit: number }) {
+    const days = Math.min(SIGNAL_MAX_DAYS, Math.max(1, Math.floor(q.days) || 7)), now = Date.now();
+    const from = dayOf(now - (days - 1) * 86_400_000), to = dayOf(now);
+    const { of, groups } = await this.groups(), names = new Map(groups.map((g) => [g.key, g.name] as const));
+    const labels = new Map(this.watches().map((w) => [w.id, w.label] as const)), ai = this.aiTopics(from);
+    const want = new Set(q.terms.map((t) => t.toLowerCase().trim()).filter(Boolean));
+    if (!want.size) throw new Error('term required');
+    const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; disc: string; by: string; match: string }>(
+      'SELECT watch, item, ts, title, url, disc, by, match FROM item_log WHERE day >= ? AND day <= ? ORDER BY ts DESC LIMIT 8000', from, to).toArray();
+    const hits: Array<{ watch: string; group: string; ts: number; title: string; url: string; disc: string; by: string; match: string; matched: string[] }> = [];
+    for (const r of rows) {
+      const g = of.get(r.watch); if (!g) continue;
+      const have = ai ? new Set(ai.get(`${r.watch}\n${r.item}`) ?? []) : new Set(extractTerms(r.match));
+      const matched = [...want].filter((t) => have.has(t));
+      if (matched.length) hits.push({ watch: r.watch, group: g, ts: r.ts, title: r.title, url: r.url, disc: r.disc, by: r.by, match: r.match, matched });
+    }
+    const tally = <K extends string>(key: (h: (typeof hits)[number]) => K) => { const m = new Map<K, number>(); for (const h of hits) m.set(key(h), (m.get(key(h)) ?? 0) + 1); return m; };
+    const byGroup = tally((h) => h.group), byWatch = tally((h) => h.watch);
+    const shown = hits.filter((h) => (!q.group || h.group === q.group) && (!q.watch || h.watch === q.watch));
+    const limit = Math.min(50, Math.max(1, Math.floor(q.limit) || 20)), offset = Math.max(0, Math.floor(q.offset) || 0);
+    return {
+      terms: [...want], from, to, total: hits.length, shown: shown.length, truncated: rows.length >= 8000,
+      groups: [...byGroup].map(([key, n]) => ({ key, name: names.get(key) ?? key, n })).sort((a, b) => b.n - a.n),
+      sources: [...byWatch].map(([watch, n]) => ({ watch, label: labels.get(watch) ?? watch, group: of.get(watch) ?? '', n })).sort((a, b) => b.n - a.n).slice(0, 30),
+      items: shown.slice(offset, offset + limit).map((h) => ({ watch: h.watch, label: labels.get(h.watch) ?? h.watch, group: h.group, ts: h.ts, title: h.title, url: h.url, discussionUrl: h.disc, by: h.by, matched: h.matched,
+        snippet: h.match.replace(/\s+/g, ' ').trim() === h.title ? '' : h.match.replace(/\s+/g, ' ').slice(0, 260) })),
+      more: offset + limit < shown.length,
+    };
+  }
   private async signalGroup(key: string, daysIn: number) {
     const c = await this.compute(daysIn), g = c.groups.find((x) => x.key === key);
     if (!g) throw new Error('unknown group');
@@ -612,7 +674,7 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('DELETE FROM seen WHERE watch = ?', id);
     sql.exec('DELETE FROM terms WHERE watch = ?', id);
     sql.exec('DELETE FROM day_items WHERE watch = ?', id);
-    for (const t of ['ai_queue', 'ai_item', 'ai_terms', 'ai_items']) sql.exec(`DELETE FROM ${t} WHERE watch = ?`, id);
+    for (const t of ['ai_queue', 'ai_item', 'ai_terms', 'ai_items', 'item_log']) sql.exec(`DELETE FROM ${t} WHERE watch = ?`, id);
   }
 
   // ---- HTTP API (same routes and JSON as the local server)
@@ -648,6 +710,10 @@ export class MonitorDO extends DurableObject<Env> {
         if (name === 'signal-ai') return json(this.aiStatus());
         if (name === 'signal-filter') return json(this.filterInfo());
         if (name === 'signal-public-boards') return json(await this.publicBoards());
+        if (name === 'signal-items') {
+          const p = url.searchParams;
+          return json(await this.signalItems({ terms: (p.get('terms') ?? p.get('term') ?? '').split('|').slice(0, 12), days: Number(p.get('days')), group: p.get('group') ?? '', watch: p.get('watch') ?? '', offset: Number(p.get('offset')), limit: Number(p.get('limit')) }));
+        }
         if (name === 'signal-group') return json(await this.signalGroup(url.searchParams.get('key') ?? '', Number(url.searchParams.get('days'))));
         return json({ error: 'unknown monitor route' }, 404);
       }

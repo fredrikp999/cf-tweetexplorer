@@ -389,6 +389,9 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 .siglist button { display: flex; justify-content: space-between; gap: 10px; width: 100%; background: none; border: 0; border-radius: 7px; padding: 5px 8px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .siglist button:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .siglist small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: pointer; color: var(--text); padding: 1px 10px; } button.sigchip:hover { border-color: var(--accent); } button.sigchip.on { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.sigsamples a { color: var(--text); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--text) 30%, transparent); text-underline-offset: 3px; } .sigsamples a:hover { color: var(--accent); text-decoration-color: currentColor; }
+.sigsamples mark, .sigproof mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 .sigsamples { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 10px; }
 .sigsamples li { font-size: 14px; border-left: 3px solid var(--gc); padding-left: 10px; }
 .sigsamples .by { font-size: 12.5px; color: var(--muted); }
@@ -3046,6 +3049,36 @@ function renderSignal() {
 // Detail: one term over time and its items, or one group's talking points and sources.
 function openSigPick() { return sigPick.type === 'term' ? showSigTerm(sigPick.id, false) : showSigGroup(sigPick.id, false); }
 const sigClose = '<button class="link" data-sclose style="float:right;font-weight:400">Close</button>';
+// Proof for a topic: the items that mention it, from the log Signal keeps for 30 days. Filter by group or source; every title links to the original.
+let sigProof = null;
+async function loadProof(reset) {
+  const pr = sigProof; if (!pr) return;
+  if (reset) { pr.offset = 0; pr.items = []; }
+  const q = new URLSearchParams({ terms: pr.terms.join('|'), days: sigDays, group: pr.group, watch: pr.watch, offset: pr.offset, limit: 20 });
+  let d; try { d = await (await fetch('/mon/signal-items?' + q)).json(); } catch { return; }
+  if (sigProof !== pr || !$('#sigProof')) return;
+  if (d.error) { $('#sigProof').innerHTML = `<div class="note">${esc(d.error)}</div>`; return; }
+  pr.data = d; pr.items = pr.items.concat(d.items); pr.offset = pr.items.length;
+  renderProof();
+}
+function sigMark(text, terms) {
+  const words = [...new Set(terms.flatMap((t) => [t, ...t.replace(/^#/, '').split(' ')]).filter((w) => w.length >= 2))].sort((a, b) => b.length - a.length).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const safe = esc(text);
+  return words.length ? safe.replace(new RegExp(`(?<![\\p{L}\\p{N}])(${words.join('|')})(?![\\p{L}\\p{N}])`, 'giu'), '<mark>$1</mark>') : safe;
+}
+function renderProof() {
+  const pr = sigProof, d = pr.data, box = $('#sigProof'); if (!d) return;
+  const srcs = new Set(d.sources.map((x) => x.watch)).size;
+  const chip = (attr, val, label, n, on, color) => `<button class="sigchip${on ? ' on' : ''}" ${attr}="${esc(val)}" type="button">${color ? `<i class="sigdot" style="--gc:${color};margin-right:4px"></i>` : ''}${esc(label)} <b>${fmt(n)}</b></button>`;
+  box.innerHTML = `<div class="note" style="margin-bottom:8px"><b>${fmt(d.total)}</b> item${d.total === 1 ? '' : 's'} mention it from ${fmt(srcs)} source${srcs === 1 ? '' : 's'}, ${d.from === d.to ? d.to : d.from + ' to ' + d.to}${d.truncated ? ' (the newest 8,000 logged items were searched)' : ''}.
+      ${pr.terms.length > 1 ? `Matching: ${esc(pr.terms.join(', '))}.` : ''}</div>
+    <div class="optrow" style="margin-bottom:6px"><span class="note">Group</span>${chip('data-pgroup', '', 'All', d.total, !pr.group)}${d.groups.map((g) => chip('data-pgroup', g.key, g.name, g.n, pr.group === g.key, sigCol(g.key))).join('')}</div>
+    <div class="optrow" style="margin-bottom:10px"><span class="note">Source</span>${chip('data-pwatch', '', 'All', d.total, !pr.watch)}${d.sources.filter((x) => !pr.group || x.group === pr.group).slice(0, 14).map((x) => chip('data-pwatch', x.watch, x.label, x.n, pr.watch === x.watch)).join('')}</div>
+    <ul class="sigsamples">${pr.items.map((it) => `<li style="--gc:${sigCol(it.group)}"><div class="by">${esc(sigName(it.group))} · <b>${esc(it.label)}</b>${it.by && it.by !== it.label ? ' · ' + esc(it.by) : ''} · ${new Date(it.ts).toLocaleDateString([], { month: 'short', day: 'numeric' })}${it.matched.length > 1 || pr.terms.length > 1 ? ' · ' + it.matched.map((m) => `<span class="sigchip">${esc(m)}</span>`).join(' ') : ''}</div>
+      ${it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener noreferrer">${sigMark(it.title || it.snippet || '(no title)', pr.terms)}</a>` : sigMark(it.title || it.snippet || '(no title)', pr.terms)}
+      ${it.snippet ? `<div class="note">${sigMark(it.snippet, pr.terms)}</div>` : ''}${it.discussionUrl ? `<div class="note"><a href="${esc(it.discussionUrl)}" target="_blank" rel="noopener noreferrer">Discussion</a></div>` : ''}</li>`).join('') || '<li class="note" style="border:0">No logged item matches. Items are logged as they are captured, and kept for 30 days.</li>'}</ul>
+    ${d.more ? '<button class="go ghost" data-pmore type="button">Show more</button>' : `<div class="note">${fmt(d.shown)} shown${d.shown !== d.total ? ' of ' + fmt(d.total) + ' (filtered)' : ''}.</div>`}`;
+}
 async function showSigTerm(term, scroll) {
   sigPick = { type: 'term', id: term };
   let d; try { d = await (await fetch('/mon/signal-term?term=' + encodeURIComponent(term))).json(); } catch { return; }
@@ -3056,11 +3089,10 @@ async function showSigTerm(term, scroll) {
     ${t ? `<div class="optrow" style="margin-bottom:8px">${sigChips(t)}<span class="note">${t.groups.filter((g) => g.docs).map((g) => `<span class="sigdot" style="--gc:${sigCol(g.key)}"></span>${esc(sigName(g.key))} ${fmt(g.docs)} (${sigPct(g.share)})`).join(' · ')}</span></div>` : ''}
     <div style="height:210px"><canvas id="sigChart"></canvas></div>
     <div class="note" style="margin-top:6px">Share of each group's items that mention it, per day (UTC).</div>
-    <ul class="sigsamples">${d.samples.length ? d.samples.map((s) => {
-      const x = s.tweet, link = sigHref(x.url) || (s.source === 'x' && /^\d+$/.test(x.id ?? '') ? `https://x.com/${x.author?.userName ?? 'i'}/status/${x.id}` : '');
-      const who = s.source === 'x' ? '@' + (x.author?.userName ?? '') : (x.feed || s.label), text = String(x.text ?? '').replace(/\s+/g, ' ').slice(0, 240);
-      return `<li style="--gc:${sigCol(s.group)}"><div class="by">${esc(sigName(s.group))} · ${esc(who)} · ${new Date(x.createdAt || s.seenAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</div>${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(text)}</a>` : esc(text)}</li>`;
-    }).join('') : '<li class="note" style="border:0">No recent item in the live feed mentions it any more; older mentions are counted but not kept.</li>'}</ul></div>`;
+    <h3 style="font-size:14px;margin:16px 0 6px">Proof <span class="note" style="font-weight:400">the items behind it</span></h3>
+    <div id="sigProof"><div class="note">Loading…</div></div></div>`;
+  sigProof = { terms: [term, ...(t?.members ?? [])], group: '', watch: '', offset: 0, items: [], data: null };
+  loadProof(true);
   chart($('#sigChart'), { type: 'line', legend: true, data: { labels: d.days.map((x) => x.slice(5)), datasets: live.map((g) => ({ label: g.name, borderColor: sigCol(g.key), backgroundColor: sigCol(g.key), tension: 0.25, pointRadius: 2,
     data: g.docs.map((n, i) => (g.items[i] ? +((n / g.items[i]) * 100).toFixed(2) : 0)) })) },
     options: { scales: { y: { beginAtZero: true, ticks: { precision: 1, callback: (v) => v + '%' } } }, plugins: { legend: { display: true }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}% of items` } } } } });
@@ -3116,6 +3148,9 @@ $('#signal').addEventListener('click', async (e) => {
   try {
     if (t) { await showSigTerm(t.dataset.sterm, true); renderSignal(); }
     else if (g) await showSigGroup(g.dataset.sgroup, true);
+    else if (e.target.closest('[data-pgroup]')) { sigProof.group = e.target.closest('[data-pgroup]').dataset.pgroup; sigProof.watch = ''; await loadProof(true); }
+    else if (e.target.closest('[data-pwatch]')) { sigProof.watch = e.target.closest('[data-pwatch]').dataset.pwatch; await loadProof(true); }
+    else if (e.target.closest('[data-pmore]')) await loadProof(false);
     else if (e.target.closest('[data-fdel]')) await sigSetFilter(sig.filter.words.filter((w) => w.term !== e.target.closest('[data-fdel]').dataset.fdel));
     else if (e.target.closest('[data-fhide]')) { const term = e.target.closest('[data-fhide]').dataset.fhide; sigPick = null; $('#sigDetail').innerHTML = ''; await sigSetFilter([...sig.filter.words, { term, phrases: false }]); toast(`“${term}” is filtered. Undo it under Filtered words.`); }
     else if (e.target.closest('[data-sigjump]')) { e.preventDefault(); const a = e.target.closest('[data-sigjump]'), m = $('#' + a.dataset.sigjump); if (m.tagName === 'DETAILS') m.open = true; m.scrollIntoView({ behavior: 'smooth' }); }
