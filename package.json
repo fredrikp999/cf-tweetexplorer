@@ -11,10 +11,12 @@
   },
   "scripts": {
     "start": "node server/index.js",
+    "build:apps": "node scripts/build-apps.mjs",
     "dev": "wrangler dev",
+    "predeploy": "npm run build:apps",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/apps",
     "test": "node --test \"test/*.test.mjs\"",
     "check": "npm run typecheck && npm test",
     "build": "wrangler deploy --dry-run --outdir .wrangler/dry-run"
@@ -22,12 +24,14 @@
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.97.0",
     "@anthropic-ai/sdk": "^0.109.1",
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@strands-agents/sdk": "^1.22.0",
     "openai": "^6.49.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "wrangler": "^4.153.0"
   },

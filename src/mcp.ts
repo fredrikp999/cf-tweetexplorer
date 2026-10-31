@@ -3,9 +3,12 @@
 // For clients that cannot do a browser login, use an Access service token (docs/deployment.md).
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
+import costsHtml from './apps/costs.html';
 
 const MAX_TWEETS = 200;
+const COSTS_UI = 'ui://tweet-explorer/costs.html';
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const failure = (message: string) => ({ isError: true, content: [{ type: 'text' as const, text: message }] });
@@ -87,11 +90,16 @@ function buildServer(env: Env): McpServer {
     annotations: readOnly,
   }, ({ limit }) => ask(env.MONITOR, '/mon/feed', { limit }));
 
-  server.registerTool('get_costs', {
+  // MCP Apps: hosts that support them show the Costs view inline; the others still get the JSON text.
+  registerAppTool(server, 'get_costs', {
     description: 'Spend by feature over the last N days (twitterapi.io, language models, audio, pictures).',
     inputSchema: { days: z.number().int().min(1).max(365).default(30) },
     annotations: readOnly,
+    _meta: { ui: { resourceUri: COSTS_UI } },
   }, async ({ days }) => text(await env.COST.getByName('main').summary(days)));
+
+  registerAppResource(server, 'Costs', COSTS_UI, { mimeType: RESOURCE_MIME_TYPE },
+    async () => ({ contents: [{ uri: COSTS_UI, mimeType: RESOURCE_MIME_TYPE, text: costsHtml }] }));
 
   return server;
 }
