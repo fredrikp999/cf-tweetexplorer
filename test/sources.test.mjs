@@ -363,3 +363,28 @@ test('unreachable and non-web addresses give readable reasons', async () => {
     assert.deepEqual(r.failed, ['Down (could not reach that address)']);
   } finally { globalThis.fetch = real; }
 });
+
+describe('the sources of a summary', async () => {
+  const { sourceRefs, streamSummary } = await import('../src/summarize/agent.ts');
+  const { compact } = await import('../src/summarize/tweets.ts');
+  const yt = (n, feed, url) => compact({ id: `yt:${n}`, url: `https://www.youtube.com/watch?v=${n}`, text: `Video ${n}\nlong description`, createdAt: '2026-01-01T00:00:00Z', source: 'youtube', feed, feedUrl: url, author: { name: feed, userName: feed } });
+  const A = 'https://www.youtube.com/feeds/videos.xml?channel_id=UCsBjURrPoezykLs9EqgamOA';
+  const items = [yt('aaaaaaaaaa1', 'Fireship', A), yt('aaaaaaaaaa2', 'Fireship', A), compact({ id: 'hn:7', url: 'https://a.example.com/p', discussionUrl: 'https://news.ycombinator.com/item?id=7', text: 'A story', source: 'hn', feed: 'HN front page', feedUrl: 'https://news.ycombinator.com/', author: { userName: 'pg', name: 'pg' } }), compact({ id: '99', text: 'a tweet', author: { userName: 'ann' } })];
+
+  test('lists the feeds it read, counts what it cited, and links the channel page', () => {
+    const r = sourceRefs(items, 'See [Fireship: Video aaaaaaaaaa1](https://www.youtube.com/watch?v=aaaaaaaaaa1) and [the talk](https://news.ycombinator.com/item?id=7).');
+    assert.deepEqual([r.items, r.xPosts, r.feeds.length, r.cited.length], [3, 1, 2, 2]);
+    const f = r.feeds.find((x) => x.source === 'youtube');
+    assert.deepEqual([f.label, f.count, f.cited, f.page, f.url], ['Fireship', 2, 1, 'https://www.youtube.com/channel/UCsBjURrPoezykLs9EqgamOA', A]);
+    assert.deepEqual(new Set(r.cited.map((c) => c.title)), new Set(['Video aaaaaaaaaa1', 'A story']));
+    assert.equal(r.feeds[0].cited >= r.feeds[1].cited, true, 'cited feeds first');
+  });
+  test('nothing for a summary of tweets only', () => { assert.equal(sourceRefs([items[3]], 'x'), null); });
+  test('streamSummary sends it before the usage, after the text', async () => {
+    // Only the order of the events is checked, with the scripted mock model.
+    const { MockModel } = await import('../src/summarize/mock-model.ts');
+    const ev = []; for await (const e of streamSummary({ req: { length: 'brief', tweets: items }, sources: {}, model: new MockModel(), modelId: 'mock' })) ev.push(e.type);
+    assert.ok(ev.includes('sources'), ev.join());
+    assert.ok(ev.indexOf('sources') < ev.indexOf('usage') && ev.indexOf('usage') < ev.indexOf('done'));
+  });
+});

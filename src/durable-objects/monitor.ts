@@ -27,6 +27,7 @@ interface Watch {
   hnTag?: HnTag; minPoints?: number;           // Hacker News
   etag?: string; lastModified?: string;        // RSS: conditional requests, so an unchanged feed costs nothing
   autoLabel?: boolean;                         // the label is a placeholder until the first fetch names the feed
+  list?: string;                               // the feed list this watch was made from, so the feed can be shown per list
 }
 const sourceOf = (w: Watch): SourceKind => w.source ?? 'x';
 // What one check found, whatever the source: the id (for de-duplication), its time and the JSON the feed stores.
@@ -210,8 +211,10 @@ export class MonitorDO extends DurableObject<Env> {
           const limit = Math.min(500, Number(url.searchParams.get('limit')) || 200);
           const source = url.searchParams.get('source') ?? ''; // '' = every source, combined
           if (source && !isSource(source)) throw new Error('unknown source');
+          const list = url.searchParams.get('list') ?? '';     // only the watches made from one feed list
+          const ofList = JSON.stringify(this.watches().filter((w) => w.list === list).map((w) => w.id));
           const rows = this.ctx.storage.sql.exec<{ watch: string; label: string; seen_at: number; json: string; source: string }>(
-            "SELECT watch, label, seen_at, json, source FROM feed WHERE (?1 = '' OR source = ?1) ORDER BY seq DESC LIMIT ?2", source, limit).toArray();
+            "SELECT watch, label, seen_at, json, source FROM feed WHERE (?1 = '' OR source = ?1) AND (?3 = '' OR watch IN (SELECT value FROM json_each(?4))) ORDER BY seq DESC LIMIT ?2", source, limit, list, ofList).toArray();
           // Items saved before they carried the name of their feed get it from the watch they came from.
           const queries = new Map(this.watches().map((w) => [w.id, w] as const));
           return json(rows.map((r) => {
@@ -229,6 +232,13 @@ export class MonitorDO extends DurableObject<Env> {
         if (this.watches().length >= MAX_WATCHES) throw new Error(`at most ${MAX_WATCHES} watches`);
         let source = isSource(b.source) ? b.source : 'x';
         if (source === 'rss' && isYoutubeFeed(String(b.query ?? '').trim())) source = 'youtube';   // a YouTube feed address pasted as a plain feed
+        const listId = /^[A-Za-z0-9-]{1,40}$/.test(String(b.list ?? '')) ? String(b.list) : undefined;
+        // Already watched: from a feed list that is fine (the watch just remembers it belongs to the list too); otherwise it is a mistake.
+        const repeat = (had: Watch, message: string): Response => {
+          if (!listId) throw new Error(message);
+          if (!had.list) { had.list = listId; this.saveWatch(had); }
+          return json({ ...this.view(had), existing: true });
+        };
         const intervalSec = Math.min(MAX_INTERVAL, Math.max(MIN_INTERVAL, Math.floor(Number(b.intervalSec)) || 60));
         const now = Math.floor(Date.now() / 1000);
         const w: Watch = {
@@ -238,12 +248,15 @@ export class MonitorDO extends DurableObject<Env> {
         const given = String(b.label ?? '').trim().slice(0, 60);
         if (source === 'rss' || source === 'youtube') {
           w.query = source === 'youtube' ? await resolveYoutubeFeed(String(b.query ?? '')) : checkFeedUrl(String(b.query ?? ''));
-          if (this.watches().some((x) => x.query === w.query && (sourceOf(x) === 'rss' || sourceOf(x) === 'youtube'))) throw new Error('that feed is already watched');
+          const had = this.watches().find((x) => x.query === w.query && (sourceOf(x) === 'rss' || sourceOf(x) === 'youtube'));
+          if (had) return repeat(had, 'that feed is already watched');
           w.label = given || new URL(w.query).hostname; w.autoLabel = !given; w.originalsOnly = false; w.includeRetweets = false;
         } else if (source === 'hn') {
           w.hnTag = HN_TAGS.includes(b.hnTag as HnTag) ? (b.hnTag as HnTag) : 'front_page';
           w.query = String(b.query ?? '').trim().slice(0, 200);
           w.minPoints = Math.min(10_000, Math.max(0, Math.floor(Number(b.minPoints)) || 0));
+          const hadHn = this.watches().find((x) => sourceOf(x) === 'hn' && (x.hnTag ?? 'front_page') === w.hnTag && x.query === w.query && (x.minPoints ?? 0) === w.minPoints);
+          if (hadHn) return repeat(hadHn, 'that search is already watched');
           const kind = { front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' }[w.hnTag];
           w.label = given || `HN ${kind}${w.query ? ` · ${w.query}` : ''}${w.minPoints ? ` · ${w.minPoints}+ points` : ''}`.slice(0, 60);
           w.originalsOnly = false; w.includeRetweets = false;
@@ -253,6 +266,7 @@ export class MonitorDO extends DurableObject<Env> {
           if (!query || query.length > 400 || (b.kind === 'account' && !/^from:\w{1,15}$/.test(query))) throw new Error('invalid account or query');
           w.query = query; w.label = b.kind === 'account' ? '@' + query.slice(5) : given || query;
         }
+        if (listId) w.list = listId;
         this.saveWatch(w); await this.reschedule();
         return json(this.view(w));
       }

@@ -6,6 +6,7 @@ import type { Model } from '@strands-agents/sdk';
 import { AnthropicModel } from '@strands-agents/sdk/models/anthropic';
 import { z } from 'zod';
 import { readArticle, readHnComments } from '../sources/read.ts';
+import { pageOfFeed } from '../sources/youtube.ts';
 import { compact, dedupeSort, handleQueries, HANDLE, type CompactTweet, type RawTweet } from './tweets.ts';
 
 /** Optional pre-screen of the tweets (summarize/screen.ts): drops off-topic and spam tweets and adds a `signal` to the rest. */
@@ -44,6 +45,9 @@ export type SourceSpec =
   | { type: 'free' };
 export interface SummaryRequest { instruction?: string; length: Length; tweets?: CompactTweet[]; source?: SourceSpec; model?: string }
 
+/** One feed the writer read from, with how many of its items it saw and cited. */
+export interface SourceRef { source: string; label: string; url?: string; page?: string; count: number; cited: number }
+export interface CitedItem { title: string; url: string; feed: string; source: string }
 export type SumEvent =
   | { type: 'status'; text: string }
   | { type: 'tool'; id: string; name: string; input: unknown }
@@ -51,6 +55,7 @@ export type SumEvent =
   | { type: 'text'; delta: string }
   | { type: 'usage'; inputTokens: number; outputTokens: number; model?: string }
   | { type: 'warning'; text: string }
+  | { type: 'sources'; items: number; xPosts: number; feeds: SourceRef[]; cited: CitedItem[] }
   | { type: 'done'; stopReason: string }
   | { type: 'error'; message: string };
 
@@ -78,7 +83,7 @@ How to work
 Shape of the answer (Markdown, no preamble)
 1. A one-sentence TL;DR in bold.
 2. Themes: short headed paragraphs, most important first, each with citations.
-3. Notable posts: the few tweets that drew the most reaction and have substance (skip jokes and plain promotion unless they are the story), with their counts. Every notable post must link to its own tweet (or article), with the handle (or site name) as the link text and the item's url field, also when you present them as a table row. A notable post without a link is not allowed.
+3. Notable posts: the few tweets that drew the most reaction and have substance (skip jokes and plain promotion unless they are the story), with their counts. For videos and articles (items whose source is not X) call this section Notable items, give views or points only when the item has them, and never invent likes or retweets. Every notable post must link to its own tweet (or article), with the handle (or site name) as the link text and the item's url field. Use a short bulleted list, not a table. A notable post without a link is not allowed.
 4. Disagreement or open questions, only if the tweets show any.
 5. If a tool reported accounts with no tweets in the window, one line naming them.
 Match the requested length. Reply in the language of the user's instruction (English by default).
@@ -152,9 +157,10 @@ const MAX_READS = 5;   // article and comment reads per run: they are slow, and 
  * Hacker News items the writer has actually been shown (given, or returned by a tool), so text inside a page cannot send it
  * to fetch an address of its own choosing.
  */
-export function buildTools(s: Sources, given: CompactTweet[] = []) {
+export function buildTools(s: Sources, given: CompactTweet[] = [], onItems?: (items: CompactTweet[]) => void) {
   const known = { urls: new Set<string>(), hn: new Set<string>(), yt: new Set<string>() };
   const remember = (items: CompactTweet[]) => {
+    onItems?.(items);
     for (const t of items) {
       if (!t.source || t.source === 'x') continue;
       if (t.source === 'youtube') { if (/^yt:[\w-]{11}$/.test(t.id)) known.yt.add(t.id.slice(3)); continue; }   // a video page has no article text: its transcript is the tool for it
@@ -323,6 +329,35 @@ function friendlyError(err: unknown): string {
 
 const shorten = (v: unknown, n = 160) => { const s = typeof v === 'string' ? v : JSON.stringify(v); return s.length > n ? s.slice(0, n) + '…' : s; };
 
+const pageFor = (source: string, url?: string): string | undefined => {
+  if (source === 'hn') return 'https://news.ycombinator.com/';
+  if (!url) return undefined;
+  try { return source === 'youtube' ? pageOfFeed(url) ?? undefined : new URL(url).origin; } catch { return undefined; }
+};
+
+/**
+ * Which feeds the writer read and which of their items it cited (a Markdown link to the item's address or its discussion page).
+ * Null when it read nothing but tweets, which are cited by the handle and need no list.
+ */
+export function sourceRefs(items: Iterable<CompactTweet>, written: string): Extract<SumEvent, { type: 'sources' }> | null {
+  const links = new Set<string>();
+  for (const m of written.matchAll(/\]\((https?:\/\/[^\s)]+)\)/g)) links.add(m[1]);
+  const feeds = new Map<string, SourceRef>(), cited: CitedItem[] = []; let xPosts = 0, n = 0;
+  for (const t of items) {
+    if (!t.source) { xPosts++; continue; }
+    n++;
+    const key = `${t.source}\n${t.feedUrl ?? ''}\n${t.feed ?? ''}`;
+    const f = feeds.get(key) ?? { source: t.source, label: t.feed || (t.source === 'hn' ? 'Hacker News' : t.by || 'Feed'), ...(t.feedUrl ? { url: t.feedUrl } : {}), ...(pageFor(t.source, t.feedUrl) ? { page: pageFor(t.source, t.feedUrl) } : {}), count: 0, cited: 0 };
+    f.count++; feeds.set(key, f);
+    if (links.has(t.url) || (t.discussion && links.has(t.discussion))) {
+      f.cited++;
+      if (cited.length < 40) cited.push({ title: t.text.split('\n')[0].slice(0, 140), url: t.url, feed: f.label, source: t.source });
+    }
+  }
+  if (!feeds.size) return null;
+  return { type: 'sources', items: n, xPosts, feeds: [...feeds.values()].sort((a, b) => b.cited - a.cited || b.count - a.count).slice(0, 40), cited };
+}
+
 export async function* streamSummary(opts: { req: SummaryRequest; sources: Sources; model: Model; modelId?: string; signal?: AbortSignal; screen?: Screen }): AsyncGenerator<SumEvent> {
   let req = opts.req, fetched: { note?: string } | undefined;
   const src = req.source;
@@ -357,18 +392,21 @@ export async function* streamSummary(opts: { req: SummaryRequest; sources: Sourc
     } catch (err) { yield { type: 'warning', text: 'Screening was skipped: ' + friendlyError(err) }; }
   }
   const limits = { turns: 8, outputTokens: LENGTH_TOKENS[req.length], totalTokens: 250_000 };
-  let inputTokens = 0, outputTokens = 0, stopReason = 'endTurn', toolCalls = 0, wrote = false;
+  let inputTokens = 0, outputTokens = 0, stopReason = 'endTurn', toolCalls = 0, wrote = false, written = '';
+  const seen = new Map<string, CompactTweet>();   // everything the writer was shown, to say afterwards which feeds it read
+  const note = (items: CompactTweet[]) => { for (const t of items) seen.set(t.id, t); };
+  note(req.tweets ?? []);
   yield { type: 'status', text: req.tweets?.length ? `Reading ${req.tweets.length} tweets…` : 'Starting…' };
   // Reasoning models occasionally spend the whole budget thinking and return no text: try once more.
   for (let attempt = 0; attempt < 2 && !wrote; attempt++) {
     if (attempt) yield { type: 'status', text: 'The model returned nothing; trying once more…' };
-    const agent = new Agent({ model: opts.model, tools: buildTools(opts.sources, req.tweets), systemPrompt: SYSTEM, printer: false });
+    const agent = new Agent({ model: opts.model, tools: buildTools(opts.sources, req.tweets, note), systemPrompt: SYSTEM, printer: false });
     try {
       for await (const ev of agent.stream(buildPrompt(req, new Date(), fetched, screened), { limits, cancelSignal: opts.signal })) {
         const e = ev as unknown as Record<string, any>;
         if (e.type === 'modelStreamUpdateEvent') {
           const inner = e.event;
-          if (inner?.type === 'modelContentBlockDeltaEvent' && inner.delta?.type === 'textDelta') { wrote = true; yield { type: 'text', delta: String(inner.delta.text) }; }
+          if (inner?.type === 'modelContentBlockDeltaEvent' && inner.delta?.type === 'textDelta') { wrote = true; written += String(inner.delta.text); yield { type: 'text', delta: String(inner.delta.text) }; }
           if (inner?.type === 'modelMetadataEvent' && inner.usage) { inputTokens += inner.usage.inputTokens ?? 0; outputTokens += inner.usage.outputTokens ?? 0; }
         } else if (e.type === 'beforeToolCallEvent') {
           toolCalls++;
@@ -391,6 +429,8 @@ export async function* streamSummary(opts: { req: SummaryRequest; sources: Sourc
   // A FallbackModel (provider.ts) says which model really answered; tell the reader when it was not the one they picked.
   const active = (opts.model as { activeId?: () => string }).activeId?.() ?? opts.modelId;
   if (active && active !== opts.modelId) yield { type: 'warning', text: `${opts.modelId} could not start (out of credits or at capacity), so ${active} on OpenRouter wrote this.` };
+  const refs = sourceRefs(seen.values(), written);
+  if (refs) yield refs;
   yield { type: 'usage', inputTokens, outputTokens, model: active };
   yield { type: 'done', stopReason };
 }

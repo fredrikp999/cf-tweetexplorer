@@ -3,7 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { json } from '../lib/twitterapi';
 import { HN_TAGS, type HnTag } from '../sources/hn';
 import { checkFeedUrl } from '../sources/rss';
-import { MAX_MEMBERS as MAX_FEED_MEMBERS, memberKey, resolveLines, type FeedMember } from '../sources/feedlist';
+import { MAX_MEMBERS as MAX_FEED_MEMBERS, memberKey, readMembers, resolveLines, type FeedMember } from '../sources/feedlist';
 
 const HANDLE = /^[A-Za-z0-9_]{1,15}$/;
 const MAX_LISTS = 100, MAX_MEMBERS = 500;
@@ -122,6 +122,17 @@ export class ListsDO extends DurableObject<Env> {
       if (name === 'f-resolve') {   // pasted links, handles and feed addresses → members (each one is loaded once to check it and to name it)
         const lines = (Array.isArray(b.lines) ? b.lines : []).map((l) => String(l).slice(0, 400));
         return json(await resolveLines(lines));
+      }
+      if (name === 'f-items') {   // what one or more feed lists published lately, optionally only items with all the given words
+        const all = this.fall(), picked = [...new Set((Array.isArray(b.ids) ? b.ids : [b.id]).map(String))].slice(0, 10).map((id) => all.find((l) => l.id === id)).filter((l): l is FeedList => !!l);
+        if (!picked.length) throw new Error('pick a feed list');
+        const seen = new Set<string>(), members: FeedMember[] = [];
+        for (const l of picked) for (const m of l.members) if (!seen.has(memberKey(m))) { seen.add(memberKey(m)); members.push(m); }
+        const hours = Math.min(720, Math.max(1, Math.floor(num(b.hours)) || 24));
+        const r = await readMembers(members, Date.now() - hours * 3_600_000);
+        const words = str(b.q, 200).toLowerCase().split(/\s+/).filter(Boolean).slice(0, 8);
+        const items = words.length ? r.items.filter((i) => { const t = `${i.title} ${i.text} ${i.author.name}`.toLowerCase(); return words.every((w) => t.includes(w)); }) : r.items;
+        return json({ lists: picked.map((l) => l.name), total: items.length, read: r.read, failed: r.failed, items: items.slice(0, 200) });
       }
       if (name === 'f-save') {
         const prev = b.id ? this.fall().find((l) => l.id === String(b.id)) : undefined;

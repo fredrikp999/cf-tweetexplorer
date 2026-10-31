@@ -18,6 +18,8 @@ export interface CompactTweet {
   signal?: number;
   /** 'rss', 'hn' or 'youtube' for items that are not tweets; absent for X. For those, `by` is a site or author name and `url` is the article. */
   source?: string; discussion?: string;
+  /** The feed it came from (name and address), so a summary can say which feeds it read. */
+  feed?: string; feedUrl?: string;
 }
 
 export const MAX_TEXT = 600;
@@ -29,7 +31,7 @@ export function compact(t: RawTweet): CompactTweet {
     id: String(t.id), url: t.url ?? (by && !other ? `https://x.com/${by}/status/${t.id}` : ''), by: other ? (t.author?.name || by) : by ? '@' + by : '',
     at: t.createdAt ? new Date(t.createdAt).toISOString() : '', text: String(t.text ?? '').slice(0, MAX_TEXT),
     likes: t.likeCount ?? 0, retweets: t.retweetCount ?? 0, replies: t.replyCount ?? 0, views: t.viewCount ?? 0, lang: t.lang,
-    ...(other ? { source: t.source, ...(t.discussionUrl ? { discussion: t.discussionUrl } : {}) } : {}),
+    ...(other ? { source: t.source, ...(t.discussionUrl ? { discussion: t.discussionUrl } : {}), ...(t.feed ? { feed: t.feed } : {}), ...(t.feedUrl ? { feedUrl: t.feedUrl } : {}) } : {}),
   };
 }
 

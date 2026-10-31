@@ -178,6 +178,7 @@ button.more:hover { border-color: var(--accent); color: var(--accent); }
 .ts { display: flex; gap: 22px; flex-wrap: wrap; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .ts span { display: inline-flex; align-items: center; gap: 6px; }
 .ts a { color: inherit; }
+.mdtable { overflow-x: auto; margin: 10px 0; } .mdtable table { border-collapse: collapse; font-size: 14.5px; } .mdtable th, .mdtable td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; } .mdtable th { color: var(--muted); font-weight: 600; font-size: 13px; } .mdtable .n { text-align: right; font-variant-numeric: tabular-nums; }
 .ts svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .acts { display: none; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
 .in .acts { display: flex; }
@@ -380,6 +381,18 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
    <li><b>From lists</b> limits the search to the accounts in one or more of your lists (made in the Lists tab). It combines with every other option; a long list is split into several searches automatically.</li>
    <li>You get stats, charts and the tweet list. <b>Click a chart bar</b> to filter the list, <b>click a tweet's text</b> to open its replies, conversation, quotes and retweeters.</li></ul>
    <p class="cost">Cost: about $0.15 per 1,000 tweets. For long time ranges use <b>History</b>; to be alerted use <b>Monitor</b>.</p></div></details>
+    <div class="seg" id="searchMode" role="radiogroup" data-feature="sources" hidden style="margin-bottom:16px"><label><input type="radio" name="smode" value="x" checked><span>On X</span></label><label><input type="radio" name="smode" value="feeds"><span>In feed lists</span></label></div>
+    <div id="feedSearch" hidden>
+      <form id="fsForm" class="sform" autocomplete="off">
+        <div class="qrow"><input name="q" aria-label="Words" placeholder="Words to look for (optional), e.g. rust"><button class="go">Search</button></div>
+        <div class="card refine">
+          <div class="opt"><span class="ol">Feed lists</span><div class="optrow" id="fsLists"></div></div>
+          <div class="opt"><span class="ol">Published</span><div class="seg" role="radiogroup"><label><input type="radio" name="fsh" value="24" checked><span>24 hours</span></label><label><input type="radio" name="fsh" value="168"><span>7 days</span></label><label><input type="radio" name="fsh" value="720"><span>30 days</span></label></div></div>
+          <div class="preview"><span class="note">Reads every feed in the chosen lists now: RSS, YouTube and Hacker News. Free, nothing is stored. The words must all appear in the title or text.</span></div>
+        </div>
+      </form>
+      <div id="fsOut"></div>
+    </div>
     <form data-form="search" class="sform" autocomplete="off">
       <div class="qrow">
         <input name="query" aria-label="Search words" placeholder='Search words, e.g. "claude code"' autofocus>
@@ -503,7 +516,8 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
    <p class="cost">Cost (X): this is polling, so you pay for checks even when nothing is posted. 1 minute ≈ $6.50/month per watch while idle; 5 minutes ≈ $1.30; 15 minutes ≈ $0.43. A <b>daily cap</b> (default $2) pauses the X watches when reached; RSS and Hacker News carry on.</p></div></details>
     <form id="monForm">
       <label data-feature="sources" hidden>Source
-        <select name="source"><option value="x">X (Twitter)</option><option value="rss">RSS / Atom feed</option><option value="hn">Hacker News</option><option value="youtube">YouTube channel</option></select></label>
+        <select name="source"><option value="x">X (Twitter)</option><option value="rss">RSS / Atom feed</option><option value="hn">Hacker News</option><option value="youtube">YouTube channel</option><option value="flist">A feed list</option></select></label>
+      <label data-src="flist" hidden>Feed list <select name="flist" id="monFLSel"></select></label>
       <label data-src="x">Watch
         <select name="kind"><option value="account">Account</option><option value="query">Search query</option><option value="list">Accounts in a list</option></select></label>
       <label class="grow" id="monQWrap"><span id="monQLabel">Handle</span>
@@ -536,6 +550,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
         <label><input type="radio" name="monSrc" value="rss"><span>RSS <small data-n="rss"></small></span></label>
         <label><input type="radio" name="monSrc" value="hn"><span>Hacker News <small data-n="hn"></small></span></label>
         <label><input type="radio" name="monSrc" value="youtube"><span>YouTube <small data-n="youtube"></small></span></label></div>
+      <select id="monListFilter" data-feature="sources" hidden style="padding:2px 6px;font-size:12px"><option value="">all feed lists</option></select>
       <select id="monFilter" style="padding:2px 6px;font-size:12px"><option value="">all watches</option></select></h3>
       <div id="monFeed"><div class="empty">Nothing yet. New items appear here as they are posted.</div></div></div>
   </section>
@@ -1239,7 +1254,7 @@ document.querySelectorAll('input[name=cdays]').forEach((r) => r.addEventListener
 const mf = $('#monForm');
 const money = (n) => '$' + (n < 0.1 ? n.toFixed(4) : n.toFixed(2));
 let mon = { watches: [], settings: { dailyCap: 2 }, spend: { cost: 0 }, capped: false };
-let feedItems = [], monUnseen = 0, monFilter = '', monSrc = '';
+let feedItems = [], monUnseen = 0, monFilter = '', monSrc = '', monList = '';
 const SRC_NAME = { x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube' };
 const srcOf = (o) => o.source || 'x';
 const safeUrl = (u) => (/^https?:\/\//i.test(u ?? '') ? u : '');
@@ -1255,7 +1270,7 @@ mf.interval.addEventListener('change', monCostText); monCostText();
 function applyMonSource() {
   const src = mf.source.value, isList = src === 'x' && mf.kind.value === 'list', acc = mf.kind.value === 'account';
   mf.querySelectorAll('[data-src]').forEach((el) => { el.hidden = el.dataset.src !== src; });
-  $('#monQWrap').hidden = isList; $('#monListWrap').hidden = !isList;
+  $('#monQWrap').hidden = isList || src === 'flist'; $('#monListWrap').hidden = !isList;
   $('#monQLabel').textContent = src === 'rss' ? 'Feed address' : src === 'youtube' ? 'Channel, @handle or playlist' : src === 'hn' ? 'Keywords (optional)' : acc ? 'Handle' : 'Search query (X operators work)';
   mf.query.placeholder = src === 'rss' ? 'https://example.com/feed.xml' : src === 'youtube' ? '@Fireship or https://www.youtube.com/@Fireship' : src === 'hn' ? 'rust, "open source"' : acc ? 'anthropicai' : '"claude code" lang:en min_faves:5';
   monCostText();
@@ -1265,6 +1280,13 @@ mf.source.addEventListener('change', applyMonSource); applyMonSource();
 mf.addEventListener('submit', async (e) => {
   e.preventDefault();
   const sec = +mf.interval.value, perMonth = (30 * 86400 / sec) * 0.00015, src = mf.source.value;
+  if (src === 'flist') {
+    const l = flists.find((x) => x.id === mf.flist.value);
+    if (!l || !l.members.length) return toast('Pick a feed list that has feeds (Lists tab, Feed lists)');
+    const r = await watchFeedList(l, sec);
+    toast([r.added && `Added ${r.added}`, r.had && `${r.had} already watched`, r.failed.length && `could not add: ${r.failed.join('; ')}`].filter(Boolean).join(', ') + '. The first check runs now.');
+    return;
+  }
   if (src !== 'x') {
     if ((src === 'rss' || src === 'youtube') && !mf.query.value.trim()) return toast(src === 'youtube' ? 'Enter a channel, an @handle or a playlist' : 'Enter the address of the feed');
     try {
@@ -1302,7 +1324,7 @@ function renderWatches() {
     const src = srcOf(w), flags = src === 'x' ? [w.originalsOnly && 'no replies', w.includeRetweets && '+retweets'].filter(Boolean).join(', ')
       : src === 'rss' || src === 'youtube' ? safeUrl(w.query).replace(/^https?:\/\//, '') : [({ front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' })[w.hnTag], w.query, w.minPoints && `${w.minPoints}+ points`].filter(Boolean).join(' · ');
     return `<div class="card job" data-watch="${esc(w.id)}">
-      <div class="top"><b>${esc(w.label)}</b><span class="badge">${esc(SRC_NAME[src])}</span><span class="badge ${status === 'checking' ? 'running' : status}">${status}</span>${flags ? `<span class="meta2">${esc(flags)}</span>` : ''}</div>
+      <div class="top"><b>${esc(w.label)}</b><span class="badge">${esc(SRC_NAME[src])}</span>${w.list && flists.find((l) => l.id === w.list) ? `<span class="badge">${esc(flists.find((l) => l.id === w.list).name)}</span>` : ''}<span class="badge ${status === 'checking' ? 'running' : status}">${status}</span>${flags ? `<span class="meta2">${esc(flags)}</span>` : ''}</div>
       <div class="meta2">every <select data-wint style="padding:1px 4px;font-size:12px">${[15, 30, 60, 300, 900, 1800, 3600].map((v) => `<option value="${v}" ${v === w.intervalSec ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select>
         · checked <span data-ago="${w.lastRun}">${ago(w.lastRun)}</span>${w.enabled && w.nextRun ? ` · next in <span data-next="${w.nextRun}"></span>` : ''}</div>
       <div class="meta2">${fmt(w.checks)} checks · ${fmt(w.found)} ${src === 'x' ? 'tweets' : 'items'}${src === 'x' ? ` · ${money(w.cost)} spent` : ' · free'}${w.lastError ? ` · <span class="err">${esc(w.lastError)}</span>` : ''}</div>
@@ -1310,7 +1332,10 @@ function renderWatches() {
     </div>`;
   }).join('')}</div>` : '<div class="empty">No watches yet. Add an X account or search, an RSS feed, a YouTube channel or Hacker News above.</div>';
   const sel = $('#monFilter'), cur = sel.value;
-  sel.innerHTML = '<option value="">all watches</option>' + ws.filter((w) => !monSrc || srcOf(w) === monSrc).map((w) => `<option value="${esc(w.id)}">${esc(w.label)}</option>`).join('');
+  const lsel = $('#monListFilter'), curL = lsel.value, withList = flists.filter((l) => ws.some((w) => w.list === l.id));
+  lsel.innerHTML = '<option value="">all feed lists</option>' + withList.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+  lsel.value = withList.some((l) => l.id === curL) ? curL : ''; monList = lsel.value;
+  sel.innerHTML = '<option value="">all watches</option>' + ws.filter((w) => (!monSrc || srcOf(w) === monSrc) && (!monList || w.list === monList)).map((w) => `<option value="${esc(w.id)}">${esc(w.label)}</option>`).join('');
   sel.value = ws.some((w) => w.id === cur && (!monSrc || srcOf(w) === monSrc)) ? cur : ''; monFilter = sel.value;
   const sp = mon.spend.cost, cap = mon.settings.dailyCap;
   $('#monSpend').innerHTML = `Spent today <b>${money(sp)}</b> of ${money(cap)}${mon.capped ? ' <span class="err">· cap reached, polling paused until tomorrow or until you raise the cap</span>' : ''}`;
@@ -1326,7 +1351,8 @@ function renderFeed() {
   if (feedPending) return; feedPending = true;
   requestAnimationFrame(() => {
     feedPending = false;
-    const inSrc = feedItems.filter((i) => !monSrc || srcOf(i) === monSrc);
+    const listOf = new Map((mon.watches ?? []).map((w) => [w.id, w.list]));
+    const inSrc = feedItems.filter((i) => (!monSrc || srcOf(i) === monSrc) && (!monList || listOf.get(i.watchId) === monList));
     const items = inSrc.filter((i) => !monFilter || i.watchId === monFilter).slice(0, 100);
     const n = { '': feedItems.length, x: 0, rss: 0, hn: 0, youtube: 0 }; for (const i of feedItems) n[srcOf(i)]++;
     document.querySelectorAll('#monSrc [data-n]').forEach((el) => { el.textContent = n[el.dataset.n] || ''; });
@@ -1425,6 +1451,7 @@ async function initFeatures() {
 }
 $('#monFilter').addEventListener('change', (e) => { monFilter = e.target.value; renderFeed(); });
 $('#monSrc').addEventListener('change', (e) => { monSrc = e.target.value; renderWatches(); renderFeed(); });
+$('#monListFilter').addEventListener('change', (e) => { monList = e.target.value; renderWatches(); renderFeed(); });
 $('#monWatches').addEventListener('click', async (e) => {
   const b = e.target.closest('button[data-mact]'); if (!b) return;
   const id = b.closest('[data-watch]').dataset.watch, w = mon.watches.find((x) => x.id === id);
@@ -1459,7 +1486,30 @@ async function saveFL(l) {
   if (mine) mine.updated = saved.updated; else flists.unshift(saved);
   return saved;
 }
+// Watches for every member of a list, remembering the list so the Monitor feed can be shown per list.
+async function watchFeedList(l, sec) {
+  let added = 0, had = 0; const failed = [];
+  for (const m of l.members) {
+    try { const r = await post('/mon/add', { source: m.source, query: m.query, label: m.label, hnTag: m.hnTag, minPoints: m.minPoints, intervalSec: sec, list: l.id }); if (r.existing) had++; else added++; }
+    catch (err) { if (/already watched/.test(err.message)) had++; else failed.push(`${m.label} (${err.message})`); }
+  }
+  return { added, had, failed };
+}
+// Items from /lists/f-items, drawn like the Monitor feed.
+function renderFeedItems(box, r) {
+  const items = r.items ?? [];
+  box.innerHTML = `<div class="note" style="margin:10px 0">${fmt(r.total ?? items.length)} item${(r.total ?? items.length) === 1 ? '' : 's'} from ${fmt(r.read)} feed${r.read === 1 ? '' : 's'}${(r.total ?? 0) > items.length ? `, showing the newest ${items.length}` : ''}${r.failed?.length ? ` · <span class="err">could not read: ${esc(r.failed.join(', '))}</span>` : ''}</div>`
+    + (items.length ? items.map((t) => itemBlock(t, t.source, { extra: `<div class="via"><span class="badge">${esc(SRC_NAME[t.source] ?? t.source)}</span> via ${esc(t.feed ?? '')}</div>` })).join('') : '<div class="empty">Nothing published in this period.</div>');
+}
+function renderFSLists() {
+  const box = $('#fsLists'); if (!box) return;
+  const keep = new Set([...box.querySelectorAll('input:checked')].map((i) => i.value));
+  box.innerHTML = flists.length ? flists.map((l) => `<label class="pill"><input type="checkbox" value="${esc(l.id)}"${keep.has(l.id) || (!keep.size && flists.length === 1) ? ' checked' : ''}><span>${esc(l.name)}<small>${l.members.length}</small></span></label>`).join('')
+    : '<span class="note">No feed lists yet. Create one in the Lists tab (Feed lists).</span>';
+}
 function renderFLists() {
+  renderFSLists();
+  { const sel = $('#monFLSel'), keep = sel.value; sel.innerHTML = flists.length ? flists.map((l) => `<option value="${esc(l.id)}">${esc(l.name)} (${l.members.length})</option>`).join('') : '<option value="">No feed lists yet</option>'; if (flists.some((l) => l.id === keep)) sel.value = keep; }
   $('#flCards').innerHTML = flists.length ? flists.map((l) => {
     const n = { rss: 0, youtube: 0, hn: 0 }; for (const m of l.members) n[m.source]++;
     const parts = Object.entries(n).filter(([, v]) => v).map(([k, v]) => `${v} ${FL_KIND[k]}`).join(' · ');
@@ -1495,10 +1545,11 @@ function renderFLDetail() {
     <div id="flMembers"></div>
     <div class="lacts">
       <select id="flHours" aria-label="Period"><option value="24">Past 24 hours</option><option value="168" selected>Past 7 days</option><option value="720">Past 30 days</option></select>
+      <button class="go" data-flact="preview">Show latest items</button>
       <button class="go" data-flact="summarize">Summarize latest</button>
       <button class="go ghost" data-flact="watch">Watch in Monitor</button>
       <button class="go ghost" data-flact="copy">Copy addresses</button>
-    </div></div>`;
+    </div></div><div id="flOut" style="margin-top:14px"></div>`;
   renderFLMembers();
 }
 $('#flForm').addEventListener('submit', async (e) => {
@@ -1555,19 +1606,34 @@ $('#flDetail').addEventListener('click', async (e) => {
       if (!l.members.length) return toast('Add some feeds first');
       show('summarize'); sf.querySelector('input[name=what][value=flist]').checked = true; refreshSummarize(); sf.flsrc.value = l.id;
       const h = $('#flHours').value; sf.querySelector(`input[name=flhours][value="${h}"]`).checked = true; window.scrollTo(0, 0);
+    } else if (b.dataset.flact === 'preview') {
+      if (!l.members.length) return toast('Add some feeds first');
+      b.disabled = true; $('#flOut').innerHTML = '<div class="empty">Reading the feeds…</div>';
+      try { renderFeedItems($('#flOut'), await post('/lists/f-items', { ids: [l.id], hours: +$('#flHours').value })); } finally { b.disabled = false; }
     } else if (b.dataset.flact === 'watch') {
       if (!l.members.length) return toast('Add some feeds first');
       if (!confirm(`Add ${l.members.length} watch${l.members.length > 1 ? 'es' : ''} to Monitor for "${l.name}", checking every 15 minutes? These sources are free.`)) return;
-      let added = 0, had = 0;
-      for (const m of l.members) {
-        try { await post('/mon/add', { source: m.source, query: m.query, label: m.label, hnTag: m.hnTag, minPoints: m.minPoints, intervalSec: 900 }); added++; }
-        catch (err) { if (/already watched/.test(err.message)) had++; else throw err; }
-      }
-      toast([added && `Added ${added}`, had && `${had} already watched`].filter(Boolean).join(', ') + '. Find them in Monitor.');
+      const r = await watchFeedList(l, 900);
+      toast([r.added && `Added ${r.added}`, r.had && `${r.had} already watched`, r.failed.length && `could not add: ${r.failed.join('; ')}`].filter(Boolean).join(', ') + '. Find them in Monitor.');
+      try { mon = await (await fetch('/mon/state')).json(); renderWatches(); } catch {}
     } else if (b.dataset.flact === 'copy') {
       await navigator.clipboard.writeText(l.members.map((m) => (m.source === 'hn' ? `hn: ${m.query}` : m.query)).join('\n')); toast('Copied');
     }
   } catch (err) { toast(err.message); }
+});
+
+document.querySelectorAll('input[name=smode]').forEach((r) => r.addEventListener('change', () => {
+  const feeds = document.querySelector('input[name=smode]:checked').value === 'feeds';
+  $('#feedSearch').hidden = !feeds; searchForm.hidden = feeds; document.querySelector('#search > .out').hidden = feeds;
+}));
+$('#fsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target, ids = [...$('#fsLists').querySelectorAll('input:checked')].map((i) => i.value), btn = f.querySelector('button');
+  if (!ids.length) return toast('Pick at least one feed list');
+  btn.disabled = true; $('#fsOut').innerHTML = '<div class="empty">Reading the feeds…</div>';
+  try { renderFeedItems($('#fsOut'), await post('/lists/f-items', { ids, hours: +f.fsh.value, q: f.q.value })); }
+  catch (err) { $('#fsOut').innerHTML = `<div class="empty err">${esc(err.message)}</div>`; }
+  finally { btn.disabled = false; }
 });
 
 // ---------- summarize tab: a Strands agent (the same code runs on Cloudflare and locally) ----------
@@ -1646,10 +1712,23 @@ $('#sumStop').onclick = () => sumAbort?.abort();
 
 const shortArgs = (input) => Object.entries(input ?? {}).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ').slice(0, 110);
 
+// Which feeds a summary read, and which of their items it cited: the references behind a summary of RSS, YouTube and Hacker News items.
+const REF_KIND = { rss: 'RSS feed', youtube: 'YouTube', hn: 'Hacker News' };
+const itemsWord = (n) => `${fmt(n)} item${n === 1 ? '' : 's'}`;
+function sourcesCard(r) {
+  const feeds = r.feeds.map((f) => `<li>${safeUrl(f.page) ? `<a href="${esc(f.page)}" target="_blank" rel="noopener noreferrer">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`} <span class="badge">${esc(REF_KIND[f.source] ?? f.source)}</span>
+    ${f.source !== 'hn' && safeUrl(f.url) ? `<a class="meta2" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"><code style="overflow-wrap:anywhere">${esc(f.url)}</code></a>` : ''}
+    <span class="meta2">· ${itemsWord(f.count)} read${f.cited ? `, ${f.cited} cited` : ''}</span></li>`).join('');
+  const cited = r.cited.length ? `<details style="margin-top:8px"><summary>Cited items (${r.cited.length})</summary><ol>${r.cited.map((c) => `<li>${safeUrl(c.url) ? `<a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">${esc(c.title)}</a>` : esc(c.title)} <span class="meta2">· ${esc(c.feed)}</span></li>`).join('')}</ol></details>` : '';
+  return `<div class="card" style="margin-top:12px"><h3>Sources</h3><p class="meta2" style="margin:0 0 8px">Based on ${itemsWord(r.items)} from ${fmt(r.feeds.length)} feed${r.feeds.length === 1 ? '' : 's'}${r.xPosts ? ` and ${fmt(r.xPosts)} tweets` : ''}.</p><ul style="margin:0;padding-left:20px">${feeds}</ul>${cited}</div>`;
+}
+const sourcesText = (r) => ['Sources:', ...r.feeds.map((f) => `- ${f.label} (${REF_KIND[f.source] ?? f.source})${f.source !== 'hn' && f.url ? ' ' + f.url : ''}: ${itemsWord(f.count)} read${f.cited ? `, ${f.cited} cited` : ''}`),
+  ...(r.cited.length ? ['', 'Cited:', ...r.cited.map((c) => `- ${c.title} ${c.url}`)] : [])].join('\n');
+
 async function runSummary(body) {
   const out = $('#sumOut');
   out.innerHTML = '<div class="card"><h3>What the agent did</h3><div id="sumLog"><span class="note">Starting…</span></div></div><div class="msg" id="sumText" style="margin-top:12px" hidden></div><div id="sumMeta" class="note" style="margin-top:10px"></div>';
-  const log = $('#sumLog'), box = $('#sumText'), meta = $('#sumMeta'); let text = '', usage = null, stop = 'endTurn', gotAny = false;
+  const log = $('#sumLog'), box = $('#sumText'), meta = $('#sumMeta'); let text = '', usage = null, stop = 'endTurn', gotAny = false, refs = null;
   sumAbort = new AbortController(); $('#sumGo').hidden = true; $('#sumStop').hidden = false;
   const onEvent = (ev) => {
     if (ev.type === 'status') log.innerHTML = `<span class="note">${esc(ev.text)}</span>`;
@@ -1661,6 +1740,7 @@ async function runSummary(body) {
       if (row) { row.querySelector('.badge').className = 'badge ' + (ev.ok ? 'done' : 'error'); row.querySelector('.res').textContent = ev.note; }
     } else if (ev.type === 'text') { text += ev.delta; box.hidden = false; box.innerHTML = md(text, false); }
     else if (ev.type === 'usage') usage = ev;
+    else if (ev.type === 'sources') refs = ev;
     else if (ev.type === 'warning') out.insertAdjacentHTML('beforeend', `<div class="warn">${esc(ev.text)}</div>`);
     else if (ev.type === 'done') stop = ev.stopReason;
     else if (ev.type === 'error') out.insertAdjacentHTML('beforeend', `<div class="err">${esc(ev.message)}</div>`);
@@ -1681,7 +1761,8 @@ async function runSummary(body) {
     if (text) {
       box.innerHTML = md(text, true); hydrateCharts(box);
       box.insertAdjacentHTML('beforeend', '<p><button type="button" class="link" id="sumCopy">Copy summary</button></p>');
-      $('#sumCopy').onclick = () => navigator.clipboard.writeText(text).then(() => toast('Copied'), () => toast('Could not copy'));
+      $('#sumCopy').onclick = () => navigator.clipboard.writeText(text + (refs ? '\n\n' + sourcesText(refs) : '')).then(() => toast('Copied'), () => toast('Could not copy'));
+      if (refs) box.insertAdjacentHTML('afterend', sourcesCard(refs));
     }
     const mi = (features.summaryModels ?? []).find((m) => m.id === usage?.model);
     const cost = mi ? (usage.inputTokens * mi.inPrice + usage.outputTokens * mi.outPrice) / 1e6 : null;
@@ -2007,11 +2088,26 @@ const inline = (t) => esc(t)
   .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
   .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
   .replace(/(^|[\s(])(https?:\/\/[^\s)<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+const tableCells = (row) => row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
 function prose(text) {
   const out = []; let list = null;
   const flush = () => { if (list) { out.push(`<${list.tag}>${list.items.join('')}</${list.tag}>`); list = null; } };
-  for (const line of text.split('\n')) {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     let m;
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flush(); out.push('<hr>'); continue; }
+    // A table: a header row, a |---|---| row, then rows until the first line without a pipe.
+    if (line.includes('|') && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1]) && lines[i + 1].includes('-')) {
+      flush();
+      const head = tableCells(line); let j = i + 2; const rows = [];
+      while (j < lines.length && lines[j].includes('|') && lines[j].trim()) rows.push(tableCells(lines[j++]));
+      const num = head.map((_, k) => rows.length > 0 && rows.every((r) => /^[\d\s.,%+\u2212-]+[kKmM]?$/.test(r[k] ?? '')));
+      out.push(`<div class="mdtable"><table><thead><tr>${head.map((c, k) => `<th${num[k] ? ' class="n"' : ''}>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) =>
+        `<tr>${head.map((_, k) => `<td${num[k] ? ' class="n"' : ''}>${inline(r[k] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+      i = j - 1; continue;
+    }
     if ((m = line.match(/^\s*([-*]|\d+\.)\s+(.*)/))) {
       const tag = /\d/.test(m[1]) ? 'ol' : 'ul';
       if (list?.tag !== tag) { flush(); list = { tag, items: [] }; }
