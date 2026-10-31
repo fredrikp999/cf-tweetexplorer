@@ -5,10 +5,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
-import costsHtml from './apps/costs.html';
+import costsHtml from './apps/costs';
 
 const MAX_TWEETS = 200;
-const COSTS_UI = 'ui://tweet-explorer/costs.html';
+const COSTS_UI = 'ui://tweet-explorer/costs-v5.html';
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const failure = (message: string) => ({ isError: true, content: [{ type: 'text' as const, text: message }] });
