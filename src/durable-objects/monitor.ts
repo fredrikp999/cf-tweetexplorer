@@ -402,7 +402,7 @@ export class MonitorDO extends DurableObject<Env> {
     const by: Record<string, number[]> = Object.fromEntries(groups.map((g) => [g.key, days.map(() => 0)]));
     for (const r of this.ctx.storage.sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${this.tables().items} WHERE day >= ?`, days[0])) {
       const g = of.get(r.watch), i = days.indexOf(r.day);
-      if (g && i >= 0) by[g][i] += r.n;
+      if (g && by[g] && i >= 0) by[g][i] += r.n;   // groups outside the list (another Signal's, or muted) are not drawn
     }
     return { days, by };
   }
@@ -872,6 +872,7 @@ export class MonitorDO extends DurableObject<Env> {
       if (name === 'check') { w.nextRun = 0; this.saveWatch(w); await this.reschedule(); return json({ ok: true }); }
       return json({ error: 'unknown monitor route' }, 404);
     } catch (err) {
+      console.error('monitor request failed', name, err instanceof Error ? err.message : String(err));
       return json({ error: err instanceof Error ? err.message : String(err) }, 400);
     }
   }

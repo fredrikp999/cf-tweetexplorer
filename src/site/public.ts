@@ -212,6 +212,12 @@ ${i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_b
   { description: `The items behind ${d.label}, with their sources.` });
 }
 
+/** A published Signal that has nothing to draw, or cannot be drawn now. */
+export function signalMessageHtml(ctx: Ctx, slug: string, message: string): string {
+  const b = ctx.boards.find((x) => x.slug === slug);
+  return shell(`${b?.title ?? 'Signal'} · Signals`, rail(ctx, undefined, 'signal', slug), `<header class="pagehead"><div class="eyebrow">Signal</div><h1>${esc(b?.title ?? 'Signal')}</h1>${b?.description ? `<p class="lede">${esc(b.description)}</p>` : ''}</header><p class="meta">${esc(message)}</p>`);
+}
+
 export function signalPageHtml(d: PubSignal, ctx: Ctx): string {
   const gname = (i: number) => d.groups[i]?.name ?? '';
   // With sources switched on for this Signal, a topic opens a page with the items behind it.
@@ -488,7 +494,9 @@ async function render(env: Env, url: URL): Promise<Response> {
     if (parts.length > 3 || !SLUG.test(parts[1]) || ![1, 3, 7, 14].includes(days) || !ctx.boards.some((b) => b.slug === parts[1])) return missing();
     const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public?slug=${parts[1]}&days=${days}`));
     const d = (await r.json().catch(() => null)) as PubSignal | null;
-    return r.ok && d?.groups?.length ? html(signalPageHtml(d, ctx)) : missing();
+    if (!r.ok) return html(signalMessageHtml(ctx, parts[1], 'This Signal cannot be shown right now. Please try again in a moment.'), 503);
+    // A published Signal with nothing counted in the period (a quiet source, or every group muted) is still a page, not a missing one.
+    return html(d?.groups?.length ? signalPageHtml(d, ctx) : signalMessageHtml(ctx, parts[1], 'Nothing has been counted for this Signal in this period yet.'));
   }
   if (parts[0] === 'history') {
     if (parts.length === 1) return reports.length ? html(historyIndexHtml(ctx)) : missing();
