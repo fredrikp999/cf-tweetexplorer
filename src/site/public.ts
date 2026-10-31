@@ -143,7 +143,7 @@ ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}$
 <div class="app">${railHtml}<main class="page">${body}</main></div></body></html>`;
 }
 
-const NOTE = '<p class="note">Written by an AI from public posts on X. It can get things wrong: follow the links to read the original posts.</p>';
+const NOTE = '<p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals.</p>';
 
 export function landingHtml(ctx: Ctx): string {
   const topics = ctx.topics;
@@ -252,7 +252,8 @@ const howRead = (s: { mode?: string; minFaves?: number }) =>
 export function sourcesHtml(i: IssueFull): string {
   const p = i.provenance;
   if (!p) return '';
-  const rows = p.sources.map((s) => {
+  const feeds = p.feeds ?? [], feedItems = feeds.reduce((t, f) => t + f.count, 0), xPosts = Math.max(0, p.used - feedItems);
+  const rows = p.sources.filter((s) => !(feeds.length && s.kind === 'feed')).map((s) => {   // the feeds get their own list below
     const cnt = `<span class="c">${n(s.count)} posts</span>`;
     if (s.kind === 'xgroup') return `<li><b>${esc(s.label)}</b> <span class="k">group of ${s.lists?.length ?? 0} X lists, read together${howRead(s) ? ': ' + howRead(s) : ''}</span> ${cnt}<ul>${(s.lists ?? []).map((l) => `<li>${listLink(l.id, l.label)} <span class="c">${n(l.count)}</span></li>`).join('')}</ul></li>`;
     if (s.kind === 'xlist') return `<li>${listLink(s.id, s.label)} <span class="k">X list${howRead(s) ? ': ' + howRead(s) : ''}</span> ${cnt}</li>`;
@@ -261,9 +262,19 @@ export function sourcesHtml(i: IssueFull): string {
     return `<li>${esc(s.label)} ${cnt}</li>`;
   }).join('');
   const model = modelName(i.model);
+  const feedRows = feeds.map((f) => {
+    let site = '';
+    try { const u = new URL(f.url ?? ''); if (u.protocol === 'https:' || u.protocol === 'http:') site = u.origin; } catch { /* no usable address */ }
+    const host = site ? new URL(site).hostname : '';
+    return `<li>${site ? `<a href="${esc(site)}" rel="noopener noreferrer nofollow" target="_blank">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`} <span class="k">${f.source === 'hn' ? 'Hacker News' : `RSS feed${host ? ' · ' + esc(host) : ''}`}</span> <span class="c">${n(f.count)} ${f.count === 1 ? 'item' : 'items'}</span></li>`;
+  }).join('');
+  const basis = !feeds.length ? `<b>${n(p.used)} posts</b> from <b>${n(p.accounts)} accounts</b>`
+    : !xPosts ? `<b>${n(feedItems)} items</b> from <b>${n(feeds.length)} ${feeds.length === 1 ? 'feed' : 'feeds'}</b>`
+    : `<b>${n(p.used)} posts and items</b>: ${n(xPosts)} posts from ${n(p.accounts)} accounts on X, and ${n(feedItems)} items from ${n(feeds.length)} ${feeds.length === 1 ? 'feed' : 'feeds'}`;
   return `<section class="src"><h2>Where this comes from</h2>
-<p>Based on <b>${n(p.used)} posts</b> from <b>${n(p.accounts)} accounts</b>, posted between ${when(p.from)} and ${when(p.to)} UTC.${p.truncated ? ` Of ${n(p.fetched)} posts collected, the ${n(p.used)} that drew the most reaction were used.` : ''}</p>
+<p>Based on ${basis}, ${feeds.length ? 'published' : 'posted'} between ${when(p.from)} and ${when(p.to)} UTC.${p.truncated ? ` Of ${n(p.fetched)} collected, the ${n(p.used)} that drew the most reaction were used.` : ''}</p>
 ${rows ? `<ul class="srcs">${rows}</ul>` : ''}
+${feedRows ? `<p>The feeds it drew on:</p><ul class="srcs">${feedRows}</ul>` : ''}
 ${p.partial ? '<p>Collection stopped early, so some lists are only partly covered.</p>' : ''}
 ${p.topAccounts.length ? `<p>Most posts in the analysis: ${p.topAccounts.map((a) => `${handleLink(a.handle)} (${a.count})`).join(', ')}.</p>` : ''}
 ${model ? `<p>Written by ${esc(model)}.</p>` : ''}</section>`;

@@ -185,7 +185,9 @@ export class MonitorDO extends DurableObject<Env> {
       w.found += found.length;
       this.ctx.storage.transactionSync(() => {
         for (const f of found) {
-          sql.exec('INSERT INTO feed (watch, label, seen_at, json, source) VALUES (?, ?, ?, ?, ?)', id, w.label, Date.now(), JSON.stringify(f.json), source);
+          // Items that are not tweets remember which feed they came from, so a briefing can say what it drew on.
+          const json = source === 'x' ? f.json : { ...(f.json as object), feed: w.label, feedUrl: source === 'rss' ? w.query : 'https://news.ycombinator.com/' };
+          sql.exec('INSERT INTO feed (watch, label, seen_at, json, source) VALUES (?, ?, ?, ?, ?)', id, w.label, Date.now(), JSON.stringify(json), source);
         }
         // Each source keeps its own FEED_KEEP items, so a busy one cannot push the others out.
         sql.exec('DELETE FROM feed WHERE source = ?1 AND seq <= (SELECT MAX(seq) FROM feed WHERE source = ?1) - ?2', source, FEED_KEEP);

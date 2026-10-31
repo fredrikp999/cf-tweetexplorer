@@ -73,7 +73,9 @@ export type IssueStatus = 'draft' | 'published' | 'hidden';
 export interface IssueCost { twitter: number; llm: number | null; audio?: number; image?: number; total: number; calls: number; fetched: number; tokensIn: number; tokensOut: number; capped?: boolean }
 /** Where a briefing's tweets came from. Shown to readers, so it never holds cost. */
 export interface SourceInfo { kind: 'search' | 'list' | 'xlist' | 'xgroup' | 'feed'; label: string; count: number; id?: string; accounts?: number; handles?: string[]; lists?: Array<{ id?: string; label: string; count: number }>; mode?: XMode; minFaves?: number }
-export interface Provenance { from: number; to: number; fetched: number; used: number; accounts: number; topAccounts: Array<{ handle: string; count: number }>; sources: SourceInfo[]; truncated: boolean; partial?: boolean }
+export interface Provenance { from: number; to: number; fetched: number; used: number; accounts: number; topAccounts: Array<{ handle: string; count: number }>; sources: SourceInfo[]; truncated: boolean; partial?: boolean;
+  /** RSS feeds and Hacker News watches the posts came from, with how many items each gave. Absent on issues that used none. */
+  feeds?: Array<{ source: 'rss' | 'hn'; label: string; url?: string; count: number }> }
 interface Spend { meter: Meter; tokensIn: number; tokensOut: number; model: string; screen: number }     // screen: dollars spent by the decision model that screens the tweets
 export interface Issue {
   id: string; topic: string; status: IssueStatus; created: number; publishedAt: number;
@@ -498,7 +500,14 @@ export class PublishDO extends DurableObject<Env> {
     for (let n = 2; this.issue(t.slug, id); n++) id = `${day}-${n}`;
     const now = Date.now(), live = t.autoPublish;
     const byAccount = new Map<string, { handle: string; count: number }>();
+    const byFeed = new Map<string, { source: 'rss' | 'hn'; label: string; url?: string; count: number }>();
     for (const x of used) {
+      if (x.source === 'rss' || x.source === 'hn') {   // not an X account: counted per feed instead
+        // Items stored before feeds were named share one entry, not one per author.
+        const label = x.feed || (x.source === 'hn' ? 'Hacker News' : 'RSS items'), k = `${x.source}\n${x.feedUrl ?? ''}\n${label}`;
+        const e = byFeed.get(k) ?? { source: x.source, label, ...(x.feedUrl ? { url: x.feedUrl } : {}), count: 0 }; e.count++; byFeed.set(k, e);
+        continue;
+      }
       const h = x.author?.userName; if (!h) continue;
       const e = byAccount.get(h.toLowerCase()) ?? { handle: h, count: 0 }; e.count++; byAccount.set(h.toLowerCase(), e);
     }
@@ -511,6 +520,7 @@ export class PublishDO extends DurableObject<Env> {
       provenance: {
         from: since, to: now, fetched: recent.length, used: used.length, accounts: byAccount.size, sources: infos, truncated: recent.length > used.length, ...(spend.meter.capped ? { partial: true } : {}),
         topAccounts: [...byAccount.values()].sort((a, b) => b.count - a.count).slice(0, 10),
+        ...(byFeed.size ? { feeds: [...byFeed.values()].sort((a, b) => b.count - a.count).slice(0, 40) } : {}),
       },
     });
     return id;

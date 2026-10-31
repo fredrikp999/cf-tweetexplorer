@@ -8,6 +8,8 @@ export interface RawTweet {
   author?: { userName?: string; name?: string };
   /** Absent for X. RSS and Hacker News items from the Monitor feed carry these (see sources/types.ts). */
   source?: string; title?: string; discussionUrl?: string;
+  /** The Monitor watch (feed) the item came from: its name, and the feed's address. */
+  feed?: string; feedUrl?: string;
 }
 export interface CompactTweet {
   id: string; url: string; by: string; at: string; text: string;
