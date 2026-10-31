@@ -8,7 +8,7 @@ import { z } from 'zod';
 import costsHtml from './apps/costs';
 
 const MAX_TWEETS = 200;
-const COSTS_UI = 'ui://tweet-explorer/costs-v5.html';
+const COSTS_UI = 'ui://tweet-explorer/costs-v6.html';
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const failure = (message: string) => ({ isError: true, content: [{ type: 'text' as const, text: message }] });
