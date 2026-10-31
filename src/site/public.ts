@@ -262,11 +262,12 @@ export function sourcesHtml(i: IssueFull): string {
     return `<li>${esc(s.label)} ${cnt}</li>`;
   }).join('');
   const model = modelName(i.model);
+  const webUrl = (raw?: string) => { try { const u = new URL(raw ?? ''); return u.protocol === 'https:' || u.protocol === 'http:' ? u : null; } catch { return null; } };
   const feedRows = feeds.map((f) => {
-    let site = '';
-    try { const u = new URL(f.url ?? ''); if (u.protocol === 'https:' || u.protocol === 'http:') site = u.origin; } catch { /* no usable address */ }
-    const host = site ? new URL(site).hostname : '';
-    return `<li>${site ? `<a href="${esc(site)}" rel="noopener noreferrer nofollow" target="_blank">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`} <span class="k">${f.source === 'hn' ? 'Hacker News' : `RSS feed${host ? ' · ' + esc(host) : ''}`}</span> <span class="c">${n(f.count)} ${f.count === 1 ? 'item' : 'items'}</span></li>`;
+    const feed = webUrl(f.url), name = feed && f.source === 'rss' ? `<a href="${esc(feed.origin)}" rel="noopener noreferrer nofollow" target="_blank">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`;
+    // The address of the feed itself, in full, so a reader can subscribe to it or check what was read.
+    const addr = feed ? ` <a class="k" href="${esc(feed.href)}" rel="noopener noreferrer nofollow" target="_blank"><code>${esc(feed.href)}</code></a>` : '';
+    return `<li>${name} <span class="k">${f.source === 'hn' ? 'Hacker News' : 'RSS feed'}</span>${addr} <span class="c">${n(f.count)} ${f.count === 1 ? 'item' : 'items'}</span></li>`;
   }).join('');
   const basis = !feeds.length ? `<b>${n(p.used)} posts</b> from <b>${n(p.accounts)} accounts</b>`
     : !xPosts ? `<b>${n(feedItems)} items</b> from <b>${n(feeds.length)} ${feeds.length === 1 ? 'feed' : 'feeds'}</b>`
