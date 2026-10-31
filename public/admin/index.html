@@ -677,7 +677,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     </div>
     <div id="sigDetail"></div>
     <div class="card" id="sigBoardsCard" style="margin-top:14px"><h3 style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">Top-level Signals <button class="go ghost" data-bnew type="button">New Signal</button></h3>
-      <div class="note" style="margin:-6px 0 10px">A Signal is a named set of groups. Publish one to give it its own page on the public site, at <code>/signal/&lt;address&gt;</code>; the public page shows group names and topics only, never source names.</div>
+      <div class="note" style="margin:-6px 0 10px">A Signal is a named set of groups. Publish one to give it its own page on the public site, at <code>/signal/&lt;address&gt;</code>. The public page shows group names and topics; turn on <b>Show sources</b> to let each topic open the items behind it, with their sources and links to the originals.</div>
       <div id="sigBoards"></div><div id="sigBoardForm"></div></div>
     <details class="card" id="sigManage" style="margin-top:14px"><summary style="cursor:pointer;font-weight:650">Sources and groups <span class="note" style="font-weight:400">· every watch and the group it votes in</span></summary>
       <div class="note" style="margin:8px 0">Type a group name to move a source. Sources with the same name vote together; leave it empty to use the default (its feed list, or its kind of source). <b>Leave out</b> keeps watching a source but stops counting it in Signal; <b>Delete</b> stops watching it altogether.</div>
@@ -3004,7 +3004,7 @@ function renderSignal() {
   const act = sigActive(), total = sig.groups.reduce((n, g) => n + g.items, 0);
   $('#sigBoardSel').innerHTML = '<option value="">Everything</option>' + sig.boards.map((b) => `<option value="${esc(b.id)}"${b.id === sigBoard ? ' selected' : ''}>${esc(b.title)}</option>`).join('');
   $('#sigBoards').innerHTML = sig.boards.length ? sig.boards.map((b) => `<div class="sigwatch" data-bid="${esc(b.id)}"><span class="grow"><b>${esc(b.title)}</b> <span class="note">${b.groups.length ? esc(b.groups.map((k) => sig.everyGroup.find((g) => g.key === k)?.name ?? '(removed group)').join(', ')) : 'no groups yet'}</span></span>
-      ${b.public ? `<a class="badge active" href="/signal/${esc(b.slug)}" target="_blank" rel="noopener">Published</a>` : '<span class="badge">Draft</span>'}
+      ${b.public ? `<a class="badge active" href="/signal/${esc(b.slug)}" target="_blank" rel="noopener">Published${b.proof ? ' · with sources' : ''}</a>` : '<span class="badge">Draft</span>'}
       <button class="go ghost" data-bopen>Show</button><button class="go ghost" data-bedit>Edit</button></div>`).join('') : '<div class="note">None yet. Create one to bundle groups and publish them.</div>';
   $('#sigNames').innerHTML = sig.groups.map((g) => `<option value="${esc(g.name)}">`).join('');
   $('#sigManageRows').innerHTML = (sig.groups.length ? sig.groups.map((g) => `<div class="note" style="margin-top:10px"><span class="sigdot" style="--gc:${sigCol(g.key)}"></span><b>${esc(g.name)}</b> <button class="link" data-sgroup="${esc(g.key)}">Edit group</button></div>`
@@ -3127,6 +3127,7 @@ function sigBoardForm(b) {
     <div class="note" style="margin-bottom:4px">Groups in this Signal</div>
     <div class="optrow" style="margin-bottom:8px">${sig.everyGroup.map((g) => `<label class="pill"><input type="checkbox" name="bg" value="${esc(g.key)}"${b.groups.includes(g.key) ? ' checked' : ''}><span>${esc(g.name)}</span></label>`).join('') || '<span class="note">No groups yet.</span>'}</div>
     <label class="chk"><input type="checkbox" name="public"${b.public ? ' checked' : ''}> Published on the public site</label>
+    <label class="chk" style="display:block;margin-top:4px" title="Each topic on the public page links to the items behind it: titles, dates and the names of the sources, linking to the originals."><input type="checkbox" name="proof"${b.proof ? ' checked' : ''}> Show sources on the public page (topics link to the items behind them)</label>
     <div class="optrow" style="margin-top:10px"><button class="go" data-bsave type="button">Save</button><button class="go ghost" data-bcancel type="button">Cancel</button>${b.id ? '<button class="link" data-bdel type="button" style="color:var(--err)">Delete this Signal</button>' : ''}</div></div>`;
   $('#sigBoardForm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -3161,7 +3162,7 @@ $('#signal').addEventListener('click', async (e) => {
     else if (e.target.closest('[data-bsave]')) {
       const f = $('#sigBoardForm'), q = (n) => f.querySelector(`[name=${n}]`);
       const saved = await post('/mon/signal-board-save', { id: f.querySelector('[data-bid]').dataset.bid || undefined, title: q('title').value, slug: q('slug').value, description: q('description').value,
-        groups: [...f.querySelectorAll('[name=bg]:checked')].map((i) => i.value), public: q('public').checked });
+        groups: [...f.querySelectorAll('[name=bg]:checked')].map((i) => i.value), public: q('public').checked, proof: q('proof').checked });
       f.innerHTML = ''; await loadSignal(); toast(saved.public ? `Published at /signal/${saved.slug}` : 'Saved');
     } else if (e.target.closest('[data-bdel]')) {
       const f = $('#sigBoardForm'), id = f.querySelector('[data-bid]').dataset.bid;

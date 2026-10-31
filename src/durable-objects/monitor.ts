@@ -52,7 +52,7 @@ interface Spend { day: string; cost: number }
 
 const today = () => new Date().toISOString().slice(0, 10); // UTC day
 /** A top-level Signal: a named set of groups, with its own page when published (/signal/<slug>). */
-interface Board { id: string; slug: string; title: string; description: string; groups: string[]; public: boolean }
+interface Board { id: string; slug: string; title: string; description: string; groups: string[]; public: boolean; /** The public page may show the items behind each topic, with their sources. */ proof?: boolean }
 const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/, BOARD_RESERVED = new Set(['admin', 'custom']);
 const slugify = (t: string) => t.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
 const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -580,12 +580,12 @@ export class MonitorDO extends DurableObject<Env> {
     if (BOARD_RESERVED.has(slug) || slug.startsWith('admin') || slug.startsWith('custom')) throw new Error('that address is reserved');
     if (this.boards().some((b) => b.slug === slug && b.id !== prev?.id)) throw new Error('another Signal already has that address');
     const groups = [...new Set((Array.isArray(raw.groups) ? raw.groups : []).map((g) => String(g).slice(0, 80)).filter(Boolean))].slice(0, 40);
-    return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), slug, title, description: String(raw.description ?? '').trim().slice(0, 300), groups, public: raw.public === true };
+    return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), slug, title, description: String(raw.description ?? '').trim().slice(0, 300), groups, public: raw.public === true, proof: raw.proof === true };
   }
   /** The published Signals, for the public rail and index: names only, and only groups that count. */
   private async publicBoards() {
     const live = new Map((await this.groups()).groups.filter((g) => g.weight > 0).map((g) => [g.key, g.name] as const));
-    return this.boards().filter((b) => b.public).map((b) => ({ slug: b.slug, title: b.title, description: b.description, groups: b.groups.map((k) => live.get(k)).filter((n): n is string => !!n) })).filter((b) => b.groups.length);
+    return this.boards().filter((b) => b.public).map((b) => ({ slug: b.slug, title: b.title, description: b.description, proof: b.proof === true, groups: b.groups.map((k) => live.get(k)).filter((n): n is string => !!n) })).filter((b) => b.groups.length);
   }
   /** What the public page may see: group names, weights and counts, and terms. No watch names, addresses, handles or items. */
   private async signalPublic(slug: string, daysIn: number) {
@@ -600,7 +600,7 @@ export class MonitorDO extends DurableObject<Env> {
     const out = (t: ScoredTerm & { label?: string; related?: string[]; members?: string[] }) => ({ term: t.term, label: t.label ?? t.term, related: t.related ?? [], members: t.members ?? [], signal: t.signal, change: t.change, isNew: t.isNew, kind: t.kind, breadth: t.breadth, active: t.active,
       top: idx.get(t.topGroup) ?? 0, parts: shown.map((g) => t.groups.find((x) => x.key === g.key)?.part ?? 0) });
     return {
-      slug: board.slug, title: board.title, description: board.description,
+      slug: board.slug, title: board.title, description: board.description, proof: board.proof === true,
       days: c.days, from: c.from, to: c.to, baselineOk: c.baselineOk, volumeDays: days,
       groups: shown.map((g) => ({ name: g.name, weight: g.weight, items: c.items[g.key] ?? 0, perDay: by[g.key] })),
       top: top.map(out), rising: rising(c.terms, 10).map((t) => out(describe(t))),
@@ -629,7 +629,7 @@ export class MonitorDO extends DurableObject<Env> {
    * The proof for a topic: every logged item in the window that mentions one of its terms, with the sources and groups they come from.
    * `filter` narrows the list (and only the list) to one group or one source; the counts always cover the whole window.
    */
-  private async signalItems(q: { terms: string[]; days: number; group: string; watch: string; offset: number; limit: number }) {
+  private async signalItems(q: { terms: string[]; days: number; group: string; watch: string; offset: number; limit: number; only?: Set<string> }) {
     const days = Math.min(SIGNAL_MAX_DAYS, Math.max(1, Math.floor(q.days) || 7)), now = Date.now();
     const from = dayOf(now - (days - 1) * 86_400_000), to = dayOf(now);
     const { of, groups } = await this.groups(), names = new Map(groups.map((g) => [g.key, g.name] as const));
@@ -640,7 +640,7 @@ export class MonitorDO extends DurableObject<Env> {
       'SELECT watch, item, ts, title, url, disc, by, match FROM item_log WHERE day >= ? AND day <= ? ORDER BY ts DESC LIMIT 8000', from, to).toArray();
     const hits: Array<{ watch: string; group: string; ts: number; title: string; url: string; disc: string; by: string; match: string; matched: string[] }> = [];
     for (const r of rows) {
-      const g = of.get(r.watch); if (!g) continue;
+      const g = of.get(r.watch); if (!g || (q.only && !q.only.has(g))) continue;
       const have = ai ? new Set(ai.get(`${r.watch}\n${r.item}`) ?? []) : new Set(extractTerms(r.match));
       const matched = [...want].filter((t) => have.has(t));
       if (matched.length) hits.push({ watch: r.watch, group: g, ts: r.ts, title: r.title, url: r.url, disc: r.disc, by: r.by, match: r.match, matched });
@@ -658,6 +658,22 @@ export class MonitorDO extends DurableObject<Env> {
       more: offset + limit < shown.length,
     };
   }
+  /**
+   * The proof the public page shows for one topic of a published Signal that has switched it on: titles, links, sources and dates of the items
+   * (never their text), from that Signal's groups only. Null when the Signal is not public or does not show sources.
+   */
+  private async signalPublicItems(slug: string, term: string, daysIn: number) {
+    const board = this.boards().find((b) => b.public && b.proof === true && b.slug === slug);
+    if (!board) return null;
+    const only = new Set(board.groups), c = await this.compute(daysIn, only);
+    const topic = this.describeTopics(c, c.terms.filter(notSteady), 40).top.find((t) => t.term === term);
+    const terms = topic ? [topic.term, ...topic.members] : [term];
+    const r = await this.signalItems({ terms, days: c.days, group: '', watch: '', offset: 0, limit: 50, only });
+    return { slug: board.slug, title: board.title, days: c.days, term, label: topic?.label ?? term, terms: r.terms, from: r.from, to: r.to, total: r.total,
+      groups: r.groups.map((g) => ({ name: g.name, n: g.n })), sources: r.sources.map((x) => ({ label: x.label, group: this.groupName(r.groups, x.group), n: x.n })).slice(0, 15),
+      items: r.items.map((i) => ({ title: i.title, url: i.url, discussionUrl: i.discussionUrl, source: i.label, by: i.by, group: this.groupName(r.groups, i.group), ts: i.ts })) };
+  }
+  private groupName(groups: Array<{ key: string; name: string }>, key: string): string { return groups.find((g) => g.key === key)?.name ?? ''; }
   private async signalGroup(key: string, daysIn: number) {
     const c = await this.compute(daysIn), g = c.groups.find((x) => x.key === key);
     if (!g) throw new Error('unknown group');
@@ -709,6 +725,10 @@ export class MonitorDO extends DurableObject<Env> {
         if (name === 'signal-public') return json(await this.signalPublic(url.searchParams.get('slug') ?? '', Number(url.searchParams.get('days'))));
         if (name === 'signal-ai') return json(this.aiStatus());
         if (name === 'signal-filter') return json(this.filterInfo());
+        if (name === 'signal-public-items') {
+          const out = await this.signalPublicItems(url.searchParams.get('slug') ?? '', (url.searchParams.get('term') ?? '').toLowerCase().slice(0, 80), Number(url.searchParams.get('days')));
+          return out ? json(out) : json({ error: 'not shown' }, 404);
+        }
         if (name === 'signal-public-boards') return json(await this.publicBoards());
         if (name === 'signal-items') {
           const p = url.searchParams;

@@ -26,10 +26,11 @@ interface PubAList { id: string; name: string; topic: string; handles: string[] 
 interface PubFList { id: string; name: string; topic: string; feeds: { source: 'rss' | 'youtube' | 'hn'; label: string; query: string; hnTag?: string; minPoints?: number }[] }
 // lists: X lists (live on x.com); alists: curated sets of X accounts; flists: curated sets of feeds (RSS, YouTube, Hacker News)
 interface Ctx { topics: PubTopic[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[] }
-interface PubBoard { slug: string; title: string; description: string; groups: string[] }
+interface PubBoard { slug: string; title: string; description: string; groups: string[]; proof?: boolean }
+interface PubProof { slug: string; title: string; days: number; term: string; label: string; terms: string[]; from: string; to: string; total: number; groups: Array<{ name: string; n: number }>; sources: Array<{ label: string; group: string; n: number }>; items: Array<{ title: string; url: string; discussionUrl: string; source: string; by: string; group: string; ts: number }> }
 // Signal, as the Monitor gives it for the public page: group names and counts, and terms. `parts` is each group's share of a term's score, in the order of `groups`.
 interface PubSigTerm { term: string; label: string; related: string[]; members: string[]; signal: number; change: number | null; isNew: boolean; kind: 'shared' | 'single' | 'mixed'; breadth: number; active: number; top: number; parts: number[] }
-interface PubSignal { slug: string; title: string; description: string; days: number; from: string; to: string; baselineOk: boolean; volumeDays: string[]; groups: Array<{ name: string; weight: number; items: number; perDay: number[] }>;
+interface PubSignal { slug: string; title: string; description: string; proof?: boolean; days: number; from: string; to: string; baselineOk: boolean; volumeDays: string[]; groups: Array<{ name: string; weight: number; items: number; perDay: number[] }>;
   top: PubSigTerm[]; rising: PubSigTerm[]; shared: PubSigTerm[]; single: PubSigTerm[] }
 const listTotal = (c: Ctx) => c.lists.length + c.alists.length + c.flists.length;
 type PubPage = { topic: TopicInfo; issue: IssueFull; archive: Brief[] };
@@ -133,6 +134,7 @@ figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-templa
 .chip{font-size:12px;padding:0 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}.chip.shared{color:#1a7f5a;border-color:#1a7f5a}.chip.single{color:#7c5cbf;border-color:#7c5cbf}.chip.up{color:var(--accent);border-color:var(--accent)}
 .sglist{list-style:none;margin:0;padding:0}.sglist li{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line);font-size:14.5px}.sglist small{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .act.stack>div i{min-height:0}
+.sgitems{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}.sgitems li{border-left:3px solid var(--line);padding-left:12px}.sgitems .by{font-size:13px;color:var(--muted)}.sgitems a{color:var(--text)}.sgitems a:hover{color:var(--accent)}.sgrow .t a{color:inherit;text-decoration:none}.sgrow .t a:hover{color:var(--accent);text-decoration:underline}.sglist a{color:inherit;text-decoration:none}.sglist a:hover{text-decoration:underline}
 @media(max-width:700px){.sgrow{grid-template-columns:minmax(0,1fr) 3.4rem}.sgrow .bar,.sgrow .cs{grid-column:1/-1}.sgrow .cs{justify-content:flex-start}}`;
 
 const MARK = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c9265f"/><polyline points="5,17 11,17 14,8 18,24 21,14 23,17 27,17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -193,18 +195,38 @@ export function signalIndexHtml(ctx: Ctx): string {
 <ul class="topics">${cards}</ul>`, { description: 'What is being talked about across news, blogs, X and Hacker News, combined into one score per topic.' });
 }
 
+/** The items behind one topic of a Signal that shows its sources: titles and dates, each linking to the original. */
+export function signalProofHtml(d: PubProof, ctx: Ctx): string {
+  const win = [[1, 'Today'], [3, '3 days'], [7, '7 days'], [14, '14 days']].map(([k, label]) => `<a href="/signal/${esc(d.slug)}/t/${encodeURIComponent(d.term)}${k === 7 ? '' : '/' + k}"${d.days === k ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+  const items = d.items.map((i) => `<li><div class="by">${esc(i.group)} &middot; <b>${esc(i.source)}</b>${i.by && i.by !== i.source ? ' &middot; ' + esc(i.by) : ''} &middot; ${i.ts ? date(i.ts) : ''}</div>
+${i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${esc(i.title || i.url)}</a>` : esc(i.title)}${i.discussionUrl ? ` <a class="dim" href="${esc(i.discussionUrl)}" rel="noopener noreferrer nofollow" target="_blank">discussion</a>` : ''}</li>`).join('');
+  return shell(`${d.label} · ${d.title} · Signals`, rail(ctx, undefined, 'signal', d.slug), `<header class="pagehead"><div class="eyebrow"><a href="/signal/${esc(d.slug)}${d.days === 7 ? '' : '/' + d.days}">&larr; ${esc(d.title)}</a></div><h1>${esc(d.label)}</h1>
+<p class="lede">${n(d.total)} item${d.total === 1 ? '' : 's'} mention${d.total === 1 ? 's' : ''} it, ${d.from === d.to ? esc(d.to) : `${esc(d.from)} to ${esc(d.to)}`}. Each one links to the original.${d.terms.length > 1 ? ` Matching: ${esc(d.terms.join(', '))}.` : ''}</p></header>
+<nav class="sgwin" aria-label="Period">${win}</nav>
+<div class="sglegend">${d.groups.map((g) => `<span>${esc(g.name)} <small>${n(g.n)}</small></span>`).join('')}</div>
+<h2 class="sect">Sources</h2>
+<p class="meta">${d.sources.map((x) => `${esc(x.label)} <small>${n(x.n)}</small>`).join(' &middot; ')}</p>
+<h2 class="sect">Items${d.total > d.items.length ? ` <small class="dim">the newest ${d.items.length} of ${n(d.total)}</small>` : ''}</h2>
+<ul class="sgitems">${items || '<li class="meta">Nothing is logged for this period.</li>'}</ul>
+<p class="note">Titles and links are those of the original publishers. Topics are found automatically in their titles and text; follow the links to read the originals.</p>`,
+  { description: `The items behind ${d.label}, with their sources.` });
+}
+
 export function signalPageHtml(d: PubSignal, ctx: Ctx): string {
   const gname = (i: number) => d.groups[i]?.name ?? '';
+  // With sources switched on for this Signal, a topic opens a page with the items behind it.
+  const proofHref = (t: PubSigTerm) => `/signal/${esc(d.slug)}/t/${encodeURIComponent(t.term)}${d.days === 7 ? '' : '/' + d.days}`;
+  const termLink = (t: PubSigTerm) => (d.proof ? `<a href="${proofHref(t)}">${esc(t.label)}</a>` : esc(t.label));
   const chips = (t: PubSigTerm) => [
     d.groups.length > 1 ? (t.kind === 'shared' ? '<span class="chip shared">everywhere</span>' : t.kind === 'single' ? `<span class="chip single">only ${esc(gname(t.top))}</span>` : '<span class="chip">mixed</span>') : '',
     t.isNew ? '<span class="chip up">new</span>' : t.change !== null && t.change >= 1.5 ? `<span class="chip up">&uarr; &times;${t.change.toFixed(1)}</span>` : '',
   ].join('');
   const max = Math.max(1e-9, ...d.top.map((t) => t.signal));
-  const rows = d.top.map((t) => `<div class="sgrow"><span class="t" title="${esc([t.label, ...t.members].join(', '))}">${esc(t.label)}${t.related.length ? `<small>${esc(t.related.join(' · '))}</small>` : ''}</span>
+  const rows = d.top.map((t) => `<div class="sgrow"><span class="t" title="${esc([t.label, ...t.members].join(', '))}">${termLink(t)}${t.related.length ? `<small>${esc(t.related.join(' · '))}</small>` : ''}</span>
 <span class="bar" style="width:${Math.max(2, (100 * t.signal) / max).toFixed(1)}%" role="img" aria-label="${esc(t.parts.map((p, i) => `${gname(i)} ${Math.round(p * 100)}%`).join(', '))}">${t.parts.map((p, i) => (p >= 0.02 ? `<i style="flex:${p.toFixed(3)};background:${sigColor(i)}" title="${esc(gname(i))}"></i>` : '')).join('')}</span>
 <b>${sigPct(t.signal)}</b><span class="cs">${chips(t)}</span></div>`).join('');
   const list = (title: string, hint: string, ts: PubSigTerm[], note: (t: PubSigTerm) => string) =>
-    `<section class="panel"><h3>${title}</h3><p class="meta" style="margin:-4px 0 8px">${hint}</p>${ts.length ? `<ul class="sglist">${ts.map((t) => `<li><span>${esc(t.label)}</span><small>${note(t)}</small></li>`).join('')}</ul>` : '<p class="meta">Nothing yet.</p>'}</section>`;
+    `<section class="panel"><h3>${title}</h3><p class="meta" style="margin:-4px 0 8px">${hint}</p>${ts.length ? `<ul class="sglist">${ts.map((t) => `<li><span>${termLink(t)}</span><small>${note(t)}</small></li>`).join('')}</ul>` : '<p class="meta">Nothing yet.</p>'}</section>`;
   const peak = Math.max(1, ...d.volumeDays.map((_, i) => d.groups.reduce((n, g) => n + (g.perDay[i] ?? 0), 0)));
   const volume = `<div class="act stack" role="img" aria-label="Items per day by group">${d.volumeDays.map((day, i) => {
     const total = d.groups.reduce((n, g) => n + (g.perDay[i] ?? 0), 0);
@@ -221,7 +243,7 @@ ${rows ? `<div class="sgrows">${rows}</div><p class="note">Each bar is split by 
 ${d.groups.length > 1 ? list('Only in one group', 'What one kind of source is talking about alone', d.single, (t) => esc(gname(t.top))) : ''}
 ${list('Rising', d.baselineOk ? 'More than in the period before' : 'Needs a few more days of data', d.rising, (t) => (t.isNew ? 'new' : `&times;${(t.change ?? 0).toFixed(1)}`))}</div>
 <h2 class="sect">Items per day</h2><section class="panel">${volume}</section>
-<p class="note">Counted automatically from the titles and text of public posts and articles, with no AI involved. A topic's score is the share of a group's items that mention it, averaged over the groups. Topics that are always around at the same level as in the period before are left out, so what is new or growing stands out. It reflects only the sources watched here.</p>`,
+<p class="note">Counted automatically from the titles and text of public posts and articles, with no AI involved. A topic's score is the share of a group's items that mention it, averaged over the groups. Topics that are always around at the same level as in the period before are left out, so what is new or growing stands out. It reflects only the sources watched here.${d.proof ? ' Select a topic to see the items behind it.' : ''}</p>`,
   { description: 'What is being talked about across news, blogs, X and Hacker News, combined into one score, and where each topic shows up.' });
 }
 
@@ -454,6 +476,14 @@ async function render(env: Env, url: URL): Promise<Response> {
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
   if (parts[0] === 'signal') {
     if (parts.length === 1) return ctx.boards.length ? html(signalIndexHtml(ctx)) : missing();
+    if (parts[2] === 't') {   // /signal/<slug>/t/<term>[/<days>]: the items behind a topic, when the Signal shows its sources
+      const days = parts.length === 4 ? 7 : Number(parts[4]);
+      let term = ''; try { term = decodeURIComponent(parts[3] ?? ''); } catch { /* not a valid address */ }
+      if (parts.length < 4 || parts.length > 5 || !SLUG.test(parts[1]) || ![1, 3, 7, 14].includes(days) || !term || term.length > 80 || !ctx.boards.some((b) => b.slug === parts[1] && b.proof)) return missing();
+      const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public-items?slug=${parts[1]}&days=${days}&term=${encodeURIComponent(term)}`));
+      const d = (await r.json().catch(() => null)) as PubProof | null;
+      return r.ok && d?.total ? html(signalProofHtml(d, ctx)) : missing();
+    }
     const days = parts.length === 2 ? 7 : Number(parts[2]);
     if (parts.length > 3 || !SLUG.test(parts[1]) || ![1, 3, 7, 14].includes(days) || !ctx.boards.some((b) => b.slug === parts[1])) return missing();
     const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public?slug=${parts[1]}&days=${days}`));
