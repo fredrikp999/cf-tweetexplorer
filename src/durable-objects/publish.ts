@@ -85,6 +85,8 @@ export const RESERVED = new Set(['admin', 'custom', 'lists', 'audio', 'image', '
 export const SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const INTERVALS = [6, 12, 24, 48, 168];
 const MAX_TOPICS = 40, MAX_SOURCES = 8, MAX_TWEETS = 150, STALE_RUN_MS = 20 * 60_000;
+// Stronger model for the last retry when a summary keeps hitting the output cap (must be listed in OPENROUTER_MODELS).
+const ESCALATION_MODEL = 'anthropic/claude-sonnet-5.5';
 const HOUR = 3_600_000;
 
 const str = (v: unknown, n: number) => String(v ?? '').trim().slice(0, n);
@@ -466,11 +468,20 @@ export class PublishDO extends DurableObject<Env> {
       `Cover the last ${windowHours} hours.${t.description ? ' Scope: ' + t.description + '.' : ''} ${t.instruction}`.trim();
     let markdown = '', tokens = 0, fail = '', usedModel = built.id;
     spend.model = built.id;
-    for await (const ev of streamSummary({ req: { instruction, length: t.length, tweets: used.map(compact) }, sources, model: built.model, modelId: built.id,
-      screen: async (tweets, instr) => { const r = await screenTweets(this.env, tweets, instr); if (r) spend.screen += r.cost; return r; } })) {
-      if (ev.type === 'text') markdown += ev.delta;
-      else if (ev.type === 'usage') { tokens = ev.inputTokens + ev.outputTokens; usedModel = ev.model ?? usedModel; spend.tokensIn += ev.inputTokens; spend.tokensOut += ev.outputTokens; spend.model = usedModel; }
-      else if (ev.type === 'error') fail = ev.message;
+    // A run that hits the output cap or loses the connection is nondeterministic: retry once on the same model, then escalate to a stronger one.
+    // Only the model call repeats; the tweets are already fetched, so a retry costs no more Twitter data.
+    const tries = [built, built, ...(this.env.SUMMARY_MOCK === '1' ? [] : [modelFor(this.env, ESCALATION_MODEL, '')])];
+    for (const [n, attempt] of tries.entries()) {
+      if (!attempt) continue;
+      markdown = ''; fail = '';
+      for await (const ev of streamSummary({ req: { instruction, length: t.length, tweets: used.map(compact) }, sources, model: attempt.model, modelId: attempt.id,
+        screen: async (tweets, instr) => { const r = await screenTweets(this.env, tweets, instr); if (r) spend.screen += r.cost; return r; } })) {
+        if (ev.type === 'text') markdown += ev.delta;
+        else if (ev.type === 'usage') { tokens = ev.inputTokens + ev.outputTokens; usedModel = ev.model ?? usedModel; spend.tokensIn += ev.inputTokens; spend.tokensOut += ev.outputTokens; spend.model = usedModel; }
+        else if (ev.type === 'error') fail = ev.message;
+      }
+      if (!fail || !/maximum token limit|connection error/i.test(fail) || n === tries.length - 1) break;
+      console.warn('summary failed in a retryable way, retrying', t.slug, attempt.id);
     }
     if (fail) throw new Error(fail);
     markdown = markdown.trim();
