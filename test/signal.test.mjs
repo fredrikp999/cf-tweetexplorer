@@ -110,6 +110,7 @@ describe('boilerplate words', () => {
     const t = extractTerms('Join our newsletter, follow links below for sponsorship inquiries. Claude Code review');
     for (const no of ['join', 'newsletter', 'links', 'sponsorship', 'inquiries', 'sponsorship inquiries']) assert.ok(!t.includes(no), no);
     assert.ok(t.includes('claude code'));
+    assert.ok(!extractTerms('Some post submitted by /u/someone [link] [comments]').includes('submitted'), 'Reddit feed footer');
   });
 });
 

@@ -361,7 +361,7 @@ export class MonitorDO extends DurableObject<Env> {
     return out;
   }
   /** Per group, the number of items mentioning each term over from..to, for the terms mentioned at least 3 times in candFrom..candTo; and how many different sources mention it. */
-  private countsIn(of: Map<string, string>, allow: Set<string>, boiler: Set<string>, blocked: (t: string) => boolean, from: string, to: string, candFrom: string, candTo: string): { counts: Counts; voices: Map<string, number> } {
+  private countsIn(of: Map<string, string>, allow: Set<string>, boiler: Set<string>, blocked: (t: string) => boolean, perGroup: Map<string, number>, from: string, to: string, candFrom: string, candTo: string): { counts: Counts; voices: Map<string, number> } {
     const counts: Counts = new Map(), seen = new Map<string, Set<string>>(), T = this.tables();
     const rows = this.ctx.storage.sql.exec<{ term: string; watch: string; n: number }>(
       `SELECT term, watch, SUM(n) AS n FROM ${T.terms} WHERE day >= ?1 AND day <= ?2 AND term IN
@@ -374,7 +374,9 @@ export class MonitorDO extends DurableObject<Env> {
       c[g] = (c[g] ?? 0) + r.n;
       (seen.get(r.term) ?? seen.set(r.term, new Set()).get(r.term)!).add(r.watch);
     }
-    return { counts, voices: new Map([...seen].map(([t, w]) => [t, w.size] as const)) };
+    // A term heard from one source only is not corroborated, unless that source is the only one its group has: then there is no one to ask.
+    const heard = (w: Set<string>) => (w.size === 1 && (perGroup.get(of.get([...w][0]) ?? '') ?? 0) <= 1 ? 2 : w.size);
+    return { counts, voices: new Map([...seen].map(([t, w]) => [t, heard(w)] as const)) };
   }
   private async compute(daysIn: number, only?: Set<string>) {
     const days = Math.min(SIGNAL_MAX_DAYS, Math.max(1, Math.floor(daysIn) || 7)), now = Date.now(), DAY = 86_400_000;
@@ -383,10 +385,14 @@ export class MonitorDO extends DurableObject<Env> {
     const items = this.itemsIn(of, from, to), prevItems = this.itemsIn(of, prevFrom, prevTo);
     const allow = new Set(groups.filter((g) => g.weight > 0).map((g) => g.key)), boiler = this.boilerplate(from, to);
     const blocked = makeBlocker(this.filterWords());
-    const cur = this.countsIn(of, allow, boiler, blocked, from, to, from, to), prev = this.countsIn(of, allow, boiler, blocked, prevFrom, prevTo, from, to);
+    // The sources that have items in the window, and how many each group has.
+    const sources = new Set<string>(), perGroup = new Map<string, number>();
+    for (const r of this.ctx.storage.sql.exec<{ watch: string }>(`SELECT DISTINCT watch FROM ${this.tables().items} WHERE day >= ? AND day <= ?`, from, to)) {
+      const g = of.get(r.watch) ?? '';
+      if (allow.has(g)) { sources.add(r.watch); perGroup.set(g, (perGroup.get(g) ?? 0) + 1); }
+    }
+    const cur = this.countsIn(of, allow, boiler, blocked, perGroup, from, to, from, to), prev = this.countsIn(of, allow, boiler, blocked, perGroup, prevFrom, prevTo, from, to);
     // With more than one source to hear from, a topic needs two of them: one source repeating itself is not a signal.
-    const sources = new Set<string>();
-    for (const r of this.ctx.storage.sql.exec<{ watch: string }>(`SELECT DISTINCT watch FROM ${this.tables().items} WHERE day >= ? AND day <= ?`, from, to)) if (allow.has(of.get(r.watch) ?? '')) sources.add(r.watch);
     const scored = scoreTerms({ groups, items, prevItems, cur: cur.counts, prev: prev.counts, voices: cur.voices, minVoices: sources.size >= 2 ? 2 : 1 });
     return { days, from, to, of, groups, excluded, everyGroup: all.groups.map((g) => ({ key: g.key, name: g.name })), items, prevItems, ...scored };
   }
