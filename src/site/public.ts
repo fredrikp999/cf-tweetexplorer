@@ -129,7 +129,7 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history'): string {
   }).join('');
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Signals<small>Agent Cortex</small></span></a>
 <nav aria-label="Topics"><a href="/"${active || page ? '' : ' aria-current="page"'}>Overview</a>${ctx.lists.length ? `<a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>X Lists <small>${ctx.lists.length}</small></a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>History${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${items ? `<div class="grp">Topics</div>${items}` : ''}</nav>
-<div class="railfoot">Briefings written by AI from public posts on X. Every one shows its sources.</div></aside>`;
+<div class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.</div></aside>`;
 }
 
 function shell(title: string, railHtml: string, body: string, opts: { description?: string; canonical?: string; image?: string } = {}): string {
@@ -249,6 +249,9 @@ const modelName = (id: string) => (id === 'mock' ? '' : aiModelInfo(id)?.label ?
 const howRead = (s: { mode?: string; minFaves?: number }) =>
   s.mode === 'best' ? `top posts by reaction${s.minFaves ? `, at least ${s.minFaves} likes` : ''}, without retweets or replies` : s.mode === 'latest' ? 'newest posts first' : '';
 
+// What to call what an issue was written from: posts (X), items (feeds), or both.
+const unit = (i: IssueFull) => { const f = (i.provenance?.feeds ?? []).reduce((t, x) => t + x.count, 0); return !f ? 'posts' : f >= i.tweets ? 'items' : 'posts and items'; };
+
 export function sourcesHtml(i: IssueFull): string {
   const p = i.provenance;
   if (!p) return '';
@@ -305,7 +308,7 @@ const span = (h: number) => (h >= 48 ? Math.round(h / 24) + ' days' : h + ' hour
 export function issueHtml(p: PubPage, origin: string, ctx: Ctx): string {
   const { topic, issue, archive } = p;
   const isLatest = archive[0]?.id === issue.id;
-  return topicPage(topic, isLatest ? 'latest' : 'issue', Math.max(0, archive.length - 1), `<p class="meta">${stamp(issue.publishedAt)} · based on ${issue.tweets} posts from the last ${span(issue.windowHours)}${isLatest ? '' : ` · <a href="/${esc(topic.slug)}">see the latest</a>`}</p>
+  return topicPage(topic, isLatest ? 'latest' : 'issue', Math.max(0, archive.length - 1), `<p class="meta">${stamp(issue.publishedAt)} · based on ${issue.tweets} ${unit(issue)} from the last ${span(issue.windowHours)}${isLatest ? '' : ` · <a href="/${esc(topic.slug)}">see the latest</a>`}</p>
 ${imageHtml(topic.slug, issue)}${listenHtml(topic.slug, issue)}<article>${markdown(issue.markdown, issue.links)}</article>${sourcesHtml(issue)}${NOTE}`,
     { title: `${topic.title} · ${date(issue.publishedAt)}`, description: issue.tldr.replace(/\*\*/g, '') || topic.description, canonical: `${origin}/${topic.slug}/${issue.id}`, ...(issue.image ? { image: `${origin}/image/${topic.slug}/${issue.id}.jpg?v=${issue.image.v}` } : {}) }, ctx);
 }
@@ -313,7 +316,7 @@ ${imageHtml(topic.slug, issue)}${listenHtml(topic.slug, issue)}<article>${markdo
 export function archiveHtml(p: { topic: TopicInfo; latest: Brief; issues: IssueFull[] }, origin: string, ctx: Ctx): string {
   const { topic, issues } = p;
   const days = issues.map((i) => `<details id="${esc(i.id)}"><summary>${stamp(i.publishedAt)}<span>${i.tldr ? plain(i.tldr) : 'Briefing'}${i.audio ? ` <em class="aud" title="Has an audio version">&#9835; ${clock(i.audio.seconds)}</em>` : ''}</span></summary>
-<div class="body"><p class="meta">Based on ${i.tweets} posts from the last ${span(i.windowHours)} · <a href="/${esc(topic.slug)}/${esc(i.id)}">link to this day</a></p>${imageHtml(topic.slug, i)}${listenHtml(topic.slug, i)}<article>${markdown(i.markdown, i.links)}</article>${sourcesHtml(i)}</div></details>`).join('');
+<div class="body"><p class="meta">Based on ${i.tweets} ${unit(i)} from the last ${span(i.windowHours)} · <a href="/${esc(topic.slug)}/${esc(i.id)}">link to this day</a></p>${imageHtml(topic.slug, i)}${listenHtml(topic.slug, i)}<article>${markdown(i.markdown, i.links)}</article>${sourcesHtml(i)}</div></details>`).join('');
   return topicPage(topic, 'archive', issues.length, `<h2 style="margin:0 0 14px;font-size:20px">Previous days</h2>
 ${days ? `<div class="days">${days}</div>` : '<p class="lede">No earlier briefings yet.</p>'}${issues.length >= 30 ? '<p class="meta" style="margin-top:14px">Showing the last 30 days.</p>' : ''}${NOTE}`,
     { title: `${topic.title} · previous days`, description: topic.description, canonical: `${origin}/${topic.slug}/archive` }, ctx);

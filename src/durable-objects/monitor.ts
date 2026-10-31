@@ -211,7 +211,13 @@ export class MonitorDO extends DurableObject<Env> {
           if (source && !isSource(source)) throw new Error('unknown source');
           const rows = this.ctx.storage.sql.exec<{ watch: string; label: string; seen_at: number; json: string; source: string }>(
             "SELECT watch, label, seen_at, json, source FROM feed WHERE (?1 = '' OR source = ?1) ORDER BY seq DESC LIMIT ?2", source, limit).toArray();
-          return json(rows.map((r) => ({ watchId: r.watch, label: r.label, seenAt: r.seen_at, source: r.source, tweet: JSON.parse(r.json) as unknown })));
+          // Items saved before they carried the name of their feed get it from the watch they came from.
+          const queries = new Map(this.watches().map((w) => [w.id, w] as const));
+          return json(rows.map((r) => {
+            const tweet = JSON.parse(r.json) as Record<string, unknown>;
+            if (r.source !== 'x') { tweet.feed ??= r.label; tweet.feedUrl ??= r.source === 'rss' ? queries.get(r.watch)?.query : 'https://news.ycombinator.com/'; }
+            return { watchId: r.watch, label: r.label, seenAt: r.seen_at, source: r.source, tweet };
+          }));
         }
         return json({ error: 'unknown monitor route' }, 404);
       }
