@@ -10,21 +10,19 @@ const PRESETS: Record<string, Preset> = {
     const sub = /^\/?r\/([\w]{2,21})(\/(?:top|new|hot|rising))?\/?$/i.exec(a);
     if (sub) return `https://www.reddit.com/r/${sub[1]}${sub[2] ?? ''}/.rss`;
     if (/^[\w]{2,21}$/.test(a)) return `https://www.reddit.com/r/${a}/.rss`;
-    return a ? `https://www.reddit.com/search.rss?q=${e(a)}&sort=new` : null;   // anything else is a search across Reddit
+    return null;
   },
   lobsters: (a) => (!a ? 'https://lobste.rs/rss' : NAME.test(a) ? `https://lobste.rs/t/${a}.rss` : null),
   github: (a) => { const m = /^([\w.-]+)\/([\w.-]+)$/.exec(a.replace(/^https?:\/\/github\.com\//i, '').replace(/\/+$/, '')); return m ? `https://github.com/${m[1]}/${m[2]}/releases.atom` : null; },
   arxiv: (a) => /^[a-z-]+(\.[A-Za-z-]+)?$/.test(a) ? `https://rss.arxiv.org/rss/${a}`
     : a ? `https://export.arxiv.org/api/query?search_query=all:${e(a)}&sortBy=submittedDate&sortOrder=descending&max_results=50` : null,
-  news: (a) => (a ? `https://news.google.com/rss/search?q=${e(a)}&hl=en-US&gl=US&ceid=US:en` : null),
+  news: (a) => (a ? `https://www.bing.com/news/search?q=${e(a)}&format=rss&setlang=en` : null),   // Google News answers 503 to Cloudflare's servers; Bing News does not
   stackoverflow: (a) => (NAME.test(a) ? `https://stackoverflow.com/feeds/tag?tagnames=${e(a)}&sort=newest` : null),
   producthunt: () => 'https://www.producthunt.com/feed',
   substack: (a) => (/^[a-z0-9-]{1,60}$/i.test(a) ? `https://${a}.substack.com/feed` : null),
   medium: (a) => (/^@[\w.-]{1,60}$/.test(a) ? `https://medium.com/feed/${a}` : NAME.test(a) ? `https://medium.com/feed/tag/${a}` : null),
   wikipedia: (a) => (a ? `https://en.wikipedia.org/w/index.php?title=${e(a.replace(/ /g, '_'))}&action=history&feed=atom` : 'https://en.wikipedia.org/w/index.php?title=Special:RecentChanges&feed=atom&days=1&limit=50'),
-  wikinews: () => 'https://en.wikinews.org/w/index.php?title=Special:NewPages&feed=atom&namespace=0',
   bluesky: (a) => { const h = a.replace(/^@/, '').replace(/^https?:\/\/bsky\.app\/profile\//i, '').replace(/\/+$/, ''); return /^[\w.-]+\.[a-z]{2,}$/i.test(h) || /^did:plc:\w+$/.test(h) ? `https://bsky.app/profile/${h}/rss` : null; },
-  redditsearch: (a) => (a ? `https://www.reddit.com/search.rss?q=${e(a)}&sort=new` : null),
   arxivsearch: (a) => (a ? `https://export.arxiv.org/api/query?search_query=all:${e(a)}&sortBy=submittedDate&sortOrder=descending&max_results=50` : null),
   mastodon: (a) => mastodon(a),
   trending: (a) => (/^[\w.-]+\.[a-z]{2,}$/i.test(a) ? `https://${a}/api/v1/trends/statuses?limit=40` : null),   // the posts a Mastodon server is talking about
@@ -40,7 +38,7 @@ const PRESETS: Record<string, Preset> = {
   githubsearch: (a) => (a ? `https://api.github.com/search/repositories?q=${e(a)}+created:%3E%7B7d%7D&sort=stars&order=desc&per_page=30` : null),   // new repositories, most starred first
 };
 // Spellings that mean the same.
-const ALIAS: Record<string, string> = { r: 'reddit', so: 'stackoverflow', hf: 'huggingface', gh: 'github', bsky: 'bluesky', gnews: 'news', ph: 'producthunt', fediverse: 'mastodon' };
+const ALIAS: Record<string, string> = { r: 'reddit', so: 'stackoverflow', hf: 'huggingface', gh: 'github', bsky: 'bluesky', ph: 'producthunt', fediverse: 'mastodon' };
 
 /** `#tag@instance` → the tag's feed; `@user@instance` → the account's feed. */
 function mastodon(a: string): string | null {
@@ -84,7 +82,7 @@ export function expandShorthand(input: string): string | null {
 }
 
 const EXAMPLES: Record<string, string> = {
-  reddit: 'r/rust or reddit: some keywords', lobsters: 'lobsters:rust', github: 'github:owner/repo', arxiv: 'arxiv:cs.AI or arxiv: diffusion models',
+  reddit: 'r/rust', lobsters: 'lobsters:rust', github: 'github:owner/repo', arxiv: 'arxiv:cs.AI or arxiv: diffusion models',
   news: 'news: climate policy', stackoverflow: 'stackoverflow:rust', substack: 'substack:name', medium: 'medium:@name or medium:tag',
   trends: 'trends:SE', huggingface: 'huggingface:papers, models, spaces or blog', pypi: 'pypi:httpx', npm: 'npm:hono', cisa: 'cisa:kev',
   devto: 'devto:rust or devto:@name', tildes: 'tildes:comp', status: 'status:www.githubstatus.com', usgs: 'usgs:4.5_day', githubsearch: 'githubsearch: llm agents', trending: 'trending:mastodon.social',
@@ -92,4 +90,4 @@ const EXAMPLES: Record<string, string> = {
 };
 
 /** What the Monitor and the feed lists accept in the feed box, for the hint under it. */
-export const SHORTHAND_HINT = 'r/rust · lobsters:rust · github:owner/repo · arxiv:cs.AI · news: climate · bluesky:name.bsky.social · @name@mastodon.social · stackoverflow:rust · substack:name · medium:@name · producthunt: · wikipedia:Page · wikinews:';
+export const SHORTHAND_HINT = 'r/rust · lobsters:rust · github:owner/repo · arxiv:cs.AI · news: climate · bluesky:name.bsky.social · @name@mastodon.social · stackoverflow:rust · substack:name · medium:@name · producthunt: · wikipedia:Page ·';

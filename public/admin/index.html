@@ -1289,7 +1289,6 @@ mf.interval.addEventListener('change', monCostText); monCostText();
 const FEED_TPL = [
   ['Discussion', [
     ['reddit', 'Reddit community', 'Subreddit', 'rust', (v) => `r/${v.replace(/^\/?r\//i, '')}`],
-    ['redditq', 'Reddit search', 'Keywords', 'local llama', (v) => `redditsearch:${v}`],
     ['lobsters', 'Lobsters (all, or one tag)', 'Tag (optional)', 'rust', (v) => `lobsters:${v}`, true],
     ['so', 'Stack Overflow tag', 'Tag', 'rust', (v) => `stackoverflow:${v}`]]],
   ['Social', [
@@ -1299,8 +1298,7 @@ const FEED_TPL = [
     ['mastoR', 'Mastodon trending posts', 'Server', 'mastodon.social', (v) => `trending:${v}`]]],
   ['News and reference', [
     ['trends', 'Google Trends (what people search for)', 'Country code (optional)', 'SE', (v) => `trends:${v}`, true],
-    ['news', 'Google News search', 'Keywords', 'climate policy', (v) => `news:${v}`],
-    ['wikinews', 'Wikinews (new articles)', '', '', () => 'wikinews:', true, true],
+    ['news', 'News search (Bing News)', 'Keywords', 'climate policy', (v) => `news:${v}`],
     ['wikiP', 'Wikipedia page edits', 'Page title', 'Large language model', (v) => `wikipedia:${v}`],
     ['wikiR', 'Wikipedia recent changes', '', '', () => 'wikipedia:', true, true]]],
   ['Code and research', [

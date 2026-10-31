@@ -393,15 +393,14 @@ describe('expandShorthand', async () => {
   const { expandShorthand } = await import('../src/sources/presets.ts');
   test('turns shorthand into feed addresses', () => {
     assert.equal(expandShorthand('r/rust'), 'https://www.reddit.com/r/rust/.rss');
-    assert.equal(expandShorthand('reddit: local llama'), 'https://www.reddit.com/search.rss?q=local%20llama&sort=new');
+    assert.throws(() => expandShorthand('reddit: local llama'), /could not read/);
     assert.equal(expandShorthand('lobsters:rust'), 'https://lobste.rs/t/rust.rss');
     assert.equal(expandShorthand('github:cloudflare/workers-sdk'), 'https://github.com/cloudflare/workers-sdk/releases.atom');
     assert.equal(expandShorthand('arxiv:cs.AI'), 'https://rss.arxiv.org/rss/cs.AI');
     assert.match(expandShorthand('arxiv: diffusion models'), /export\.arxiv\.org\/api\/query\?search_query=all:diffusion%20models/);
-    assert.match(expandShorthand('news: climate policy'), /news\.google\.com\/rss\/search\?q=climate%20policy/);
+    assert.match(expandShorthand('news: climate policy'), /bing\.com\/news\/search\?q=climate%20policy/);
     assert.equal(expandShorthand('@alice@mastodon.social'), 'https://mastodon.social/@alice.rss');
     assert.equal(expandShorthand('#rust@fosstodon.org'), 'https://fosstodon.org/tags/rust.rss');
-    assert.match(expandShorthand('redditsearch:rust'), /search\.rss\?q=rust/);
     assert.match(expandShorthand('arxivsearch:diffusion'), /search_query=all:diffusion/);
     assert.equal(expandShorthand('bluesky:alice.bsky.social'), 'https://bsky.app/profile/alice.bsky.social/rss');
   });
