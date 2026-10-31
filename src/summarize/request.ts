@@ -25,7 +25,7 @@ export function parseRequest(raw: unknown): SummaryRequest {
     if (!ids.length) throw new Error('pick an X list');
     source = { type: 'xlist', listIds: ids, hours: clamp(s.hours, 1, 720, 24), pages: clamp(s.pages, 1, 5, 2), mode: s.mode === 'latest' ? 'latest' : 'best', minFaves: Math.min(1000, Math.max(0, Math.floor(Number(s.minFaves)) || (s.minFaves === 0 ? 0 : 5))) };
   } else if (s?.type === 'feed') {
-    source = { type: 'feed', limit: clamp(s.limit, 1, 200, 100), ...(typeof s.watch === 'string' && s.watch ? { watch: s.watch.slice(0, 60) } : {}) };
+    source = { type: 'feed', limit: clamp(s.limit, 1, 200, 100), ...(typeof s.watch === 'string' && s.watch ? { watch: s.watch.slice(0, 60) } : {}), ...(s.source === 'x' || s.source === 'rss' || s.source === 'hn' ? { source: s.source } : {}) };
   } else if (s?.type === 'free') source = { type: 'free' };
   if (!tweets.length && !source && !instruction) throw new Error('nothing to summarize: pick a source or describe what you want');
   const model = typeof b.model === 'string' && /^[\w@./:-]{1,120}$/.test(b.model) ? b.model : undefined;

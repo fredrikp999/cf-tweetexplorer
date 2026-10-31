@@ -2,6 +2,8 @@
 // HTML (no client script), from issues the admin has published. Model output is untrusted, so the Markdown
 // renderer escapes everything first and only ever emits links to posts on x.com / twitter.com.
 import { SLUG } from '../durable-objects/publish';
+import { esc, inline, markdown } from './markdown';
+export { markdown };
 import { serveAudio, serveImage } from '../media/audio-serve';
 import type { Provenance } from '../durable-objects/publish';
 import type { Stats } from '../history/stats.ts';
@@ -11,7 +13,7 @@ import { aiModelInfo } from '../summarize/workers-ai.ts';
 
 interface Brief { id: string; tldr: string; publishedAt: number; tweets: number; accounts?: number | null }
 interface TopicInfo { slug: string; title: string; description: string; intervalHours: number }
-interface IssueFull extends Brief { markdown: string; windowHours: number; model: string; provenance?: Provenance; audio?: { seconds: number; v: number }; image?: { v: number; aspect: string } }
+interface IssueFull extends Brief { markdown: string; links?: string[]; windowHours: number; model: string; provenance?: Provenance; audio?: { seconds: number; v: number }; image?: { v: number; aspect: string } }
 type PubTopic = TopicInfo & { latest: Brief };
 interface PubXList { id: string; name: string; groups: string[]; description: string }
 interface PubReportBrief { slug: string; title: string; description: string; tweets: number; fromTs: number; toTs: number; publishedAt: number }
@@ -22,77 +24,7 @@ interface PubTweets { total: number; pages: number; page: number; sort: 'new' | 
 interface Ctx { topics: PubTopic[]; lists: PubXList[]; reports: PubReportBrief[] }
 type PubPage = { topic: TopicInfo; issue: IssueFull; archive: Brief[] };
 
-const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const ISSUE_ID = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
-
-// ---- Markdown (the subset the summarizer writes)
-const SAFE_LINK = /^https:\/\/(?:x|twitter)\.com\/[\w./?=&%#@:+~-]{1,300}$/;
-const inline = (t: string) => esc(t)
-  .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-  .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-  // esc() already turned & into &amp;, so undo that only for the allow-list test
-  .replace(/\[([^\]\n]+)\]\((https:[^\s)]+)\)/g, (m, text: string, href: string) => {
-    const raw = href.replace(/&amp;/g, '&');
-    return SAFE_LINK.test(raw) ? `<a href="${esc(raw)}" rel="noopener noreferrer nofollow" target="_blank">${text}</a>` : text;
-  });
-
-const HR = /^\s*([-*_])(\s*\1){2,}\s*$/;
-const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
-const cells = (row: string) => row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
-
-function prose(text: string): string {
-  const out: string[] = []; let list = null as { tag: string; items: string[] } | null;
-  const flush = () => { if (list) { out.push(`<${list.tag}>${list.items.join('')}</${list.tag}>`); list = null; } };
-  const lines = text.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    let m: RegExpMatchArray | null;
-    if (HR.test(line)) { flush(); out.push('<hr>'); continue; }
-    // A table: a header row, a |---|---| row, then rows until the first line without a pipe.
-    if (line.includes('|') && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1]) && lines[i + 1].includes('-')) {
-      flush();
-      const head = cells(line); let j = i + 2; const rows: string[][] = [];
-      while (j < lines.length && lines[j].includes('|') && lines[j].trim()) rows.push(cells(lines[j++]));
-      // Numbers line up on the right, text stays on the left.
-      const num = head.map((_, k) => rows.length > 0 && rows.every((r) => /^[\d\s.,%+\u2212-]+[kKmM]?$/.test(r[k] ?? '')));
-      out.push(`<div class="tw"><table><thead><tr>${head.map((c, k) => `<th${num[k] ? ' class="n"' : ''}>${inline(c)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) =>
-        `<tr>${head.map((_, k) => `<td${num[k] ? ' class="n"' : ''}>${inline(r[k] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
-      i = j - 1; continue;
-    }
-    if ((m = line.match(/^\s*([-*]|\d+\.)\s+(.*)/))) {
-      const tag = /\d/.test(m[1]) ? 'ol' : 'ul';
-      if (list?.tag !== tag) { flush(); list = { tag, items: [] }; }
-      list!.items.push(`<li>${inline(m[2])}</li>`);
-    } else {
-      flush();
-      if ((m = line.match(/^(#{1,3})\s+(.*)/))) out.push(`<h${m[1].length + 1}>${inline(m[2])}</h${m[1].length + 1}>`);
-      else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
-    }
-  }
-  flush(); return out.join('');
-}
-
-function chart(body: string): string {
-  try {
-    const spec = JSON.parse(body) as { title?: unknown; labels?: unknown[]; values?: unknown[] };
-    const labels = (spec.labels ?? []).slice(0, 30).map(String), values = (spec.values ?? []).slice(0, 30).map(Number);
-    if (!labels.length || values.length !== labels.length || values.some((v) => !Number.isFinite(v) || v < 0)) return '';
-    const max = Math.max(...values) || 1;
-    return `<figure class="bars">${spec.title ? `<figcaption>${esc(spec.title)}</figcaption>` : ''}${labels.map((l, i) =>
-      `<div><span>${esc(l)}</span><i style="width:${Math.round((values[i] / max) * 100)}%"></i><b>${esc(values[i])}</b></div>`).join('')}</figure>`;
-  } catch { return ''; }
-}
-
-export function markdown(src: string): string {
-  const out: string[] = []; const re = /```(\w*)\n([\s\S]*?)(```|$)/g; let last = 0, m: RegExpExecArray | null;
-  while ((m = re.exec(src))) {
-    out.push(prose(src.slice(last, m.index)));
-    if (m[1] === 'chart') out.push(chart(m[2]));
-    else out.push(`<pre><code>${esc(m[2])}</code></pre>`);
-    last = re.lastIndex;
-  }
-  out.push(prose(src.slice(last))); return out.join('');
-}
 
 // ---- pages
 const date = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' });
@@ -362,14 +294,14 @@ export function issueHtml(p: PubPage, origin: string, ctx: Ctx): string {
   const { topic, issue, archive } = p;
   const isLatest = archive[0]?.id === issue.id;
   return topicPage(topic, isLatest ? 'latest' : 'issue', Math.max(0, archive.length - 1), `<p class="meta">${stamp(issue.publishedAt)} · based on ${issue.tweets} posts from the last ${span(issue.windowHours)}${isLatest ? '' : ` · <a href="/${esc(topic.slug)}">see the latest</a>`}</p>
-${imageHtml(topic.slug, issue)}${listenHtml(topic.slug, issue)}<article>${markdown(issue.markdown)}</article>${sourcesHtml(issue)}${NOTE}`,
+${imageHtml(topic.slug, issue)}${listenHtml(topic.slug, issue)}<article>${markdown(issue.markdown, issue.links)}</article>${sourcesHtml(issue)}${NOTE}`,
     { title: `${topic.title} · ${date(issue.publishedAt)}`, description: issue.tldr.replace(/\*\*/g, '') || topic.description, canonical: `${origin}/${topic.slug}/${issue.id}`, ...(issue.image ? { image: `${origin}/image/${topic.slug}/${issue.id}.jpg?v=${issue.image.v}` } : {}) }, ctx);
 }
 
 export function archiveHtml(p: { topic: TopicInfo; latest: Brief; issues: IssueFull[] }, origin: string, ctx: Ctx): string {
   const { topic, issues } = p;
   const days = issues.map((i) => `<details id="${esc(i.id)}"><summary>${stamp(i.publishedAt)}<span>${i.tldr ? plain(i.tldr) : 'Briefing'}${i.audio ? ` <em class="aud" title="Has an audio version">&#9835; ${clock(i.audio.seconds)}</em>` : ''}</span></summary>
-<div class="body"><p class="meta">Based on ${i.tweets} posts from the last ${span(i.windowHours)} · <a href="/${esc(topic.slug)}/${esc(i.id)}">link to this day</a></p>${imageHtml(topic.slug, i)}${listenHtml(topic.slug, i)}<article>${markdown(i.markdown)}</article>${sourcesHtml(i)}</div></details>`).join('');
+<div class="body"><p class="meta">Based on ${i.tweets} posts from the last ${span(i.windowHours)} · <a href="/${esc(topic.slug)}/${esc(i.id)}">link to this day</a></p>${imageHtml(topic.slug, i)}${listenHtml(topic.slug, i)}<article>${markdown(i.markdown, i.links)}</article>${sourcesHtml(i)}</div></details>`).join('');
   return topicPage(topic, 'archive', issues.length, `<h2 style="margin:0 0 14px;font-size:20px">Previous days</h2>
 ${days ? `<div class="days">${days}</div>` : '<p class="lede">No earlier briefings yet.</p>'}${issues.length >= 30 ? '<p class="meta" style="margin-top:14px">Showing the last 30 days.</p>' : ''}${NOTE}`,
     { title: `${topic.title} · previous days`, description: topic.description, canonical: `${origin}/${topic.slug}/archive` }, ctx);

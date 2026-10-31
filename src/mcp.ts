@@ -80,15 +80,15 @@ function buildServer(env: Env): McpServer {
   }, () => ask(env.LISTS, '/lists/x-all'));
 
   server.registerTool('list_monitor_watches', {
-    description: 'Monitor watches (polling searches), their status and today\'s spend.',
+    description: 'Monitor watches (X searches and accounts, RSS feeds, Hacker News), their status and today\'s spend.',
     annotations: readOnly,
   }, () => ask(env.MONITOR, '/mon/state'));
 
   server.registerTool('get_monitor_feed', {
-    description: 'The most recent tweets the Monitor found, newest first.',
-    inputSchema: { limit: z.number().int().min(1).max(500).default(100) },
+    description: 'The most recent items the Monitor found, newest first: tweets, RSS items and Hacker News stories. Every item has a `source` (x, rss or hn); leave `source` out for all of them combined.',
+    inputSchema: { limit: z.number().int().min(1).max(500).default(100), source: z.enum(['x', 'rss', 'hn']).optional() },
     annotations: readOnly,
-  }, ({ limit }) => ask(env.MONITOR, '/mon/feed', { limit }));
+  }, ({ limit, source }) => ask(env.MONITOR, '/mon/feed', { limit, ...(source ? { source } : {}) }));
 
   // MCP Apps: hosts that support them show the Costs view inline; the others still get the JSON text.
   registerAppTool(server, 'get_costs', {

@@ -34,7 +34,7 @@ export function nodeSources(base: string): Sources {
       const all: Array<{ id: string; name: string; topic: string; members: Array<{ handle: string; missing: boolean }> }> = await get('/lists/all');
       return all.map((l) => ({ id: l.id, name: l.name, topic: l.topic, handles: l.members.filter((m) => !m.missing).map((m) => m.handle) }));
     },
-    async feed({ limit, watch }) {
+    async feed({ limit, watch }) {   // the local server only has X, so `source` needs no handling here
       const items: Array<{ watchId: string; label: string; tweet: RawTweet }> = await get('/mon/feed', { limit: String(limit) });
       const w = watch?.toLowerCase();
       return items.filter((i) => !w || i.watchId === watch || i.label.toLowerCase().includes(w)).map((i) => i.tweet);

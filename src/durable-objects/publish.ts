@@ -26,7 +26,7 @@ import { screenTweets } from '../summarize/screen.ts';
 export type TopicSource =
   | { type: 'search'; query: string; sort: 'Latest' | 'Top' }
   | { type: 'list'; listId: string }
-  | { type: 'feed'; watch?: string }
+  | { type: 'feed'; watch?: string; source?: 'x' | 'rss' | 'hn' }
   | { type: 'xlist'; listId: string; mode?: XMode; minFaves?: number; pages?: number }     // one list on x.com
   | { type: 'xgroup'; group: string; mode?: XMode; minFaves?: number; pages?: number };    // every X list in a group, read together; membership is looked up at run time
 // mode: 'best' (default) = the period's top posts per list, cheap; 'latest' = timeline, newest first. pages: per list (20 posts a page in best, 80 in latest).
@@ -79,6 +79,8 @@ export interface Issue {
   id: string; topic: string; status: IssueStatus; created: number; publishedAt: number;
   markdown: string; tldr: string; tweets: number; model: string; tokens: number; windowHours: number;
   cost?: IssueCost; provenance?: Provenance; audio?: IssueAudio; image?: IssueImage;      // absent on issues written before these were tracked
+  /** Links to RSS articles and Hacker News pages among the posts the writer was given. The public page links only these (and x.com), never an address the model made up. */
+  links?: string[];
 }
 
 export const RESERVED = new Set(['admin', 'custom', 'lists', 'audio', 'image', 'history', 'api', 'static', 'assets', 'feed', 'rss', 'sitemap', 'robots', 'favicon', 'health', 'ai-plugin']);
@@ -130,7 +132,7 @@ function cleanSources(raw: unknown): TopicSource[] {
       if (!group) throw new Error('pick an X list group');
       return { type: 'xgroup', group, ...xopts() };
     }
-    if (s.type === 'feed') return { type: 'feed', ...(str(s.watch, 60) ? { watch: str(s.watch, 60) } : {}) };
+    if (s.type === 'feed') return { type: 'feed', ...(str(s.watch, 60) ? { watch: str(s.watch, 60) } : {}), ...(s.source === 'x' || s.source === 'rss' || s.source === 'hn' ? { source: s.source } : {}) };
     throw new Error('unknown source type');
   });
 }
@@ -452,7 +454,7 @@ export class PublishDO extends DurableObject<Env> {
           s.type === 'search' ? { type: 'search', query: `${s.query} since_time:${Math.floor(since / 1000)}`, sort: s.sort, pages: 3 }
           : s.type === 'list' ? { type: 'list', listId: s.listId, hours: windowHours }
           : s.type === 'xlist' ? { type: 'xlist', listIds: [s.listId], hours: windowHours, pages: pagesFor(s), mode: s.mode ?? 'best', minFaves: s.minFaves ?? 5 }
-          : { type: 'feed', limit: 200, ...(s.watch ? { watch: s.watch } : {}) };
+          : { type: 'feed', limit: 200, ...(s.watch ? { watch: s.watch } : {}), ...(s.source ? { source: s.source } : {}) };
         const r = await fetchSource(sources, spec), parts = r.parts ?? [];
         got.push(...r.tweets);
         const how = spec.type === 'xlist' ? { mode: spec.mode, minFaves: spec.minFaves } : {};
@@ -501,9 +503,10 @@ export class PublishDO extends DurableObject<Env> {
       const e = byAccount.get(h.toLowerCase()) ?? { handle: h, count: 0 }; e.count++; byAccount.set(h.toLowerCase(), e);
     }
     const llm0 = llmCost(usedModel, spend.tokensIn, spend.tokensOut), llm = llm0 === null && !spend.screen ? null : (llm0 ?? 0) + spend.screen;
+    const links = [...new Set(used.flatMap((x) => (x.source && x.source !== 'x' ? [x.url, x.discussionUrl] : [])).filter((u): u is string => /^https?:\/\//.test(u ?? '')))].slice(0, 400);
     this.saveIssue({
       id, topic: t.slug, status: live ? 'published' : 'draft', created: now, publishedAt: live ? now : 0,
-      markdown, tldr: tldrOf(markdown), tweets: used.length, model: usedModel, tokens, windowHours,
+      markdown, tldr: tldrOf(markdown), tweets: used.length, model: usedModel, tokens, windowHours, ...(links.length ? { links } : {}),
       cost: { twitter: spend.meter.cost, llm, total: spend.meter.cost + (llm ?? 0), calls: spend.meter.calls, fetched: spend.meter.tweets, tokensIn: spend.tokensIn, tokensOut: spend.tokensOut, ...(spend.meter.capped ? { capped: true } : {}) },
       provenance: {
         from: since, to: now, fetched: recent.length, used: used.length, accounts: byAccount.size, sources: infos, truncated: recent.length > used.length, ...(spend.meter.capped ? { partial: true } : {}),

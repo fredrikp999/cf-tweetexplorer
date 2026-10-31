@@ -6,22 +6,28 @@ export interface RawTweet {
   id: string; url?: string; text?: string; createdAt?: string; lang?: string;
   likeCount?: number; retweetCount?: number; replyCount?: number; viewCount?: number;
   author?: { userName?: string; name?: string };
+  /** Absent for X. RSS and Hacker News items from the Monitor feed carry these (see sources/types.ts). */
+  source?: string; title?: string; discussionUrl?: string;
 }
 export interface CompactTweet {
   id: string; url: string; by: string; at: string; text: string;
   likes: number; retweets: number; replies: number; views: number; lang?: string;
   /** 0 to 100: an automatic estimate of how relevant and informative the tweet is (summarize/screen.ts). Absent when the tweet was not screened. */
   signal?: number;
+  /** 'rss' or 'hn' for items that are not tweets; absent for X. For those, `by` is a site or author name and `url` is the article. */
+  source?: string; discussion?: string;
 }
 
 export const MAX_TEXT = 600;
 
 export function compact(t: RawTweet): CompactTweet {
   const by = t.author?.userName ?? '';
+  const other = t.source && t.source !== 'x';   // an RSS item or a Hacker News story: no handle, and the link is the article
   return {
-    id: String(t.id), url: t.url ?? (by ? `https://x.com/${by}/status/${t.id}` : ''), by: by ? '@' + by : '',
+    id: String(t.id), url: t.url ?? (by && !other ? `https://x.com/${by}/status/${t.id}` : ''), by: other ? (t.author?.name || by) : by ? '@' + by : '',
     at: t.createdAt ? new Date(t.createdAt).toISOString() : '', text: String(t.text ?? '').slice(0, MAX_TEXT),
     likes: t.likeCount ?? 0, retweets: t.retweetCount ?? 0, replies: t.replyCount ?? 0, views: t.viewCount ?? 0, lang: t.lang,
+    ...(other ? { source: t.source, ...(t.discussionUrl ? { discussion: t.discussionUrl } : {}) } : {}),
   };
 }
 

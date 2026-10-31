@@ -98,8 +98,8 @@ export function workerSources(env: Env, meter?: Meter): Sources {
       }
       return out;
     },
-    async feed({ limit, watch }) {
-      const res = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/feed?limit=${limit}`));
+    async feed({ limit, watch, source }) {
+      const res = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/feed?limit=${limit}${source ? `&source=${source}` : ''}`));
       const items = (await res.json()) as Array<{ watchId: string; label: string; tweet: RawTweet }>;
       const w = watch?.toLowerCase();
       return items.filter((i) => !w || i.watchId === watch || i.label.toLowerCase().includes(w)).map((i) => i.tweet);
