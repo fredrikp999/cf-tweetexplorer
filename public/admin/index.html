@@ -357,6 +357,13 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 
 /* ----- signal ----- */
 
+.srclists { display: grid; gap: 12px; } .srclist .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .srclist.bad { border-left: 3px solid var(--err); }
+.srclist details { margin-top: 8px; } .srclist summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
+.srcrows { display: grid; gap: 2px; margin-top: 6px; } .srcrow { display: grid; grid-template-columns: 10px minmax(160px, 1.3fr) minmax(0, 2fr) auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.srcrow .nm { display: flex; flex-direction: column; min-width: 0; } .srcrow .nm small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .srcrow .err { grid-column: 2 / 4; font-size: 12.5px; }
+.srcrow .btns { display: flex; gap: 6px; } .srcrow .btns button { font-size: 12.5px; } .srcrow .st { width: 8px; height: 8px; border-radius: 50%; background: var(--ok, #2f9e6b); } .srcrow.paused .st { background: var(--muted); } .srcrow.error .st { background: var(--err); }
+.srcrow[data-idle] { grid-template-columns: minmax(160px, 1.3fr) minmax(0, 2fr) auto; }
+@media (max-width: 760px) { .srcrow { grid-template-columns: 10px minmax(0, 1fr); } .srcrow > :nth-child(n+3) { grid-column: 2; } }
 .ovlist { list-style: none; margin: 0; padding: 0; } .ovlist li { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; padding: 8px 0 8px 12px; border-top: 1px solid var(--line); border-left: 3px solid var(--line); }
 .ovlist li:first-child { border-top: 0; } .ovfix { display: flex; gap: 8px; align-items: center; white-space: nowrap; } .ovlist li.bad { border-left-color: var(--err); } .ovlist li.warn { border-left-color: #e3a008; } .ovlist li a { white-space: nowrap; }
 .sigflow { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 18px; }
@@ -1237,7 +1244,7 @@ async function watchList(l) {
   const queries = handleQueries(members), perMonth = queries.length * (30 * 86400 / 300) * 0.00015;
   if (!confirm(`Create ${queries.length} watch${queries.length > 1 ? 'es' : ''} in the Live feed for "${l.name}", checking every 5 minutes?\n\nAbout ${money(perMonth)} a month while idle, plus $0.15 per 1,000 tweets found.`)) return;
   for (let i = 0; i < queries.length; i++)
-    await post('/mon/add', { kind: 'query', query: queries[i], label: `List: ${l.name}` + (queries.length > 1 ? ` (${i + 1}/${queries.length})` : ''), intervalSec: 300 });
+    await post('/mon/add', { kind: 'query', query: queries[i], label: `List: ${l.name}` + (queries.length > 1 ? ` (${i + 1}/${queries.length})` : ''), intervalSec: 300, list: 'a:' + l.id });
   toast(`Added ${queries.length} watch${queries.length > 1 ? 'es' : ''}. Find ${queries.length > 1 ? 'them' : 'it'} in the Live feed.`);
 }
 
@@ -1580,7 +1587,7 @@ mf.addEventListener('submit', async (e) => {
     if (!x) return toast('Pick an X List (add some under Lists and templates)');
     if (perMonth > 5 && !confirm(`Checking every ${sec}s costs about ${money(perMonth)} per month even when nothing is posted. Continue?`)) return;
     try {
-      await post('/mon/add', { kind: 'query', query: `list:${x.id}`, label: `X List: ${x.name}`.slice(0, 60), intervalSec: sec, originalsOnly: mf.originalsOnly.checked, includeRetweets: mf.includeRetweets.checked, group: mf.group.value || x.name });
+      await post('/mon/add', { kind: 'query', query: `list:${x.id}`, label: `X List: ${x.name}`.slice(0, 60), intervalSec: sec, originalsOnly: mf.originalsOnly.checked, includeRetweets: mf.includeRetweets.checked, group: mf.group.value || x.name, list: 'x:' + x.id });
       toast('Watch added; the first check runs now');
     } catch (err) { toast(err.message); }
     return;
@@ -1592,7 +1599,7 @@ mf.addEventListener('submit', async (e) => {
     if (!confirm(`Create ${n} watch${n > 1 ? 'es' : ''} for "${l.name}", checking every ${ivl(sec)}?\n\nAbout ${money(total)} a month while idle, plus $0.15 per 1,000 tweets found.`)) return;
     try {
       for (let i = 0; i < n; i++) await post('/mon/add', { kind: 'query', query: queries[i], label: `List: ${l.name}` + (n > 1 ? ` (${i + 1}/${n})` : ''),
-        intervalSec: sec, originalsOnly: mf.originalsOnly.checked, includeRetweets: mf.includeRetweets.checked, group: mf.group.value });
+        intervalSec: sec, originalsOnly: mf.originalsOnly.checked, includeRetweets: mf.includeRetweets.checked, group: mf.group.value, list: 'a:' + l.id });
       toast(`Added ${n} watch${n > 1 ? 'es' : ''}; the first check runs now`);
     } catch (err) { toast(err.message); }
     return;
@@ -1607,20 +1614,80 @@ mf.addEventListener('submit', async (e) => {
 
 const ago = (ms) => { if (!ms) return 'never'; const s = Math.round((Date.now() - ms) / 1000); return s < 5 ? 'just now' : s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
 const ivl = (s) => (s < 60 ? `${s} s` : s < 3600 ? `${s / 60} min` : `${s / 3600} h`);
+// Sources are managed per list: a feed list, an account list or an X List is one card with its settings (interval, Signal group, pause, Signal,
+// stop watching), and opens to show its sources, each with its own status and Check now. Sources not from a list are grouped by kind.
+const IVLS = [15, 30, 60, 300, 900, 1800, 3600];
+const srcOpen = new Set();   // which list cards are open, kept across redraws
+function listKeyOf(w) {
+  if (w.briefing) return 'brief';
+  if (w.list) return w.list.includes(':') ? w.list : 'f:' + w.list;
+  const x = /^list:(\d+)$/.exec(w.query || ''); if (x) return 'x:' + x[1];   // X List watches made before they remembered their list
+  const a = /^List: (.+?)(?: \(\d+\/\d+\))?$/.exec(w.label || ''); if (a) { const l = lists.find((y) => y.name === a[1]); if (l) return 'a:' + l.id; }
+  return 'src:' + srcOf(w);
+}
+const SRC_GROUP = { x: 'X accounts and searches', rss: 'RSS feeds', youtube: 'YouTube channels', hn: 'Hacker News searches' };
+function listInfo(key) {
+  const [t, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
+  if (key === 'brief') return { name: 'Briefing hand-overs', kind: 'Posts from briefings (not checked)', list: null };
+  if (t === 'f') { const l = flists.find((x) => x.id === id); return { name: l?.name ?? 'Feed list (deleted)', kind: 'Feed list', list: l, type: 'f' }; }
+  if (t === 'a') { const l = lists.find((x) => x.id === id); return { name: l?.name ?? 'Account list (deleted)', kind: 'Account list', list: l, type: 'a' }; }
+  if (t === 'x') { const l = xlists.find((x) => x.id === id); return { name: l?.name ?? 'X List', kind: 'X List', list: l, type: 'x' }; }
+  return { name: SRC_GROUP[id] ?? id, kind: 'Single sources', list: null, type: 'src' };
+}
+// What the list holds that is not watched (feed lists), or whether its accounts changed (account lists).
+function listSync(info, ws) {
+  if (info.type === 'f' && info.list) {
+    const same = (m, w) => (m.source === 'hn' ? srcOf(w) === 'hn' && (w.hnTag ?? 'front_page') === (m.hnTag ?? 'front_page') && (w.query ?? '') === (m.query ?? '') : w.query === m.query);
+    const missing = info.list.members.filter((m) => !mon.watches.some((w) => same(m, w)));
+    return missing.length ? { text: `${missing.length} source${missing.length === 1 ? ' in the list is' : 's in the list are'} not watched`, action: 'Watch them' } : null;
+  }
+  if (info.type === 'a' && info.list) {
+    const want = handleQueries(info.list.members.filter((m) => !m.missing).map((m) => m.handle)), have = ws.map((w) => w.query);
+    return want.length !== have.length || want.some((q) => !have.includes(q)) ? { text: 'The accounts in the list changed since it was watched', action: 'Update the watches' } : null;
+  }
+  return null;
+}
+function watchCard(w) {
+  const status = !w.enabled ? 'paused' : w.errors ? 'error' : w.running ? 'checking' : 'active';
+  const src = srcOf(w), flags = src === 'x' ? [w.originalsOnly && 'no replies', w.includeRetweets && '+retweets', w.query].filter(Boolean).join(' · ')
+    : src === 'rss' || src === 'youtube' ? safeUrl(w.query).replace(/^https?:\/\//, '') : [({ front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' })[w.hnTag], w.query, w.minPoints && `${w.minPoints}+ points`].filter(Boolean).join(' · ');
+  return `<div class="srcrow ${status}" data-watch="${esc(w.id)}"><span class="st" title="${status}"></span><span class="nm"><b>${esc(w.label)}</b><small>${esc(flags)}</small></span>
+    <span class="note">${w.briefing ? `${fmt(w.found)} posts handed over` : `every <select data-wint style="padding:1px 4px;font-size:12px">${IVLS.map((v) => `<option value="${v}" ${v === w.intervalSec ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select> · checked <span data-ago="${w.lastRun}">${ago(w.lastRun)}</span> · ${fmt(w.found)} ${src === 'x' ? 'tweets' : 'items'}${src === 'x' ? ` · ${money(w.cost)}` : ''}`}${w.group ? ` · group ${esc(w.group)}` : ''}${w.noSignal ? ' · not in Signal' : ''}</span>
+    ${w.lastError ? `<span class="err" title="${esc(w.lastError)}">${esc(w.lastError.slice(0, 90))}</span>` : ''}
+    <span class="btns">${w.briefing ? '' : `<button data-mact="check" title="Check this source now (retries it if it failed)">${w.lastError ? 'Retry' : 'Check now'}</button><button data-mact="toggle">${w.enabled ? 'Pause' : 'Resume'}</button>`}<button data-mact="delete">Remove</button></span></div>`;
+}
 function renderWatches() {
-  const ws = mon.watches;
-  $('#monWatches').innerHTML = ws.length ? `<div class="grid">${ws.map((w) => {
-    const status = !w.enabled ? 'paused' : w.errors ? 'error' : w.running ? 'checking' : 'active';
-    const src = srcOf(w), flags = src === 'x' ? [w.originalsOnly && 'no replies', w.includeRetweets && '+retweets'].filter(Boolean).join(', ')
-      : src === 'rss' || src === 'youtube' ? safeUrl(w.query).replace(/^https?:\/\//, '') : [({ front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' })[w.hnTag], w.query, w.minPoints && `${w.minPoints}+ points`].filter(Boolean).join(' · ');
-    return `<div class="card job" data-watch="${esc(w.id)}">
-      <div class="top"><b>${esc(w.label)}</b><span class="badge">${esc(SRC_NAME[src])}</span>${w.group ? `<span class="badge" title="Signal group">${esc(w.group)}</span>` : ''}${w.list && flists.find((l) => l.id === w.list) ? `<span class="badge">${esc(flists.find((l) => l.id === w.list).name)}</span>` : ''}<span class="badge ${status === 'checking' ? 'running' : status}">${status}</span>${flags ? `<span class="meta2">${esc(flags)}</span>` : ''}</div>
-      <div class="meta2">every <select data-wint style="padding:1px 4px;font-size:12px">${[15, 30, 60, 300, 900, 1800, 3600].map((v) => `<option value="${v}" ${v === w.intervalSec ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select>
-        · checked <span data-ago="${w.lastRun}">${ago(w.lastRun)}</span>${w.enabled && w.nextRun ? ` · next in <span data-next="${w.nextRun}"></span>` : ''}</div>
-      <div class="meta2">${fmt(w.checks)} checks · ${fmt(w.found)} ${src === 'x' ? 'tweets' : 'items'}${src === 'x' ? ` · ${money(w.cost)} spent` : ' · free'}${w.lastError ? ` · <span class="err">${esc(w.lastError)}</span>` : ''}</div>
-      <div class="btns"><button data-mact="check">Check now</button><button data-mact="toggle">${w.enabled ? 'Pause' : 'Resume'}</button><button data-mact="delete">Delete</button></div>
-    </div>`;
-  }).join('')}</div>` : '<div class="empty">No watches yet. Add an X account or search, an RSS feed, a YouTube channel or Hacker News above.</div>';
+  const ws = mon.watches, box = $('#monWatches');
+  // Do not redraw under someone typing a group name.
+  if (!(box.contains(document.activeElement) && document.activeElement.matches('input'))) {
+    const by = new Map();
+    for (const w of ws) { const k = listKeyOf(w); (by.get(k) ?? by.set(k, []).get(k)).push(w); }
+    const order = (k) => (k.startsWith('src:') ? 2 : k === 'brief' ? 3 : 1);
+    const keys = [...by.keys()].sort((a, b) => order(a) - order(b) || listInfo(a).name.localeCompare(listInfo(b).name));
+    const cards = keys.map((k) => {
+      const g = by.get(k), info = listInfo(k), checked = !g.every((w) => w.briefing);
+      const bad = g.filter((w) => w.lastError).length, paused = g.filter((w) => !w.enabled && !w.briefing).length, active = g.length - bad - paused;
+      const ivs = [...new Set(g.filter((w) => !w.briefing).map((w) => w.intervalSec))], groups = [...new Set(g.map((w) => w.group || ''))], allOut = g.every((w) => w.noSignal);
+      const xs = g.filter((w) => srcOf(w) === 'x'), spent = xs.reduce((n, w) => n + w.cost, 0), found = g.reduce((n, w) => n + w.found, 0), sync = listSync(info, g);
+      return `<div class="card srclist${bad ? ' bad' : ''}" data-lkey="${esc(k)}">
+        <div class="top"><b>${esc(info.name)}</b><span class="badge">${esc(info.kind)}</span><span class="note">${g.length} source${g.length === 1 ? '' : 's'}${active ? ` · ${active} active` : ''}${paused ? ` · ${paused} paused` : ''}</span>${bad ? `<span class="badge" style="color:var(--err)">${bad} failing</span>` : ''}</div>
+        <div class="meta2">${checked ? `every <select data-lint style="padding:1px 4px;font-size:12px">${ivs.length > 1 ? '<option value="" selected>mixed</option>' : ''}${IVLS.map((v) => `<option value="${v}" ${ivs.length === 1 && v === ivs[0] ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select> · ` : ''}${fmt(found)} found${xs.length ? ` · ${money(spent)} spent on X` : ' · free'}</div>
+        <div class="meta2">Signal group <input data-lgroup list="sigNames" value="${groups.length === 1 ? esc(groups[0]) : ''}" placeholder="${groups.length > 1 ? 'mixed' : 'default'}" maxlength="40" style="width:150px"><button class="go ghost" data-lact2="group">Set</button>
+          <button class="link" data-lact2="signal">${allOut ? 'Count in Signal' : 'Leave out of Signal'}</button></div>
+        ${sync ? `<div class="meta2"><span class="note">${esc(sync.text)}.</span> <button class="link" data-lact2="sync">${esc(sync.action)}</button></div>` : ''}
+        <div class="btns">${checked ? `<button data-lact2="check">${bad ? 'Retry the failing' : 'Check all now'}</button><button data-lact2="toggle">${paused === g.length ? 'Resume all' : 'Pause all'}</button>` : ''}<button data-lact2="delete">Stop watching</button></div>
+        <details data-lkey="${esc(k)}"${srcOpen.has(k) || (bad && !srcOpen.size) ? ' open' : ''}><summary>The ${g.length} source${g.length === 1 ? '' : 's'}</summary><div class="srcrows">${g.map(watchCard).join('')}</div></details>
+      </div>`;
+    });
+    // Lists that exist but are not watched: one click to watch them.
+    const watched = new Set(keys);
+    const idle = [...flists.filter((l) => l.members.length && !watched.has('f:' + l.id)).map((l) => ['f:' + l.id, l.name, 'Feed list', `${l.members.length} sources, free`]),
+      ...lists.filter((l) => l.members.length && !watched.has('a:' + l.id)).map((l) => ['a:' + l.id, l.name, 'Account list', `${l.members.length} accounts`]),
+      ...xlists.filter((l) => !watched.has('x:' + l.id)).map((l) => ['x:' + l.id, l.name, 'X List', 'one watch'])];
+    box.innerHTML = (cards.length ? `<div class="srclists">${cards.join('')}</div>` : '<div class="empty">Nothing is watched yet. Add a list or a single source above.</div>')
+      + (idle.length ? `<details class="card" style="margin-top:14px"><summary><b>Lists not watched</b> <span class="note">${idle.length}</span></summary><div class="srcrows">${idle.map(([k, n, kind, note]) => `<div class="srcrow" data-idle="${esc(k)}"><span class="nm"><b>${esc(n)}</b><small>${kind} · ${note}</small></span>
+          <span class="note">every <select data-iint style="padding:1px 4px;font-size:12px">${IVLS.map((v) => `<option value="${v}" ${v === (k.startsWith('f:') ? 900 : 300) ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select></span><span class="btns"><button data-iwatch>Watch</button></span></div>`).join('')}</div></details>` : '');
+  }
   const sel = $('#monFilter'), cur = sel.value;
   const lsel = $('#monListFilter'), curL = lsel.value, withList = flists.filter((l) => ws.some((w) => w.list === l.id));
   lsel.innerHTML = '<option value="">all feed lists</option>' + withList.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
@@ -1743,13 +1810,60 @@ async function initFeatures() {
 $('#monFilter').addEventListener('change', (e) => { monFilter = e.target.value; renderFeed(); });
 $('#monSrc').addEventListener('change', (e) => { monSrc = e.target.value; renderWatches(); renderFeed(); });
 $('#monListFilter').addEventListener('change', (e) => { monList = e.target.value; renderWatches(); renderFeed(); });
+$('#monWatches').addEventListener('toggle', (e) => { const d = e.target; if (d.matches?.('details[data-lkey]')) { if (d.open) srcOpen.add(d.dataset.lkey); else srcOpen.delete(d.dataset.lkey); } }, true);
+async function refreshMon() { try { mon = await (await fetch('/mon/state')).json(); renderWatches(); } catch {} }
+// One change for every source of a list (or of a kind of single source).
+$('#monWatches').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-lact2], [data-iwatch]'); if (!b) return;
+  try {
+    if (b.matches('[data-iwatch]')) {   // watch a list that is not watched yet
+      const row = b.closest('[data-idle]'), k = row.dataset.idle, sec = +row.querySelector('select').value, id = k.slice(2), perMonth = (30 * 86400 / sec) * 0.00015;
+      if (k.startsWith('f:')) { const r = await watchFeedList(flists.find((l) => l.id === id), sec); toast(`Added ${r.added}${r.failed.length ? `, could not add ${r.failed.length}` : ''}`); }
+      else if (k.startsWith('a:')) { const l = lists.find((x) => x.id === id), qs = handleQueries(l.members.filter((m) => !m.missing).map((m) => m.handle));
+        if (!confirm(`Watch "${l.name}" as ${qs.length} X search${qs.length === 1 ? '' : 'es'} every ${ivl(sec)}? About ${money(qs.length * perMonth)} a month while idle.`)) return;
+        for (let i = 0; i < qs.length; i++) await post('/mon/add', { kind: 'query', query: qs[i], label: `List: ${l.name}` + (qs.length > 1 ? ` (${i + 1}/${qs.length})` : ''), intervalSec: sec, list: 'a:' + l.id }); toast('Watching'); }
+      else { const x = xlists.find((l) => l.id === id); if (!confirm(`Watch the X List "${x.name}" every ${ivl(sec)}? About ${money(perMonth)} a month while idle.`)) return;
+        await post('/mon/add', { kind: 'query', query: `list:${x.id}`, label: `X List: ${x.name}`.slice(0, 60), intervalSec: sec, group: x.name, list: 'x:' + x.id }); toast('Watching'); }
+      return refreshMon();
+    }
+    const card = b.closest('[data-lkey]'), k = card.dataset.lkey, g = mon.watches.filter((w) => listKeyOf(w) === k), info = listInfo(k), act = b.dataset.lact2;
+    const polled = g.filter((w) => !w.briefing), each = async (ws, body) => { for (const w of ws) await post('/mon/update', { id: w.id, ...body }); };
+    b.disabled = true;
+    if (act === 'check') { const failing = polled.filter((w) => w.lastError), use = failing.length ? failing : polled; for (const w of use) await post('/mon/check', { id: w.id }); toast(`Checking ${use.length} source${use.length === 1 ? '' : 's'}…`); }
+    else if (act === 'toggle') { const resume = polled.every((w) => !w.enabled); await each(polled, { enabled: resume }); toast(resume ? 'Resumed' : 'Paused'); }
+    else if (act === 'signal') { const include = g.every((w) => w.noSignal); await each(g, { signal: include }); toast(include ? 'Counted in Signal again' : 'Left out of Signal (still watched)'); }
+    else if (act === 'group') { await each(g, { group: card.querySelector('[data-lgroup]').value.trim() }); toast('Signal group set'); }
+    else if (act === 'delete') { if (!confirm(`Stop watching all ${g.length} source${g.length === 1 ? '' : 's'} of "${info.name}"? ${info.list ? 'The list itself is kept and can be watched again.' : ''}`)) { b.disabled = false; return; } for (const w of g) await post('/mon/delete', { id: w.id }); toast('Stopped watching'); }
+    else if (act === 'sync') {
+      const first = polled[0], sec = first?.intervalSec ?? 900, group = first?.group ?? '';
+      if (info.type === 'f') { const r = await watchFeedList(info.list, sec, group); toast(`Added ${r.added}${r.failed.length ? `, could not add ${r.failed.length}` : ''}`); }
+      else if (info.type === 'a') {   // the accounts changed: the searches are rebuilt with the same settings
+        const qs = handleQueries(info.list.members.filter((m) => !m.missing).map((m) => m.handle));
+        if (!confirm(`Rebuild the watches of "${info.name}" from its ${info.list.members.length} accounts (${qs.length} search${qs.length === 1 ? '' : 'es'})? Settings are kept.`)) { b.disabled = false; return; }
+        for (const w of g) await post('/mon/delete', { id: w.id });
+        for (let i = 0; i < qs.length; i++) await post('/mon/add', { kind: 'query', query: qs[i], label: `List: ${info.name}` + (qs.length > 1 ? ` (${i + 1}/${qs.length})` : ''), intervalSec: sec, originalsOnly: !!first?.originalsOnly, includeRetweets: !!first?.includeRetweets, group, list: k });
+        toast('Watches updated');
+      }
+    }
+    await refreshMon();
+  } catch (err) { toast(err.message); b.disabled = false; }
+});
+$('#monWatches').addEventListener('change', async (e) => {
+  if (!e.target.matches('[data-lint]') || !e.target.value) return;
+  const sec = +e.target.value, g = mon.watches.filter((w) => listKeyOf(w) === e.target.closest('[data-lkey]').dataset.lkey && !w.briefing), xs = g.filter((w) => srcOf(w) === 'x').length;
+  const perMonth = xs * (30 * 86400 / sec) * 0.00015;
+  if (perMonth > 5 && !confirm(`Every ${ivl(sec)} for ${xs} X watch${xs === 1 ? '' : 'es'} is about ${money(perMonth)} per month while idle. Continue?`)) return renderWatches();
+  for (const w of g) await post('/mon/update', { id: w.id, intervalSec: sec }).catch((err) => toast(err.message));
+  toast(`Every ${ivl(sec)} for ${g.length} source${g.length === 1 ? '' : 's'}`); refreshMon();
+});
 $('#monWatches').addEventListener('click', async (e) => {
   const b = e.target.closest('button[data-mact]'); if (!b) return;
   const id = b.closest('[data-watch]').dataset.watch, w = mon.watches.find((x) => x.id === id);
   try {
-    if (b.dataset.mact === 'check') { await post('/mon/check', { id }); toast('Checking…'); }
+    if (b.dataset.mact === 'check') { await post('/mon/check', { id }); toast(`Checking ${w.label}…`); setTimeout(refreshMon, 2500); }
     if (b.dataset.mact === 'toggle') await post('/mon/update', { id, enabled: !w.enabled });
     if (b.dataset.mact === 'delete' && confirm(`Stop watching ${w.label}?`)) await post('/mon/delete', { id });
+    await refreshMon();
   } catch (err) { toast(err.message); }
 });
 $('#monWatches').addEventListener('change', async (e) => {

@@ -45,7 +45,7 @@ interface Watch {
   hnTag?: HnTag; minPoints?: number;           // Hacker News
   etag?: string; lastModified?: string;        // RSS: conditional requests, so an unchanged feed costs nothing
   autoLabel?: boolean;                         // the label is a placeholder until the first fetch names the feed
-  list?: string;                               // the feed list this watch was made from, so the feed can be shown per list
+  list?: string;                               // the list this watch was made from: a feed list id, "a:<id>" (account list) or "x:<id>" (X List)
   group?: string;                              // Signal: a name you gave, so watches with the same name vote together
   noSignal?: boolean;                          // Signal: keep watching, but leave this watch out of Signal
   briefing?: string;                           // fed by the briefing with this slug (never polled): its posts were already paid for there
@@ -371,7 +371,7 @@ export class MonitorDO extends DurableObject<Env> {
   /** Which group a watch votes in: a name you gave, else the feed list it came from, else its kind of source. */
   private groupOf(w: Watch, names: Map<string, string>): { key: string; name: string } {
     if (w.group) return { key: 'g:' + w.group.toLowerCase(), name: w.group };
-    if (w.list) return { key: 'list:' + w.list, name: names.get(w.list) ?? 'Feed list' };
+    if (w.list && !w.list.includes(':')) return { key: 'list:' + w.list, name: names.get(w.list) ?? 'Feed list' };   // account lists and X Lists vote as X, as before
     return { key: 'src:' + sourceOf(w), name: SOURCE_NAME[sourceOf(w)] };
   }
   private async groups() {
@@ -895,7 +895,8 @@ export class MonitorDO extends DurableObject<Env> {
         let source = isSource(b.source) ? b.source : 'x';
         if (source === 'rss') b.query = expandShorthand(String(b.query ?? '')) ?? b.query;   // r/rust, github:owner/repo, … → the feed they stand for
         if (source === 'rss' && isYoutubeFeed(String(b.query ?? '').trim())) source = 'youtube';   // a YouTube feed address pasted as a plain feed
-        const listId = /^[A-Za-z0-9-]{1,40}$/.test(String(b.list ?? '')) ? String(b.list) : undefined;
+        // The list it came from: a feed list's id, or "a:<id>" for an account list and "x:<id>" for an X List (so Sources can manage it as one).
+        const listId = /^(?:[ax]:)?[A-Za-z0-9-]{1,40}$/.test(String(b.list ?? '')) ? String(b.list) : undefined;
         // Already watched: from a feed list that is fine (the watch just remembers it belongs to the list too); otherwise it is a mistake.
         const repeat = (had: Watch, message: string): Response => {
           if (!listId) throw new Error(message);

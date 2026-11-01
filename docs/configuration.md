@@ -86,8 +86,12 @@ Bindings in `wrangler.jsonc`: the five Durable Objects, the R2 bucket `AUDIO` (c
 | Audio, Picture | A template (voice, style, model; image model, shape, prompt), made automatically or by hand. |
 | Signal | Also count the posts this briefing fetches in Signal (free), as a group of this name (starts at weight ×2). |
 
-**Sources** (`/admin` → Sources): every watch (X account or search, RSS, YouTube, Hacker News, or a whole list), how often it is checked, its Signal
-group, pause and delete, and desktop notifications. New items show in Live feed.
+**Sources** (`/admin` → Sources): what is watched, managed per list. Each feed list, account list and X List is one card: how often its sources
+are checked, its Signal group, counted in Signal or not, pause or resume all, check all (or retry only the failing ones), and stop watching. A card
+also says when the list has sources that are not watched, or accounts that changed, with a button to bring the watches in line. Open a card to see
+its sources one by one, each with its status, last error, its own interval and **Retry / Check now**, Pause and Remove. Sources added on their own
+are grouped by kind (X, RSS, YouTube, Hacker News) and handled the same way, and lists that exist but are not watched are listed with a **Watch**
+button. Desktop notifications are set here too. New items show in Live feed.
 
 **Signal setup** (`/admin` → Signal setup): sources and the group each votes in; group weights (0 mutes, 3 triples); topic rules (words or AI,
 the model, filtered words, and hide, merge or rename a topic, which applies everywhere and also to what was counted before); and the top-level
