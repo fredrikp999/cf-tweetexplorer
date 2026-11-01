@@ -90,7 +90,7 @@ export interface Issue {
   links?: string[];
 }
 
-export const RESERVED = new Set(['admin', 'custom', 'lists', 'signal', 'report', 'feeds', 'audio', 'image', 'history', 'api', 'static', 'assets', 'feed', 'rss', 'sitemap', 'robots', 'favicon', 'health', 'ai-plugin']);
+export const RESERVED = new Set(['admin', 'custom', 'lists', 'signal', 'report', 'feeds', 'topics', 'audio', 'image', 'history', 'api', 'static', 'assets', 'feed', 'rss', 'sitemap', 'robots', 'favicon', 'health', 'ai-plugin']);
 export const SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const INTERVALS = [6, 12, 24, 48, 168];
 const MAX_TOPICS = 40, MAX_SOURCES = 8, MAX_TWEETS = 150, STALE_RUN_MS = 20 * 60_000;

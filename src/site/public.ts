@@ -30,6 +30,8 @@ interface PubFList { id: string; name: string; topic: string; feeds: { source: '
 interface ViewItem { title: string; url: string; by: string; source: string; kind: string; ts: number; reactions: number; video?: string }
 interface PubView { slug: string; title: string; description: string; listed: boolean; layout: 'player' | 'cards' | 'list'; first: ViewItem | null }
 interface PubViewPage { slug: string; title: string; description: string; layout: 'player' | 'cards' | 'list'; show: 'latest' | 'top'; days: number; perSource: boolean; items: ViewItem[] }
+/** Every topic of one published Signal in the last two weeks. */
+interface PubTerms { slug: string; title: string; days: number; baselineOk: boolean; terms: Array<{ term: string; signal: number; docs: number; isNew: boolean; change: number | null; evergreen: boolean; kind: string; breadth: number }> }
 interface Ctx { topics: PubTopic[]; /** Published feed pages. */ views: PubView[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[] }
 interface PubBoard { slug: string; title: string; description: string; groups: string[]; proof?: boolean; /** Addresses it had before: they redirect here. */ aliases?: string[] }
 /** One topic of a published Signal, as its own page. Items, sources and `total` are present only when the Signal shows its sources. */
@@ -152,6 +154,9 @@ form.report{display:grid;gap:12px;max-width:640px}form.report textarea{width:100
 .vlead{margin:0 0 24px}.vplayer{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#000}.vplayer iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.vlead h2{font-size:20px;margin:12px 0 4px}.vlead h2 a{color:var(--text);text-decoration:none}.vlead small.out{margin-left:8px;color:var(--accent,#c9265f)}
 .vcards{list-style:none;padding:0;margin:0 0 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}.vcards li{display:flex;flex-direction:column;gap:4px}.vcards a{color:var(--text);text-decoration:none}.vcards img{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-radius:10px;display:block;margin-bottom:6px;background:var(--card)}.vcards b{font-weight:600;line-height:1.3}.vcards small,.vlead small,.vlist small{color:var(--muted);font-size:13px}.vcards small a{color:var(--muted)}
 .vlist{list-style:none;padding:0;margin:0;display:grid;gap:12px}.vlist li{display:flex;flex-direction:column;border-bottom:1px solid var(--line);padding-bottom:10px}.vlist a{color:var(--text);font-weight:600}
+.tsearch{display:flex;gap:8px;align-items:center;margin:0 0 18px}.tsearch input{flex:1;max-width:360px;font:inherit;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--text)}.tsearch button{font:inherit;padding:7px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+.az{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 10px}.az a{min-width:28px;text-align:center;padding:3px 6px;border:1px solid var(--line);border-radius:8px;text-decoration:none;color:var(--text);font-size:13px}
+.azh{font-size:14px;margin:16px 0 6px;color:var(--muted)}.azl{list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:6px}.azl li{display:flex;gap:6px;align-items:baseline;padding:3px 10px;border:1px solid var(--line);border-radius:999px;background:var(--card)}.azl a{color:var(--text);text-decoration:none}.azl small{color:var(--muted);font-size:12px}
 .mnav{display:none}.views a.rss{margin-left:auto;font-size:13px}
 .inbrief{border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:14px 0 20px;background:var(--card)}.inbrief h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}.inbrief ol{margin:0;padding-left:20px}.inbrief li{margin:3px 0}.inbrief small.up,.today small .up{color:var(--accent,#c9265f)}
 article h3[id]{scroll-margin-top:16px}.thm{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 8px}.chip.sig{text-decoration:none;color:var(--text)}.cites{font-size:13px;color:var(--muted);margin:-4px 0 18px}
@@ -176,7 +181,7 @@ const MARK = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" heigh
 
 // The left rail on every public page: the brand, the topics (the one you are in opens its views), and a note.
 interface Active { slug: string; title: string; view: 'latest' | 'archive' | 'issue'; earlier: number }
-function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds', board?: string): string {
+function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics', board?: string): string {
   const list = [...ctx.topics].sort((a, b) => a.title.localeCompare(b.title));
   if (active && !list.some((t) => t.slug === active.slug)) list.push({ slug: active.slug, title: active.title } as PubTopic);   // an unlisted topic, reached by its link
   const items = list.map((t) => {
@@ -185,8 +190,8 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' |
 <a href="/${esc(t.slug)}/archive"${active!.view === 'archive' ? ' aria-current="page"' : ''}>Previous days${active!.earlier ? ` <small>${active!.earlier}</small>` : ''}</a></div>` : '');
   }).join('');
   // Today, the briefings, Signal and Reports. The lists behind the briefings are linked from the foot and from each briefing's sources.
-  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Briefings</div>${items}` : ''}${ctx.views.length ? `<div class="grp">Watch and read</div>${ctx.views.map((v) => `<a href="/feeds/${esc(v.slug)}"${page === 'feeds' && board === v.slug ? ' aria-current="page"' : ''}>${esc(v.title)}</a>`).join('')}` : ''}${ctx.boards.length || ctx.reports.length || page === 'history' ? '<div class="grp">Analysis</div>' : ''}${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>${page === 'signal' && ctx.boards.length > 1 ? `<div class="sub">${ctx.boards.map((b) => `<a href="/signal/${esc(b.slug)}"${b.slug === board ? ' aria-current="page"' : ''}>${esc(b.title)}</a>`).join('')}</div>` : ''}` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${listTotal(ctx) ? `<div class="grp">Browse</div><a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}`;
-  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : page === 'feeds' ? ctx.views.find((v) => v.slug === board)?.title ?? 'Watch and read' : 'Today');
+  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Briefings</div>${items}` : ''}${ctx.views.length ? `<div class="grp">Watch and read</div>${ctx.views.map((v) => `<a href="/feeds/${esc(v.slug)}"${page === 'feeds' && board === v.slug ? ' aria-current="page"' : ''}>${esc(v.title)}</a>`).join('')}` : ''}${ctx.boards.length || ctx.reports.length || page === 'history' ? '<div class="grp">Analysis</div>' : ''}${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>${page === 'signal' && ctx.boards.length > 1 ? `<div class="sub">${ctx.boards.map((b) => `<a href="/signal/${esc(b.slug)}"${b.slug === board ? ' aria-current="page"' : ''}>${esc(b.title)}</a>`).join('')}</div>` : ''}` : ''}${ctx.boards.length ? `<a href="/topics"${page === 'topics' ? ' aria-current="page"' : ''}>Topics</a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${listTotal(ctx) ? `<div class="grp">Browse</div><a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}`;
+  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : page === 'feeds' ? ctx.views.find((v) => v.slug === board)?.title ?? 'Watch and read' : page === 'topics' ? 'Topics' : 'Today');
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Agent Cortex<small>Briefings and Signal</small></span></a>
 <nav class="full" aria-label="Site">${links}</nav>
 <details class="mnav"><summary><span>${esc(here)}</span> Menu</summary><nav aria-label="Site">${links}</nav></details>
@@ -354,7 +359,7 @@ ${sortBar}${rows ? `${view}<p class="note">Each bar is split by the group the to
 ${d.groups.length > 1 ? list('Only in one group', 'What one kind of source is talking about alone', d.single, (t) => esc(gname(t.top))) : ''}
 ${list('Rising', d.baselineOk ? 'More than in the period before' : 'Needs a few more days of data', d.rising, (t) => (t.isNew ? 'new' : `&times;${(t.change ?? 0).toFixed(1)}`))}</div>
 <h2 class="sect">Items per day</h2><section class="panel">${volume}</section>
-<p class="note"><a href="/signal/method">How this is worked out.</a> Topics are found automatically in the titles and text of public posts and articles${d.ai ? ', named by a language model that reads each item once' : ', by counting words and phrases'}. A topic's score is the share of a group's items that mention it, averaged over the groups. Topics that are always around at the same level as in the period before are left out${d.steadyHidden ? ` (${n(d.steadyHidden)} here)` : ''}, so what is new or growing stands out. It reflects only the sources watched here.${d.proof ? ' Select a topic to see the items behind it.' : ''}</p>`,
+<p class="note"><a href="/topics">All topics, A to Z</a> &middot; <a href="/signal/method">How this is worked out.</a> Topics are found automatically in the titles and text of public posts and articles${d.ai ? ', named by a language model that reads each item once' : ', by counting words and phrases'}. A topic's score is the share of a group's items that mention it, averaged over the groups. Topics that are always around at the same level as in the period before are left out${d.steadyHidden ? ` (${n(d.steadyHidden)} here)` : ''}, so what is new or growing stands out. It reflects only the sources watched here.${d.proof ? ' Select a topic to see the items behind it.' : ''}</p>`,
   { description: 'What is being talked about across news, blogs, X and Hacker News, combined into one score, and where each topic shows up.' });
 }
 
@@ -606,6 +611,32 @@ ${body}<p class="note">Titles, pictures and videos belong to their publishers; e
     { description: d.description || `${d.title}: ${how.toLowerCase()}.` });
 }
 
+/**
+ * The topics Signal found by itself, to browse: what is new and rising first, then every topic A to Z with how many items mention it.
+ * A search (?q=) narrows the list; plain HTML, no script. Each topic links to its page in Signal.
+ */
+export function topicsHtml(all: PubTerms[], ctx: Ctx, q: string): string {
+  const query = q.trim().toLowerCase().slice(0, 60);
+  const link = (b: PubTerms, t: PubTerms['terms'][number], extra = '') => `<a href="/signal/${esc(b.slug)}/t/${encodeURIComponent(t.term)}/14">${esc(t.term)}</a>${extra}`;
+  const sections = all.map((b) => {
+    const hits = query ? b.terms.filter((t) => t.term.includes(query)) : b.terms;
+    const fresh = hits.filter((t) => t.isNew).slice(0, 15), rising = hits.filter((t) => !t.isNew && (t.change ?? 0) >= 1.5 && !t.evergreen).sort((a, c) => (c.change ?? 0) - (a.change ?? 0)).slice(0, 15);
+    const az = [...hits].sort((a, c) => a.term.localeCompare(c.term));
+    const byLetter = new Map<string, typeof az>();
+    for (const t of az) { const l = /^[a-z]/.test(t.term[0]) ? t.term[0].toUpperCase() : /^\p{L}/u.test(t.term[0]) ? t.term[0].toUpperCase() : '#'; (byLetter.get(l) ?? byLetter.set(l, []).get(l)!).push(t); }
+    const chip = (t: PubTerms['terms'][number]) => `<li>${link(b, t)}<small>${t.docs}</small></li>`;
+    return `${all.length > 1 ? `<h2 class="sect">${esc(b.title)}</h2>` : ''}
+${!query && (fresh.length || rising.length) ? `<div class="panels">${fresh.length ? `<section class="panel"><h3>New</h3><p class="meta" style="margin:-4px 0 8px">Not there the two weeks before</p><ul class="sglist">${fresh.map((t) => `<li><span>${link(b, t)}</span><small>${t.docs} items</small></li>`).join('')}</ul></section>` : ''}
+${rising.length ? `<section class="panel"><h3>Rising</h3><p class="meta" style="margin:-4px 0 8px">More than the two weeks before</p><ul class="sglist">${rising.map((t) => `<li><span>${link(b, t)}</span><small>&times;${(t.change ?? 0).toFixed(1)}</small></li>`).join('')}</ul></section>` : ''}</div>` : ''}
+<h2 class="sect">${query ? `Topics with “${esc(query)}”` : 'All topics, A to Z'} <small class="dim">${hits.length}</small></h2>
+${hits.length ? `<nav class="az" aria-label="Letters">${[...byLetter.keys()].map((l) => `<a href="#l-${esc(b.slug)}-${esc(l)}">${esc(l)}</a>`).join('')}</nav>${[...byLetter].map(([l, ts]) => `<h3 class="azh" id="l-${esc(b.slug)}-${esc(l)}">${esc(l)}</h3><ul class="azl">${ts.map(chip).join('')}</ul>`).join('')}` : '<p class="meta">No topic matches.</p>'}`;
+  }).join('');
+  return shell('Topics · Agent Cortex', rail(ctx, undefined, 'topics'), `<header class="pagehead"><div class="eyebrow">The last two weeks</div><h1>Topics</h1>
+<p class="lede">What Signal found people talking about, by itself: every topic named in the posts and articles followed. Each opens its own page, with how it moved and where it shows up. <a href="/signal/method">How topics are found</a>.</p></header>
+<form class="tsearch" method="get" action="/topics"><input type="search" name="q" value="${esc(query)}" placeholder="Find a topic" aria-label="Find a topic" maxlength="60"><button type="submit">Find</button>${query ? ' <a href="/topics">All topics</a>' : ''}</form>
+${sections || '<p class="meta">No published Signal yet.</p>'}`, { description: 'Every topic Signal found in the last two weeks: new, rising, and A to Z.' });
+}
+
 /** A topic's newest briefings as an RSS 2.0 feed, each in full. */
 export function feedXml(d: { topic: TopicInfo; issues: IssueFull[] }, origin: string): string {
   const x = (v: string) => esc(v), cdata = (v: string) => `<![CDATA[${v.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`, url = `${origin}/${d.topic.slug}`;
@@ -690,6 +721,11 @@ async function render(env: Env, url: URL): Promise<Response> {
 
   if (parts.length === 0) return html(landingHtml(ctx, await signalStrip(env, ctx, 8)));
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
+  if (parts[0] === 'topics' && parts.length === 1) {   // /topics[?q=]: every Signal topic of the published Signals
+    const all = (await Promise.all(ctx.boards.map((b) => env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public-terms?slug=${b.slug}`))
+      .then((r) => (r.ok ? (r.json() as Promise<PubTerms>) : null)).catch(() => null)))).filter((x): x is PubTerms => !!x);
+    return ctx.boards.length ? html(topicsHtml(all, ctx, url.searchParams.get('q') ?? '')) : missing();
+  }
   if (parts[0] === 'feeds') {   // /feeds/<address>: a feed page
     if (parts.length === 1) return ctx.views.length ? new Response(null, { status: 302, headers: { location: `/feeds/${ctx.views[0].slug}`, ...NO_STORE } }) : missing();
     if (parts.length !== 2 || !SLUG.test(parts[1])) return missing();
@@ -803,7 +839,7 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   const cache = (globalThis as unknown as { caches?: { default?: Cache } }).caches?.default;
   // The key is the path plus the query parameters a page reads (Signal's sort and group), so a sorted page is not served the default one.
   // The report form is never cached: it shows whether a report was sent.
-  const q = new URLSearchParams([...['sort', 'group'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, 20)]] : []))] as [string, string][]).toString();
+  const q = new URLSearchParams([...['sort', 'group', 'q'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, 20)]] : []))] as [string, string][]).toString();
   const key = new Request(url.origin + url.pathname + (q ? '?' + q : ''), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/');
   const hit = cacheable ? await cache?.match(key).catch(() => undefined) : undefined;
   if (hit) return request.method === 'HEAD' ? new Response(null, hit) : hit;

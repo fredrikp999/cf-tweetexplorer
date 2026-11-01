@@ -930,6 +930,17 @@ export class MonitorDO extends DurableObject<Env> {
           return out ? json(out) : json({ error: 'not shown' }, 404);
         }
         if (name === 'signal-public-boards') return json(await this.publicBoards());
+        if (name === 'signal-public-terms') {   // every topic of a published Signal in the last two weeks, for the public Topics page; kept for two minutes
+          const slug = url.searchParams.get('slug') ?? '', k = `terms|${slug}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const board = this.boards().find((b) => b.public && b.slug === slug);
+          if (!board) return json({ error: 'not found' }, 404);
+          const c = await this.compute(14, new Set(board.groups));
+          const v = { slug: board.slug, title: board.title, days: c.days, baselineOk: c.baselineOk,
+            terms: c.terms.slice(0, 400).map((t) => ({ term: t.term, signal: t.signal, docs: t.docs, isNew: t.isNew, change: t.change, evergreen: t.evergreen, kind: t.kind, breadth: t.breadth })) };
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
         if (name === 'views') return json(this.views());
         if (name === 'view-items') { const v = this.views().find((x) => x.id === url.searchParams.get('id')); if (!v) throw new Error('unknown feed page'); return json(this.viewItems(v)); }
         // Public: the published feed pages (for the menu and Today, with each one's newest item), and one page with its items.

@@ -53,6 +53,7 @@ if (board) {
   await check(`/signal/${board}?sort=rising`, { has: ['aria-current="page">Rising'] });
 }
 await check('/signal/method', { has: ['How Signal works'] });
+if (board) { await check('/topics', { has: ['<h1>Topics</h1>', 'All topics, A to Z'] }); await check('/topics?q=a', { has: ['Topics with'] }); }
 
 // Feed pages: the first one listed in the menu.
 const feed = first(today, /href="\/feeds\/([a-z0-9-]+)"/);
