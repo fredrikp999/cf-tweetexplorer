@@ -10,7 +10,7 @@ import signalHtml from './apps/signal';
 
 const MAX_TWEETS = 200;
 const COSTS_UI = 'ui://tweet-explorer/costs-v6.html';
-const SIGNAL_UI = 'ui://tweet-explorer/signal-v1.html';
+const SIGNAL_UI = 'ui://tweet-explorer/signal-v2.html';
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const failure = (message: string) => ({ isError: true, content: [{ type: 'text' as const, text: message }] });
@@ -115,9 +115,9 @@ function buildServer(env: Env): McpServer {
     annotations: readOnly,
   }, ({ terms, days, group, watch, limit, offset }) => ask(env.MONITOR, '/mon/signal-items', { terms: terms.join('|'), days, group, watch, limit, offset }));
 
-  // The Signal view: the same JSON as the get_signal text, drawn as bars by group. Registered here, after the Costs view, so the two apps sit together.
+  // The Signal dashboard: the same JSON as the get_signal text, drawn as an interactive view (window, which Signal, strength or spread, and the items behind a topic via get_signal_items). Registered here, after the Costs view, so the two apps sit together.
   registerAppTool(server, 'get_signal', {
-    description: 'Signal: the topics across all watched sources combined into one weighted score. Each source group (a feed list, a kind of source, or a name you gave it) has a weight; a term is scored by how large a share of each group\'s items mention it. Returns the groups, the top terms, the rising terms, the terms found in most groups ("shared") and the terms found almost only in one group ("single"), each with the groups it comes from.',
+    description: 'Signal: the topics across all watched sources combined into one weighted score. Each source group (a feed list, a kind of source, or a name you gave it) has a weight; a term is scored by how large a share of each group\'s items mention it. Hosts with MCP Apps show it as an interactive dashboard (pick a window or a published Signal, open a topic to see the items behind it); other clients get this JSON. Returns the groups, the top terms, the rising terms, the terms found in most groups ("shared") and the terms found almost only in one group ("single"), each with the groups it comes from.',
     inputSchema: { days: z.number().int().min(1).max(14).default(7).describe('The window; it is compared with the same number of days before it'), steady: z.boolean().default(false).describe('Also list topics that are at the same level as in the period before (background); by default they are left out'), board: z.string().optional().describe('Only the groups of one top-level Signal (its id or address); the answer lists them under `boards`') },
     annotations: readOnly,
     _meta: { ui: { resourceUri: SIGNAL_UI } },
