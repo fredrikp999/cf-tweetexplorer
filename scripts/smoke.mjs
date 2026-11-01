@@ -22,6 +22,7 @@ async function check(path, { status = 200, has = [], type, note } = {}) {
     if (type && !(res.headers.get('content-type') || '').includes(type)) problems.push(`content-type ${res.headers.get('content-type')}`);
     for (const h of has) if (!body.includes(h)) problems.push(`missing ${JSON.stringify(h)}`);
     if (res.status === 200 && (res.headers.get('content-type') || '').includes('text/html') && !res.headers.get('content-security-policy')) problems.push('no content-security-policy');
+    if (res.status === 200 && (res.headers.get('content-type') || '').includes('text/html') && /max-age=[1-9]/.test(res.headers.get('cache-control') || '')) problems.push(`browser may reuse an old copy (${res.headers.get('cache-control')})`);
   }
   results.push({ path, ok: !problems.length, ms, problems, note });
   return body;

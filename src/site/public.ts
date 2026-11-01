@@ -844,8 +844,10 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   const ver = (env as { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? '';
   const key = new Request(url.origin + url.pathname + '?' + new URLSearchParams([...(q ? new URLSearchParams(q) : []), ['v', ver]]).toString(), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/');
   const hit = cacheable ? await cache?.match(key).catch(() => undefined) : undefined;
-  if (hit) return request.method === 'HEAD' ? new Response(null, hit) : hit;
+  // The site keeps a page for a minute; a browser always asks again (no-cache), so it never shows a page older than the site's copy.
+  const forBrowser = (r: Response) => { const out = new Response(request.method === 'HEAD' ? null : r.body, r); if (out.headers.get('cache-control')?.startsWith('public')) out.headers.set('cache-control', 'no-cache'); return out; };
+  if (hit) return forBrowser(hit);
   const res = await render(env, url);
   if (res.status === 200 && cacheable) await cache?.put(key, res.clone()).catch(() => undefined);
-  return request.method === 'HEAD' ? new Response(null, res) : res;
+  return forBrowser(res);
 }
