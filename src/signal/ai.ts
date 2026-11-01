@@ -9,13 +9,15 @@ const MAX_TOPICS = 3;
 // Categories, not topics: a model sometimes gives them anyway.
 export const VAGUE = new Set('ai a.i artificial-intelligence tech technology data software internet online computer computers science business market markets economy politics sports entertainment gaming machine-learning ml'.split(' '));
 
-export function topicSystem(): Msg {
+export function topicSystem(known: string[] = []): Msg {
   return { role: 'system', content: `You name the topics of headlines and posts, for a tool that shows what is being talked about.
 For EACH numbered item give up to ${MAX_TOPICS} specific topics it is about: named products, models, companies, people, places, events or concepts. Each topic is a short lowercase name of one to four words, as people would search for it, for example "kimi k2", "openai", "us tariffs", "scribd breach", "rust 2.0".
 Rules:
 - Use the same name for the same thing every time, and the most common short name ("kimi k2", not "moonshot ai's new kimi k2 thinking model").
 - Never give generic words or categories such as "ai", "news", "video", "tech", "update", "world", "model", "tutorial", "review".
 - If an item is about nothing specific, give an empty list.
+- Singular, not plural ("game", not "games"); the product or company name, not a sentence about it.${known.length ? `
+- Names already in use. When an item is about one of these, use exactly that name; only invent a new name for something not on the list: ${known.slice(0, 60).join('; ')}.` : ''}
 Answer with JSON only, no other text: {"items":[{"i":1,"t":["kimi k2","moonshot"]},{"i":2,"t":[]}]} where i is the item number.` };
 }
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s);

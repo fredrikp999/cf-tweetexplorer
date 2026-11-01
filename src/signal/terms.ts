@@ -9,6 +9,7 @@ export const GENERIC = new Set(('said says told tell tells know knows known call
   + 'make makes made making take takes took taking back many even still think thinks thing things work works working like likes look looks want wants going really using used uses show shows '
   + 'found find finds need needs help helps give gives gave come comes came good great better well much more most some than then them they their there these those other another '
   + 'part year-old according report reports reported says video photo photos image watch read news story stories update updates live hn ask world global full complete guide ultimate official intro introduction episode part parts '
+  + 'continue continued continues reading readers something anything everything nothing someone anyone everyone real questions question answer answers access short long small big little own same different important possible able actually probably always never often already without within between across through around while before after '
   + 'submitted reddit links link join free subscribe subscribed subscriber subscribers sponsor sponsors sponsored sponsorship inquiries inquiry newsletter follow click description channel contact email comment comments check visit sign').split(' '));
 // Clause breaks: a phrase does not run across them, so "rates. Apple" never becomes the phrase "rates apple".
 const BREAK = /[.!?;:,()[\]{}"“”‘’|\n\r–—•·…]+|\s[-/]\s/;

@@ -422,6 +422,18 @@ export class MonitorDO extends DurableObject<Env> {
     const c = this.getMeta<Partial<SignalAi>>('signalAi', {});
     return { enabled: !!c.enabled, model: c.model ?? '', dailyCap: Number.isFinite(c.dailyCap) ? Number(c.dailyCap) : 0.25 };
   }
+  /** A setup that never chose starts with model topics on (when a model is available): words alone rank "model" and "project" above real topics. Turning it off sticks. */
+  private ensureAiDefault(): void {
+    if (this.getMeta<unknown>('signalAi', null)) return;
+    const model = defaultTiers(this.env).cheap;
+    if (!model || !modelOptions(this.env).some((m) => m.id === model)) return;
+    this.setMeta('signalAi', { enabled: true, model, dailyCap: 0.25 } satisfies SignalAi);
+    this.enqueueBacklog();
+  }
+  /** The topic names already in use over the last two weeks, most mentioned first: the model is told to reuse them, so one thing keeps one name. */
+  private knownTopics(): string[] {
+    return this.ctx.storage.sql.exec<{ term: string }>('SELECT term FROM ai_terms WHERE day >= ? GROUP BY term ORDER BY SUM(n) DESC LIMIT 60', dayOf(Date.now() - AI_BACKLOG_DAYS * 86_400_000)).toArray().map((r) => r.term);
+  }
   private aiSpend(): { day: string; cost: number } {
     const s = this.getMeta<{ day: string; cost: number }>('aiSpend', { day: today(), cost: 0 });
     return s.day === today() ? s : { day: today(), cost: 0 };
@@ -439,6 +451,7 @@ export class MonitorDO extends DurableObject<Env> {
   private aiQueued(): number { return this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM ai_queue').one().n; }
   /** When to wake up for items waiting for the model: now, after an error, or when the day's cap is fresh again. 0 when there is nothing to do. */
   private aiWake(): number {
+    this.ensureAiDefault();
     const c = this.aiConfig();
     if (!c.enabled || !c.model || !this.aiQueued()) return 0;
     const st = this.getMeta<{ retryAt?: number }>('aiStatus', {});
@@ -481,7 +494,7 @@ export class MonitorDO extends DurableObject<Env> {
       let topics = new Map<number, string[]>(), cost = 0, tin = 0, tout = 0, failed = '';
       try {
         const texts = rows.map((r) => r.text);
-        const r = await complete(this.env, cfg.model, [topicSystem(), topicUser(texts)], { maxTokens: 1800,
+        const r = await complete(this.env, cfg.model, [topicSystem(this.knownTopics()), topicUser(texts)], { maxTokens: 1800,
           mock: () => JSON.stringify({ items: texts.map((t, i) => ({ i: i + 1, t: extractTerms(t).filter((x) => x.includes(' ')).slice(0, 2) })) }) });
         topics = parseTopics(r.text, rows.length); cost = r.cost; tin = r.tokensIn; tout = r.tokensOut;
         if (!topics.size) failed = 'the model did not return readable topics';

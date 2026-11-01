@@ -27,6 +27,7 @@ export interface ScoredTerm {
 export const SMOOTH = 5;        // added to a group's item count, so three items cannot make a 100% share
 const EPS = 0.002;              // a share this small counts as nothing when comparing windows
 const MIN_BASELINE_ITEMS = 10;  // fewer items than this in the earlier window and a change means nothing
+const MIN_BASELINE_SHARE = 0.4; // nor when the earlier window holds under this part of this window's items: a source just added would make everything look new
 
 /** A group counts as having the term when two items mention it, or one in a group too small to expect more. */
 const present = (docs: number, items: number) => docs >= 2 || (docs >= 1 && items < 40);
@@ -40,30 +41,47 @@ export interface ScoreInput {
   voices?: Map<string, number>; minVoices?: number;
 }
 
+/** "game" and "games" are one term: the plural is folded into the singular (or the other way round when only the plural is common). Per group the larger count is kept, since an item may mention both. */
+export function foldPlurals(counts: Counts): Counts {
+  const out: Counts = new Map(), into = new Map<string, string>();
+  for (const t of counts.keys()) {
+    if (t.length < 5 || !t.endsWith('s') || /(ss|us|is|os)$/.test(t)) continue;
+    const one = t.slice(0, -1);
+    if (counts.has(one)) into.set(t, one);
+  }
+  for (const [t, c] of counts) {
+    const to = into.get(t) ?? t, have = out.get(to);
+    if (!have) { out.set(to, { ...c }); continue; }
+    for (const [g, n] of Object.entries(c)) have[g] = Math.max(have[g] ?? 0, n);
+  }
+  return out;
+}
+
 export function scoreTerms(inp: ScoreInput): { terms: ScoredTerm[]; baselineOk: boolean; active: GroupInfo[] } {
   const minDocs = inp.minDocs ?? 3;
   const active = inp.groups.filter((g) => g.weight > 0 && (inp.items[g.key] ?? 0) > 0);
   const wsum = active.reduce((n, g) => n + g.weight, 0);
   const prevTotal = Object.values(inp.prevItems).reduce((n, v) => n + v, 0);
-  const baselineOk = prevTotal >= MIN_BASELINE_ITEMS;
+  const curTotal = Object.values(inp.items).reduce((n, v) => n + v, 0);
+  const baselineOk = prevTotal >= MIN_BASELINE_ITEMS && prevTotal >= MIN_BASELINE_SHARE * curTotal;
   if (!wsum) return { terms: [], baselineOk, active };
   const share = (docs: number, items: number) => docs / (items + SMOOTH);
   const signalOf = (c: Record<string, number> | undefined, items: Record<string, number>) =>
     c ? active.reduce((n, g) => n + g.weight * share(c[g.key] ?? 0, items[g.key] ?? 0), 0) / wsum : 0;
   const sharedAt = Math.max(2, Math.ceil(active.length * 0.6));
 
-  const terms: ScoredTerm[] = [];
-  for (const [term, c] of inp.cur) {
+  const terms: ScoredTerm[] = [], curC = foldPlurals(inp.cur), prevC = foldPlurals(inp.prev);
+  for (const [term, c] of curC) {
     const docs = active.reduce((n, g) => n + (c[g.key] ?? 0), 0);
     if (docs < minDocs || (inp.minVoices && (inp.voices?.get(term) ?? 0) < inp.minVoices)) continue;
-    const signal = signalOf(c, inp.items), prev = signalOf(inp.prev.get(term), inp.prevItems);
+    const signal = signalOf(c, inp.items), prev = signalOf(prevC.get(term), inp.prevItems);
     const parts = active.map((g) => ({ key: g.key, docs: c[g.key] ?? 0, share: share(c[g.key] ?? 0, inp.items[g.key] ?? 0) }));
     const total = parts.reduce((n, p, i) => n + active[i].weight * p.share, 0) || 1;
     const groups: TermGroup[] = parts.map((p, i) => ({ ...p, part: (active[i].weight * p.share) / total }));
     const top = groups.reduce((a, b) => (b.part > a.part ? b : a), groups[0]);
     const breadth = active.filter((g) => present(c[g.key] ?? 0, inp.items[g.key] ?? 0)).length;
     const kind = active.length < 2 ? 'single' : breadth >= sharedAt && top.part < 0.6 ? 'shared' : top.part >= 0.75 || breadth <= 1 ? 'single' : 'mixed';
-    const prevDocs = Object.values(inp.prev.get(term) ?? {}).reduce((n, v) => n + v, 0);
+    const prevDocs = Object.values(prevC.get(term) ?? {}).reduce((n, v) => n + v, 0);
     terms.push({ term, docs, signal, prev, change: baselineOk ? (signal + EPS) / (prev + EPS) : null, isNew: baselineOk && prevDocs === 0,
       breadth, active: active.length, exclusivity: top.part, topGroup: top.key, kind, groups });
   }

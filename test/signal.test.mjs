@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractTerms } from '../src/signal/terms.ts';
-import { distinctive, dropParts, notSteady, rising, scoreTerms } from '../src/signal/score.ts';
+import { distinctive, dropParts, foldPlurals, notSteady, rising, scoreTerms } from '../src/signal/score.ts';
 
 describe('extractTerms', () => {
   test('hashtags, words, phrases and acronyms; no links, mentions or stop words', () => {
@@ -212,5 +212,18 @@ describe('filter', () => {
     assert.equal(b('open model release'), true);
     assert.equal(b('modeling'), false, 'whole words only');
     assert.equal(makeBlocker([])('anything'), false);
+  });
+});
+
+describe('plurals and thin baselines', () => {
+  test('"game" and "games" become one term; "ss", "us", "is" and "os" endings are left alone', () => {
+    const f = foldPlurals(counts({ game: { x: 4, hn: 1 }, games: { x: 3, hn: 5 }, glass: { x: 2 }, lotus: { x: 2 }, lot: { x: 1 }, thing: { x: 1 } }));
+    assert.deepEqual(f.get('game'), { x: 4, hn: 5 });
+    assert.ok(!f.has('games') && f.has('glass') && f.has('lotus'));
+  });
+  test('an earlier window much smaller than this one is no baseline: nothing is called new', () => {
+    const r = scoreTerms({ groups: [G('x')], items: { x: 200 }, prevItems: { x: 20 }, cur: counts({ t: { x: 30 } }), prev: counts({}) });
+    assert.equal(r.baselineOk, false);
+    assert.equal(r.terms[0].isNew, false);
   });
 });
