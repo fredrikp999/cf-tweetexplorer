@@ -420,23 +420,24 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   <div class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c9265f"/><polyline pathLength="1" points="5,17 11,17 14,8 18,24 21,14 23,17 27,17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Signals admin</span></div>
   <nav id="tabs" aria-label="Sections">
     <button data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>Overview</span><span id="ovBadge" class="badge" hidden></span></button>
-    <div class="grp">Work</div>
+    <div class="grp">Day to day</div>
+    <button data-tab="signal" data-feature="signal" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19v-6M10 19V5M15 19v-9M20 19V8"/></svg><span>Signal</span></button>
+    <button data-tab="monitor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg><span>Live feed</span><span id="monBadge" class="badge" hidden></span></button>
+    <button data-tab="publish" data-feature="publish" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12.5h5"/></svg><span>Briefings</span></button>
+    <button data-tab="history"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Archives</span></button>
+    <button data-tab="costs" data-feature="costs" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M16 7.5c-.7-1-2-1.5-4-1.5-2.4 0-4 1-4 2.7 0 4 8 1.8 8 5.6 0 1.8-1.7 2.7-4 2.7-2.2 0-3.7-.6-4.6-1.8"/></svg><span>Costs</span></button>
+    <div class="grp">Explore</div>
     <button data-tab="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span>Find tweets</span></button>
     <button data-tab="user"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.5-5.5 7-5.5s6.2 1.9 7 5.5"/></svg><span>Look up account</span></button>
     <button data-tab="trends"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Trending</span></button>
     <button data-tab="summarize"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 11h8M5 16h14"/><path d="M18.5 8.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></svg><span>Ask AI</span></button>
-    <div class="grp">Watch</div>
-    <button data-tab="monitor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg><span>Live feed</span><span id="monBadge" class="badge" hidden></span></button>
-    <button data-tab="signal" data-feature="signal" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19v-6M10 19V5M15 19v-9M20 19V8"/></svg><span>Signal</span></button>
-    <button data-tab="signalsetup" data-feature="signal" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h9M18 7h1M5 17h1M10 17h9"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>Signal setup</span></button>
-    <button data-tab="history"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Archives</span></button>
-    <div class="grp" data-feature="publish" hidden>Publish</div>
-    <button data-tab="publish" data-feature="publish" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12.5h5"/></svg><span>Briefings</span></button>
-    <div class="grp">Library</div>
-    <button data-tab="lists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg><span>Lists and templates</span></button>
     <div class="sp"></div>
-    <div class="grp">Settings</div>
-    <button data-tab="costs" data-feature="costs" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M16 7.5c-.7-1-2-1.5-4-1.5-2.4 0-4 1-4 2.7 0 4 8 1.8 8 5.6 0 1.8-1.7 2.7-4 2.7-2.2 0-3.7-.6-4.6-1.8"/></svg><span>Costs</span></button>
+    <div class="grp">Setup</div>
+    <button data-tab="sources"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/></svg><span>Sources</span></button>
+    <button data-tab="signalsetup" data-feature="signal" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h9M18 7h1M5 17h1M10 17h9"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>Signal setup</span></button>
+    <button data-tab="pubsetup" data-feature="publish" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><circle cx="16" cy="9.5" r="2"/><path d="M8 9.5h5"/></svg><span>Briefing setup</span></button>
+    <button data-tab="lists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg><span>Lists and templates</span></button>
+    <button data-tab="budgets"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="6" width="17" height="12" rx="2"/><path d="M3.5 10h17M15 14.5h2.5"/></svg><span>Budgets</span></button>
     <button data-tab="account" data-feature="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5 19 4M15.5 7.5l2.5 2.5"/></svg><span>Post as X</span></button>
     <button data-tab="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h10"/></svg><span>Guide</span></button>
   </nav>
@@ -584,47 +585,12 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   </section>
 
   <section id="monitor" hidden>
-    <header class="page"><h1>Live feed</h1><p>Get new posts from X, RSS feeds, YouTube and Hacker News as they are published.</p></header>
-    <details class="about" data-about="monitor"><summary>How this works and what it costs</summary>
-      <div><p>Get new tweets as they are posted, from an account or a search query, without keeping the page open.</p>
-   <ul><li>The <b>server</b> checks each watch every N seconds (15 s to 1 h) using a <code>since_time</code> window, and pushes anything new to this page live.</li>
-   <li>Watches are saved: restart the server and nothing is missed or repeated (tweets are de-duplicated by ID).</li>
-   <li>A tab badge and optional desktop notifications tell you when something arrives while you are elsewhere.</li>
-   <li><b>RSS / Atom</b> feeds, <b>YouTube</b> channels and playlists (new videos, from their public feeds) and <b>Hacker News</b> (the front page, new stories, Show HN, Ask HN, or a keyword with a points threshold) are watched the same way and are <b>free</b>. The live feed shows every source combined, or one source at a time.</li></ul>
-   <p class="cost">Cost (X): this is polling, so you pay for checks even when nothing is posted. 1 minute ≈ $6.50/month per watch while idle; 5 minutes ≈ $1.30; 15 minutes ≈ $0.43. A <b>daily cap</b> (default $2) pauses the X watches when reached; RSS and Hacker News carry on.</p></div></details>
-    <form id="monForm">
-      <label data-feature="sources" hidden>Source
-        <select name="source"><option value="x">X (Twitter)</option><option value="rss">RSS / Atom feed</option><option value="hn">Hacker News</option><option value="youtube">YouTube channel</option><option value="flist">A list</option></select></label>
-      <label data-src="rss" hidden>Kind of feed <select name="tpl" id="monTpl"></select></label>
-      <label class="grow" data-src="flist" hidden>List <select name="flist" id="monFLSel"></select></label>
-      <label data-src="x">Watch
-        <select name="kind"><option value="account">Account</option><option value="query">Search query</option><option value="list">Accounts in one of your lists</option><option value="xlist">An X List (from x.com)</option></select></label>
-      <label class="grow" id="monQWrap"><span id="monQLabel">Handle</span>
-        <input class="grow" name="query" placeholder="anthropicai" autocomplete="off"></label>
-      <label class="grow" id="monXListWrap" hidden><span>X List</span><select name="xlist" id="monXListSel"></select></label>
-      <label class="grow" id="monListWrap" hidden><span>List</span><select name="list" id="monListSel"></select></label>
-      <label data-src="hn" hidden>Stories
-        <select name="hnTag"><option value="front_page">Front page</option><option value="story">New stories</option><option value="show_hn">Show HN</option><option value="ask_hn">Ask HN</option></select></label>
-      <label data-src="hn" hidden>Min points <input type="number" name="minPoints" min="0" max="10000" value="0" style="width:80px"></label>
-      <label>Check every
-        <select name="interval"><option value="15">15 s</option><option value="30">30 s</option><option value="60">1 min</option>
-          <option value="300" selected>5 min</option><option value="900">15 min</option><option value="1800">30 min</option><option value="3600">1 hour</option></select></label>
-      <label class="chk" data-src="x"><input type="checkbox" name="originalsOnly"> no replies</label>
-      <label class="chk" data-src="x"><input type="checkbox" name="includeRetweets"> include retweets</label>
-      <label>Signal group <input name="group" list="sigNames" placeholder="optional" maxlength="40" style="width:150px" title="Watches with the same group name vote together on the Signal tab"></label>
-      <button class="go">Add watch</button>
-    </form>
-    <datalist id="sigNames"></datalist>
-    <div class="hint">Watches feed the <a href="#signal" data-tabgo="signal" data-feature="signal">Signal</a> tab, where they are combined by group. Leave <b>Signal group</b> empty to use the feed list or kind of source; arrange and weigh groups on the Signal tab.</div>
-    <div class="hint" id="monCost"></div>
+    <header class="page"><h1>Live feed</h1><p>New posts from X, RSS feeds, YouTube and Hacker News as they are published. What is watched is set under <a href="#sources" data-tabgo="sources">Sources</a>.</p></header>
     <div class="card monbar">
       <span id="monSpend"></span>
-      <label class="chk"><input type="checkbox" id="monNotify"> desktop notifications</label>
-      <label class="chk">Daily cap $<input type="number" id="monCap" min="0" step="0.5" style="width:80px"></label>
-      <button class="go ghost" id="monCapSave" type="button">Set</button>
       <button class="go ghost" id="monClear" type="button">Clear feed</button>
+      <a href="#sources" data-tabgo="sources" style="margin-left:auto">Manage sources &rarr;</a>
     </div>
-    <div id="monWatches"></div>
     <div class="card" style="margin-bottom:12px"><h3>Activity of captured items, last 24 h</h3><div class="chart" style="height:140px"><canvas id="monChart"></canvas></div></div>
     <div class="card"><h3 style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">Live feed
       <div class="seg" id="monSrc" data-feature="sources" hidden role="radiogroup" aria-label="Source" style="font-weight:400">
@@ -689,14 +655,19 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
       <div class="optrow">
         <div class="seg" role="radiogroup" aria-label="Topic detection"><label><input type="radio" name="sigaimode" value="words" checked><span>Words (free)</span></label><label><input type="radio" name="sigaimode" value="ai"><span>AI</span></label></div>
         <label>Model <select id="sigAiModel"></select></label>
-        <label>Daily cap $ <input type="number" id="sigAiCap" min="0" max="10" step="0.05" style="width:80px"></label>
+        <span class="note">Daily cap: under <a href="#budgets" data-tabgo="budgets">Budgets</a></span>
         <button class="go" id="sigAiSave" type="button">Save</button></div>
       <div class="note" id="sigAiStatus" style="margin-top:8px"></div>
     </details>
     <details class="card" id="sigFilter" open style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Filtered words <span class="note" id="sigFilterNote" style="font-weight:400"></span></summary>
       <div class="note" style="margin:8px 0">Words and phrases you do not want as topics. They are left out everywhere (this tab, the public pages and the MCP view) and the change applies at once, also to what was counted before. You can also use <b>Hide this term</b> when you open a topic.</div>
       <div id="sigFilterList" class="optrow" style="margin-bottom:10px"></div>
-      <div class="note" style="margin:4px 0 6px">Merged and renamed topics <span id="sigAliasNote"></span> · made with <b>Merge / rename</b> on a topic</div>
+      <div class="note" style="margin:10px 0 6px"><b>A topic</b>: hide it, or count it under another name (an existing topic merges them). Applies everywhere, also to what was counted before.</div>
+      <div class="optrow" id="sigTopicAct" style="margin-bottom:12px"><input name="from" list="sigTopicNames" placeholder="topic" maxlength="80" style="width:200px" aria-label="Topic">
+        <input name="to" list="sigTopicNames" placeholder="merge into / rename to" maxlength="80" style="width:220px" aria-label="Merge into or rename to">
+        <button class="go ghost" data-amerge type="button">Merge / rename</button><button class="go ghost" data-fhideact type="button">Hide</button></div>
+      <datalist id="sigTopicNames"></datalist>
+      <div class="note" style="margin:4px 0 6px">Merged and renamed topics</div>
       <div id="sigAliasList" class="optrow" style="margin-bottom:10px"></div>
       <div class="optrow"><input id="sigFilterInput" placeholder="a word or phrase" maxlength="40" style="width:220px" aria-label="Word to leave out">
         <label class="chk"><input type="checkbox" id="sigFilterPhrases"> also phrases that contain it</label>
@@ -710,6 +681,65 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <div class="card" id="sigBoardsCard" style="margin-top:14px"><h3 style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">Top-level Signals <button class="go ghost" data-bnew type="button">New Signal</button></h3>
       <div class="note" style="margin:-6px 0 10px">A Signal is a named set of groups. Publish one to give it its own page on the public site, at <code>/signal/&lt;address&gt;</code>. The public page shows group names and topics; turn on <b>Show sources</b> to let each topic open the items behind it, with their sources and links to the originals.</div>
       <div id="sigBoards"></div><div id="sigBoardForm"></div></div>
+  </section>
+
+  <section id="sources" hidden>
+    <header class="page"><h1>Sources</h1><p>What is watched: X accounts and searches, RSS feeds, YouTube and Hacker News. New items appear in the <a href="#monitor" data-tabgo="monitor">Live feed</a> and feed <a href="#signal" data-tabgo="signal" data-feature="signal">Signal</a>.</p></header>
+    <details class="about" data-about="monitor"><summary>How this works and what it costs</summary>
+      <div><p>Get new tweets as they are posted, from an account or a search query, without keeping the page open.</p>
+   <ul><li>The <b>server</b> checks each watch every N seconds (15 s to 1 h) using a <code>since_time</code> window, and pushes anything new to this page live.</li>
+   <li>Watches are saved: restart the server and nothing is missed or repeated (tweets are de-duplicated by ID).</li>
+   <li>A tab badge and optional desktop notifications tell you when something arrives while you are elsewhere.</li>
+   <li><b>RSS / Atom</b> feeds, <b>YouTube</b> channels and playlists (new videos, from their public feeds) and <b>Hacker News</b> (the front page, new stories, Show HN, Ask HN, or a keyword with a points threshold) are watched the same way and are <b>free</b>. The live feed shows every source combined, or one source at a time.</li></ul>
+   <p class="cost">Cost (X): this is polling, so you pay for checks even when nothing is posted. 1 minute ≈ $6.50/month per watch while idle; 5 minutes ≈ $1.30; 15 minutes ≈ $0.43. A <b>daily cap</b> (default $2) pauses the X watches when reached; RSS and Hacker News carry on.</p></div></details>
+    <h2 class="ssh">Add a source</h2>
+    <form id="monForm">
+      <label data-feature="sources" hidden>Source
+        <select name="source"><option value="x">X (Twitter)</option><option value="rss">RSS / Atom feed</option><option value="hn">Hacker News</option><option value="youtube">YouTube channel</option><option value="flist">A list</option></select></label>
+      <label data-src="rss" hidden>Kind of feed <select name="tpl" id="monTpl"></select></label>
+      <label class="grow" data-src="flist" hidden>List <select name="flist" id="monFLSel"></select></label>
+      <label data-src="x">Watch
+        <select name="kind"><option value="account">Account</option><option value="query">Search query</option><option value="list">Accounts in one of your lists</option><option value="xlist">An X List (from x.com)</option></select></label>
+      <label class="grow" id="monQWrap"><span id="monQLabel">Handle</span>
+        <input class="grow" name="query" placeholder="anthropicai" autocomplete="off"></label>
+      <label class="grow" id="monXListWrap" hidden><span>X List</span><select name="xlist" id="monXListSel"></select></label>
+      <label class="grow" id="monListWrap" hidden><span>List</span><select name="list" id="monListSel"></select></label>
+      <label data-src="hn" hidden>Stories
+        <select name="hnTag"><option value="front_page">Front page</option><option value="story">New stories</option><option value="show_hn">Show HN</option><option value="ask_hn">Ask HN</option></select></label>
+      <label data-src="hn" hidden>Min points <input type="number" name="minPoints" min="0" max="10000" value="0" style="width:80px"></label>
+      <label>Check every
+        <select name="interval"><option value="15">15 s</option><option value="30">30 s</option><option value="60">1 min</option>
+          <option value="300" selected>5 min</option><option value="900">15 min</option><option value="1800">30 min</option><option value="3600">1 hour</option></select></label>
+      <label class="chk" data-src="x"><input type="checkbox" name="originalsOnly"> no replies</label>
+      <label class="chk" data-src="x"><input type="checkbox" name="includeRetweets"> include retweets</label>
+      <label>Signal group <input name="group" list="sigNames" placeholder="optional" maxlength="40" style="width:150px" title="Watches with the same group name vote together on the Signal tab"></label>
+      <button class="go">Add watch</button>
+    </form>
+    <datalist id="sigNames"></datalist>
+    <div class="hint">Watches feed the <a href="#signal" data-tabgo="signal" data-feature="signal">Signal</a> tab, where they are combined by group. Leave <b>Signal group</b> empty to use the feed list or kind of source; arrange and weigh groups in <a href="#signalsetup" data-tabgo="signalsetup" data-feature="signal">Signal setup</a>.</div>
+    <div class="hint" id="monCost"></div>
+    <h2 class="ssh">Watched now</h2>
+    <div id="monWatches"></div>
+    <h2 class="ssh">Notifications</h2>
+    <div class="card"><label class="chk"><input type="checkbox" id="monNotify"> desktop notifications when something new arrives</label></div>
+  </section>
+
+  <section id="pubsetup" hidden>
+    <header class="page"><h1>Briefing setup</h1><p>What each briefing reads, how it is written, when it runs, and what it costs. What it has written is under <a href="#publish" data-tabgo="publish">Briefings</a>.</p></header>
+    <div id="pubSetupHost"></div>
+  </section>
+
+  <section id="budgets" hidden>
+    <header class="page"><h1>Budgets</h1><p>Every spending limit in one place, next to what has been spent. Everything spent is under <a href="#costs" data-tabgo="costs">Costs</a>.</p></header>
+    <div class="card" style="margin-bottom:14px"><h3>X data for watches, per day</h3>
+      <div class="note" style="margin-bottom:8px">When it is reached, X watches wait until tomorrow (UTC); RSS, YouTube and Hacker News carry on.</div>
+      <div class="optrow"><span id="budXSpent" class="note"></span><label class="chk">Daily cap $<input type="number" id="monCap" min="0" step="0.5" style="width:90px"></label><button class="go ghost" id="monCapSave" type="button">Set</button></div></div>
+    <div class="card" style="margin-bottom:14px" data-feature="signal" hidden><h3>Signal topics by AI, per day</h3>
+      <div class="note" style="margin-bottom:8px">When it is reached, new items wait to be read until tomorrow; Signal keeps showing what was read.</div>
+      <div class="optrow"><span id="budAiSpent" class="note"></span><label class="chk">Daily cap $<input type="number" id="budAiCap" min="0" max="10" step="0.05" style="width:90px"></label><button class="go ghost" id="budAiSave" type="button">Set</button></div></div>
+    <div class="card" data-feature="publish" hidden><h3>Briefings: X data per run</h3>
+      <div class="note" style="margin-bottom:8px">A run stops fetching when its budget is spent and writes from what it has. 0 means no limit. Language models are not capped here.</div>
+      <div id="budTopics"><div class="note">Loading…</div></div></div>
   </section>
 
   <section id="history" hidden>
@@ -749,8 +779,8 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   </section>
 
   <section id="publish" hidden>
-    <header class="page"><h1>Briefings</h1><p>Summaries of X, feeds, YouTube and Hacker News, written on a schedule and published to <a href="/" target="_blank" rel="noopener">the public site</a>. <a href="#costs" data-tabgo="costs">What it costs</a></p></header>
-    <div class="layout">
+    <header class="page"><h1>Briefings</h1><p>What has been written: read, edit, publish and run. Summaries of X, feeds, YouTube and Hacker News, published to <a href="/" target="_blank" rel="noopener">the public site</a>. Topics are set up under <a href="#pubsetup" data-tabgo="pubsetup">Briefing setup</a>.</p></header>
+    <div class="layout" id="pubLayout">
       <aside><div id="pubTopics"></div><p><button class="primary" id="pubNew">New topic</button></p>
       <div id="pubReports"></div><p class="muted" style="font-size:13px">Voices and picture styles are managed under <a href="#" data-libgo="audio">Audio templates</a> and <a href="#" data-libgo="image">Image templates</a>.</p></aside>
       <div id="pubDetail"><div class="card muted">Pick a topic, or create one.</div></div>
@@ -919,7 +949,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
         <tr><td>Understand one account</td><td><button class="link" data-goto="user">Look up account</button></td><td>Profile + their recent tweets</td><td>One request</td></tr>
         <tr><td>Know what is trending</td><td><button class="link" data-goto="trends">Trending</button></td><td>Trending topics by region</td><td>One request</td></tr>
         <tr><td>Follow a set of accounts for a topic</td><td><button class="link" data-goto="lists">Lists and templates</button></td><td>Accounts you curate, then their latest tweets</td><td>Saved; load on demand or watch in Monitor</td></tr>
-        <tr><td>Be told when something is posted</td><td><button class="link" data-goto="monitor">Live feed</button></td><td>New tweets from now on</td><td>Server polls on a schedule</td></tr>
+        <tr><td>Be told when something is posted</td><td><button class="link" data-goto="sources">Sources</button>, then <button class="link" data-goto="monitor">Live feed</button></td><td>New tweets from now on</td><td>Server polls on a schedule</td></tr>
         <tr><td>Study a long period (weeks to years)</td><td><button class="link" data-goto="history">Archives</button></td><td>Everything in a date range, thousands of tweets</td><td>Background job, resumable</td></tr>
         <tr><td>Get the gist of many tweets</td><td><button class="link" data-goto="summarize">Ask AI</button></td><td>A list, a search, the Live feed, or what is on screen</td><td>An AI agent reads and writes you a summary</td></tr>
         <tr data-feature="agent"><td>Ask a complex question in words</td><td><button class="link" data-goto="agent">Ask AI, Chat with Claude Code</button></td><td>Whatever the agent decides to fetch</td><td>Claude Code, you approve each command</td></tr>
@@ -936,7 +966,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
         <ul><li>Tweets: about <b>$0.15 per 1,000</b> ($0.00015 each). An empty call is billed as one tweet.</li>
         <li>Profiles: about $0.18 per 1,000.</li>
         <li>Write actions: 60 credits ($0.0006); login 10,000 credits ($0.10).</li>
-        <li>The <b>Costs</b> tab shows what has actually been spent, per day, per activity and per briefing. <b>Briefings</b> shows each report's cost and an estimate while you set up a schedule.</li><li>Your remaining credits are shown at the bottom of the sidebar. Monitor has a daily spend cap; History asks before it starts.</li></ul></div></details>
+        <li>The <b>Costs</b> tab shows what has actually been spent, per day, per activity and per briefing. <b>Briefings</b> shows each report's cost, <b>Briefing setup</b> an estimate while you set up a schedule, and <b>Budgets</b> every spending limit in one place.</li><li>Your remaining credits are shown at the bottom of the sidebar. Monitor has a daily spend cap; History asks before it starts.</li></ul></div></details>
       <details class="fold" data-fold="guide:rate-limits"><summary>Rate limits</summary><div class="foldbody">
         <p>Free accounts allow about one request every 5 seconds, so multi-page loads are slow; the app waits and retries automatically. Paid accounts allow far more, and History can then run up to 12 shards in parallel.</p></div></details>
       <details class="fold" data-fold="guide:where-your-data-lives" data-feature="deployed"><summary>Where your data lives</summary><div class="foldbody">
@@ -2935,6 +2965,32 @@ document.addEventListener('toggle', (e) => {
 }, true);
 restoreFolds();
 
+// Budgets: the caps that live elsewhere in the app, each with what has been spent.
+async function loadBudgets() {
+  const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const [mon, ai, topics] = await Promise.all([get('/mon/state'), features.signal ? get('/mon/signal-ai') : null, features.publish ? get('/pub/topics') : null]);
+  if (mon) { $('#budXSpent').textContent = `Spent today $${(+mon.spend.cost).toFixed(3)}${mon.capped ? ' · cap reached' : ''}`; if (document.activeElement !== $('#monCap')) $('#monCap').value = mon.settings.dailyCap; }
+  if (ai) { $('#budAiSpent').textContent = ai.enabled ? `Spent today $${(+ai.spentToday).toFixed(3)}${ai.spentToday >= ai.dailyCap ? ' · cap reached' : ''}` : 'Off: Signal counts words, so nothing is spent.'; if (document.activeElement !== $('#budAiCap')) $('#budAiCap').value = ai.dailyCap; }
+  if (topics) {
+    $('#budTopics').innerHTML = topics.length ? `<table><thead><tr><th>Briefing</th><th>Average run</th><th>Last 30 days</th><th>Budget per run</th><th></th></tr></thead><tbody>${topics.map((t) => `<tr data-bslug="${esc(t.slug)}"><td>${esc(t.title)}</td>
+      <td>${t.stats ? '$' + t.stats.avg.toFixed(3) : '<span class="note">no runs yet</span>'}</td><td>${t.stats ? '$' + t.stats.total30.toFixed(2) : '—'}</td>
+      <td>$<input type="number" min="0" max="5" step="0.01" value="${t.maxCost || 0}" style="width:80px" aria-label="Budget per run for ${esc(t.title)}"></td><td><button class="go ghost" data-bsave>Set</button> <a href="#pubsetup" data-tabgo="pubsetup">Settings</a></td></tr>`).join('')}</tbody></table>`
+      : '<div class="note">No briefings yet.</div>';
+    window.budTopics = topics;
+  }
+}
+$('#budAiSave').addEventListener('click', () => post('/mon/signal-ai-set', { dailyCap: +$('#budAiCap').value || 0 }).then(() => { toast('Daily cap saved'); loadBudgets(); }).catch((err) => toast(err.message)));
+$('#budTopics').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-bsave]'); if (!b) return;
+  const row = b.closest('[data-bslug]'), t = (window.budTopics || []).find((x) => x.slug === row.dataset.bslug); if (!t) return;
+  try {
+    const res = await fetch('/pub/save-topic', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...t, maxCost: +row.querySelector('input').value || 0, isNew: false }) });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+    toast('Budget saved'); loadBudgets();
+  } catch (err) { toast(err.message); }
+});
+$('#monCapSave').addEventListener('click', () => setTimeout(loadBudgets, 400));
+
 // Overview: one list of what is broken or waiting, gathered from the other tabs' own data, each linking to where it is fixed.
 async function loadOverview() {
   const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -2992,11 +3048,14 @@ function show(tab) {
   if (tab === 'history') pollJobs();
   if (tab === 'monitor') { clearUnseen(); renderFeed(); if (features.signal && !sig) loadSignal(); }
   if (tab === 'signal' || tab === 'signalsetup') loadSignal();
+  if (tab === 'sources') { renderWatches(); if (features.signal && !sig) loadSignal(); }
+  if (tab === 'budgets') loadBudgets();
+  // Briefings and Briefing setup share one topic list: it moves to the tab that is open, which says whether issues or settings show.
+  if (tab === 'publish' || tab === 'pubsetup') { window.pubMode = tab === 'pubsetup' ? 'setup' : 'issues'; (tab === 'pubsetup' ? $('#pubSetupHost') : $('#publish')).appendChild($('#pubLayout')); window.loadPublish?.(); }
   if (tab === 'lists') loadLists();
   if (tab === 'summarize') refreshSummarize();
   if (tab === 'costs') loadCosts();
   if (tab === 'overview') loadOverview();
-  if (tab === 'publish') window.loadPublish?.();
   if (location.hash.slice(1) !== tab && history.replaceState) history.replaceState(null, '', '#' + tab);
 }
 document.querySelectorAll('input[name=askmode]').forEach((r) => r.addEventListener('change', () => show(r.value)));
@@ -3052,6 +3111,7 @@ function renderSigFilter() {
   const f = sig.filter; if (!f) return;
   $('#sigFilterNote').textContent = `· ${f.words.length} word${f.words.length === 1 ? '' : 's'}`;
   $('#sigFilterList').innerHTML = f.words.length ? f.words.map((w) => `<span class="badge" style="display:inline-flex;gap:6px;align-items:center;font-size:13px;padding:2px 4px 2px 10px">${esc(w.term)}${w.phrases ? ' <span class="note">+ phrases</span>' : ''}<button class="link" data-fdel="${esc(w.term)}" aria-label="Remove ${esc(w.term)} from the filter" title="Remove" style="padding:0 6px;font-size:15px">×</button></span>`).join('') : '<span class="note">Nothing filtered by you yet.</span>';
+  $('#sigTopicNames').innerHTML = (sig.lists?.top ?? []).map((k) => `<option value="${esc(k)}">`).join('');
   const al = Object.entries(f.aliases || {});
   $('#sigAliasList').innerHTML = al.length ? al.map(([a, b]) => `<span class="badge" style="display:inline-flex;gap:6px;align-items:center;font-size:13px;padding:2px 4px 2px 10px">${esc(a)} → <b>${esc(b)}</b><button class="link" data-adel="${esc(a)}" aria-label="Undo ${esc(a)}" title="Undo" style="padding:0 6px;font-size:15px">×</button></span>`).join('') : '<span class="note">None.</span>';
   $('#sigStopCount').textContent = f.builtIn.stopCount;
@@ -3068,7 +3128,7 @@ function renderSigAi() {
   if (!box.dataset.touched || !box.contains(document.activeElement)) {   // do not overwrite what is being typed
     box.querySelector(`[name=sigaimode][value=${a.enabled ? 'ai' : 'words'}]`).checked = true;
     $('#sigAiModel').innerHTML = a.models.map((m) => `<option value="${esc(m.id)}">${esc(m.label)} · about $${m.per1000 < 0.1 ? m.per1000.toFixed(3) : m.per1000.toFixed(2)} per 1,000 items</option>`).join('') || '<option value="">No model available</option>';
-    $('#sigAiModel').value = a.model; $('#sigAiCap').value = a.dailyCap;
+    $('#sigAiModel').value = a.model;
   }
   $('#sigAiNote').textContent = a.enabled ? (a.using ? '· AI topics' : '· AI, starting') : '· words';
   $('#sigAiStatus').innerHTML = !a.available ? 'Needs the OPENROUTER_API_KEY secret.' : a.enabled
@@ -3114,7 +3174,6 @@ function renderSignal() {
   $('#sigGroups').innerHTML = sig.groups.length ? sig.groups.map((g) => `<div class="card siggrp${g.weight > 0 && g.items ? '' : ' off'}" style="--gc:${sigCol(g.key)}" data-gkey="${esc(g.key)}">
       <div class="gname"><span>${esc(g.name)}</span><span class="note">${g.watches.length} source${g.watches.length === 1 ? '' : 's'}</span></div>
       <div><span class="gnum">${fmt(g.items)}</span> <span class="note">items in this window${g.weight === 0 ? ' · muted' : g.items ? '' : ' · nothing captured'}</span></div>
-      ${sigSpark(g.perDay, sigCol(g.key))}
       <label class="wt">Weight <input type="range" min="0" max="3" step="0.25" value="${g.weight}" data-weight="${esc(g.key)}" aria-label="Weight of ${esc(g.name)}"><output>${g.weight === 0 ? 'off' : '×' + g.weight}</output></label>
       <div class="optrow"><input list="sigNames" value="${esc(g.name)}" maxlength="40" aria-label="Name of ${esc(g.name)}" style="width:150px"><button class="go ghost" data-gmove>Rename</button><button class="link" data-sgroup="${esc(g.key)}" title="See what this group talks about">View</button></div>
       <div class="optrow"><button class="link" data-greset title="Back to the feed list or kind of source each watch came from">Reset to default</button><button class="link" data-gdel style="color:var(--err)">Delete group</button></div></div>`).join('')
@@ -3185,10 +3244,7 @@ async function showSigTerm(term, scroll) {
   let d; try { d = await (await fetch('/mon/signal-term?term=' + encodeURIComponent(term))).json(); } catch { return; }
   if (d.error || sigPick?.id !== term) return;
   const t = sig.terms[term], live = d.groups.filter((g) => g.docs.some((n) => n > 0));
-  $('#sigDetail').innerHTML = `<div class="card" style="margin-top:14px"><h3>${esc(t?.label ?? term)} ${sigClose}<button class="link" data-fhide="${esc(term)}" style="float:right;font-weight:400;margin-right:14px" title="Leave this term out of Signal">Hide this term</button></h3>
-    <div class="optrow" data-aterm="${esc(term)}" style="margin-bottom:8px"><input list="sigTopicNames" placeholder="another topic, or a new name" maxlength="80" style="width:240px" aria-label="Merge into or rename to">
-      <button class="go ghost" data-amerge title="Count this topic (and the names counted with it) under the name you typed: an existing topic merges them">Merge / rename</button><span class="note">Applies everywhere, also to what was counted before. Undo it in Signal setup.</span></div>
-    <datalist id="sigTopicNames">${sig.lists.top.filter((k) => k !== term).map((k) => `<option value="${esc(k)}">`).join('')}</datalist>
+  $('#sigDetail').innerHTML = `<div class="card" style="margin-top:14px"><h3>${esc(t?.label ?? term)} ${sigClose}<a href="#signalsetup" data-sigmanage="${esc(term)}" style="float:right;font-weight:400;margin-right:14px;font-size:13px">Hide, merge or rename in setup &rarr;</a></h3>
     ${t?.members?.length || t?.related?.length ? `<div class="note" style="margin-bottom:6px">${t.members.length ? `Counted together: <b>${esc([t.term, ...t.members].join(', '))}</b>. ` : ''}${t.related.length ? `Goes with: ${esc(t.related.join(', '))}.` : ''}</div>` : ''}
     ${t ? `<div class="optrow" style="margin-bottom:8px">${sigChips(t)}<span class="note">${t.groups.filter((g) => g.docs).map((g) => `<span class="sigdot" style="--gc:${sigCol(g.key)}"></span>${esc(sigName(g.key))} ${fmt(g.docs)} (${sigPct(g.share)})`).join(' · ')}</span></div>` : ''}
     <div style="height:210px"><canvas id="sigChart"></canvas></div>
@@ -3241,7 +3297,7 @@ $('#sigAi').addEventListener('input', () => { $('#sigAi').dataset.touched = '1';
 $('#sigAiSave').addEventListener('click', async () => {
   const b = $('#sigAiSave'); b.disabled = true;
   try {
-    await post('/mon/signal-ai-set', { enabled: document.querySelector('input[name=sigaimode]:checked').value === 'ai', model: $('#sigAiModel').value, dailyCap: +$('#sigAiCap').value || 0 });
+    await post('/mon/signal-ai-set', { enabled: document.querySelector('input[name=sigaimode]:checked').value === 'ai', model: $('#sigAiModel').value });
     delete $('#sigAi').dataset.touched; await loadSignal(); toast('Saved');
   } catch (err) { toast(err.message); } finally { b.disabled = false; }
 });
@@ -3250,14 +3306,24 @@ sigOn('click', async (e) => {
   const t = e.target.closest('[data-sterm]'), g = e.target.closest('[data-sgroup]');
   try {
     if (t) { await showSigTerm(t.dataset.sterm, true); renderSignal(); }
-    else if (g) await showSigGroup(g.dataset.sgroup, true);
+    else if (g) { if (!$('#signalsetup').hidden) show('signal'); await showSigGroup(g.dataset.sgroup, true); }   // a group opens on the Signal tab, where it is viewed
     else if (e.target.closest('[data-pgroup]')) { sigProof.group = e.target.closest('[data-pgroup]').dataset.pgroup; sigProof.watch = ''; await loadProof(true); }
     else if (e.target.closest('[data-pwatch]')) { sigProof.watch = e.target.closest('[data-pwatch]').dataset.pwatch; await loadProof(true); }
     else if (e.target.closest('[data-pmore]')) await loadProof(false);
     else if (e.target.closest('[data-fdel]')) await sigSetFilter(sig.filter.words.filter((w) => w.term !== e.target.closest('[data-fdel]').dataset.fdel));
+    else if (e.target.closest('[data-sigmanage]')) {
+      e.preventDefault(); const term = e.target.closest('[data-sigmanage]').dataset.sigmanage;
+      show('signalsetup'); const row = $('#sigTopicAct'); row.querySelector('[name=from]').value = term; row.querySelector('[name=to]').value = '';
+      $('#sigFilter').open = true; row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.querySelector('[name=to]').focus();
+    }
+    else if (e.target.closest('[data-fhideact]')) {
+      const term = $('#sigTopicAct [name=from]').value.trim().toLowerCase(); if (!term) return toast('Type the topic to hide');
+      await sigSetFilter([...sig.filter.words, { term, phrases: false }]); $('#sigTopicAct [name=from]').value = ''; toast(`“${term}” is hidden. Undo it under Filtered words.`);
+    }
     else if (e.target.closest('[data-amerge]')) {
-      const row = e.target.closest('[data-aterm]'), from = row.dataset.aterm, to = row.querySelector('input').value.trim().toLowerCase();
-      if (!to || to === from) return toast('Type the topic to merge into, or a new name');
+      const row = $('#sigTopicAct'), from = row.querySelector('[name=from]').value.trim().toLowerCase(), to = row.querySelector('[name=to]').value.trim().toLowerCase();
+      if (!from || !to || to === from) return toast('Type the topic, and the topic to merge into or a new name');
+      row.querySelector('[name=from]').value = ''; row.querySelector('[name=to]').value = '';
       const t = sig.terms[from], aliases = { ...(sig.filter.aliases || {}) };
       for (const k of [from, ...(t?.members ?? [])]) aliases[k] = to;
       sig.filter = await post('/mon/signal-alias-set', { aliases }); sigPick = null; $('#sigDetail').innerHTML = ''; await loadSignal(); toast(`Counted as “${to}” from now on, also in the past`);
@@ -3347,14 +3413,14 @@ async function load() {
   loadReports();
   topics = await call('topics');
   renderList(); if (sel) renderDetail(false);
-  clearTimeout(timer); if (topics.some((t) => busy(t) || audioBusy(t))) timer = setTimeout(() => { if (!$('#publish').hidden) load().catch(() => {}); }, 5000);
+  clearTimeout(timer); if (topics.some((t) => busy(t) || audioBusy(t))) timer = setTimeout(() => { if (!$('#publish').hidden || !$('#pubsetup').hidden) load().catch(() => {}); }, 5000);
 }
 function renderList() {
   $('#pubTopics').innerHTML = topics.map((t) => `<button class="t ${t.slug === sel ? 'on' : ''}" data-slug="${esc(t.slug)}">
     <b>${esc(t.title)}</b><small>/${esc(t.slug)} · ${busy(t) ? 'running…' : t.enabled ? 'next ' + when(t.nextRun) : 'paused'}</small></button>`).join('') || '<p class="muted">No topics yet.</p>';
 }
 $('#pubTopics').addEventListener('click', (e) => { const b = e.target.closest('[data-slug]'); if (b) { sel = b.dataset.slug; renderList(); renderDetail(true); } });
-$('#pubNew').onclick = () => { sel = '+new'; renderList(); renderDetail(true); };
+$('#pubNew').onclick = () => { sel = '+new'; if (window.pubMode !== 'setup') { show('pubsetup'); return; } renderList(); renderDetail(true); };
 
 // How an X list is read. "Best posts": X returns the period's top posts per list (no retweets or replies, at least N likes): 20 a page,
 // and the data cost is only what comes back. "Newest first": the list timeline, 80 tweets a page, retweets included.
@@ -3433,9 +3499,19 @@ function syncAudioNote(form) {
 function renderDetail(resetForm) {
   const isNew = sel === '+new', t = isNew ? { sources: [{ type: 'search' }], intervalHours: 24, hourUtc: 6, length: 'standard', enabled: true, autoPublish: false, listed: true, model: '', maxCost: 0, audioTemplate: '', audioAuto: false } : topics.find((x) => x.slug === sel);
   if (!t) { $('#pubDetail').innerHTML = ''; return; }
-  const d = $('#pubDetail');
+  const d = $('#pubDetail'), mode = window.pubMode || 'issues';
+  // Briefings shows what a topic has written; Briefing setup shows its settings. A new topic only has settings.
+  if (mode === 'issues') {
+    if (isNew) { show('pubsetup'); return; }
+    // The page refreshes itself while something runs: keep an open editor, and only redraw the header and the list.
+    if (!resetForm && d.dataset.mode === 'issues' && d.dataset.slug === String(sel)) { renderPubHead(t); renderIssues(t); return; }
+    d.dataset.mode = 'issues'; d.dataset.slug = String(sel);
+    d.innerHTML = '<div class="card" id="pubHead"></div><div id="pubIssues"></div><div id="pubEditor"></div>';
+    renderPubHead(t); renderIssues(t); return;
+  }
   // While a run is in progress the page refreshes itself; do not wipe a form the user is typing in.
-  if (!resetForm && d.querySelector('form') && d.querySelector('form').dataset.slug === String(sel)) { renderIssues(t); return; }
+  if (!resetForm && d.dataset.mode === 'setup' && d.querySelector('form') && d.querySelector('form').dataset.slug === String(sel)) return;
+  d.dataset.mode = 'setup'; d.dataset.slug = String(sel);
   d.innerHTML = `<div class="card"><h2>${isNew ? 'New topic' : esc(t.title)}</h2>
   <form data-slug="${esc(sel)}">
     <div class="row">
@@ -3488,14 +3564,20 @@ function renderDetail(resetForm) {
       <p class="muted" style="margin:0">The group starts with weight ×2 in Signal (these posts were already combined from many sources); change it on the Signal tab. Posts the briefing reads from the Monitor feed are not counted twice. A briefing that keeps only the best posts of a list (the default) gives Signal those posts, not the whole list.</p>
     </div></details>
     <div class="actions"><button class="primary" type="submit">Save</button>
-      ${isNew ? '' : `<button type="button" class="sec" id="pubRun" ${busy(t) ? 'disabled' : ''}>${busy(t) ? 'Running…' : 'Run now'}</button>
+      ${isNew ? '' : `<a href="#publish" data-tabgo="publish">See what it has written &rarr;</a><a href="/${esc(t.slug)}" target="_blank">Public page</a><button type="button" class="danger" id="pubDel" style="margin-left:auto">Delete topic</button>`}</div>
+    ${isNew ? '' : `<p class="muted" style="margin:0">Last run: ${when(t.lastRun)}${t.lastError ? ` · <span class="perr">${esc(t.lastError)}</span>` : ''} · Next: ${t.enabled ? when(t.nextRun) : 'paused'}</p>`}
+  </form></div>`;
+  syncModel($('form', d)); syncEstimate($('form', d)); syncAudioNote($('form', d)); syncImageNote($('form', d)); window.restoreFolds?.(d);
+}
+// The top of a topic on Briefings: its state and what can be done now. Its settings are on Briefing setup.
+function renderPubHead(t) {
+  const el = $('#pubHead'); if (!el) return;
+  el.innerHTML = `<h2 style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">${esc(t.title)} <a href="#pubsetup" data-tabgo="pubsetup" style="font-size:14px;font-weight:400">Settings &rarr;</a></h2>
+    <p class="muted" style="margin:0 0 10px">${t.enabled ? `Runs ${t.intervalHours === 24 ? 'daily' : 'every ' + t.intervalHours + ' h'}, next ${when(t.nextRun)}` : 'Paused'} · last run ${when(t.lastRun)}${t.lastError ? ` · <span class="perr">${esc(t.lastError)}</span>` : ''}${t.autoPublish ? ' · publishes automatically' : ' · each run waits as a draft'}</p>
+    <div class="actions"><button type="button" class="sec" id="pubRun" ${busy(t) ? 'disabled' : ''}>${busy(t) ? 'Running…' : 'Run now'}</button>
       <button type="button" class="sec" id="pubImageLatest" title="Draws a picture for the newest briefing from the text already written: no new tweets, no new summary."></button>
       <button type="button" class="sec" id="pubAudioLatest" title="Reads the newest briefing aloud from the text already written: no new tweets, no new summary."></button>
-      <a href="/${esc(t.slug)}" target="_blank">Public page</a><button type="button" class="danger" id="pubDel" style="margin-left:auto">Delete topic</button>`}</div>
-    ${isNew ? '' : `<p class="muted" style="margin:0">Last run: ${when(t.lastRun)}${t.lastError ? ` · <span class="perr">${esc(t.lastError)}</span>` : ''} · Next: ${t.enabled ? when(t.nextRun) : 'paused'}</p>`}
-  </form></div><div id="pubIssues"></div><div id="pubEditor"></div>`;
-  syncModel($('form', d)); syncEstimate($('form', d)); syncAudioNote($('form', d)); syncImageNote($('form', d)); window.restoreFolds?.(d);
-  renderIssues(t);
+      <a href="/${esc(t.slug)}" target="_blank">Public page</a></div>`;
 }
 
 const audioCell = (a) => !a ? '<span class="muted">—</span>' : a.status === 'pending' ? '<span class="muted">creating…</span>'
