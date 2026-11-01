@@ -37,14 +37,16 @@ async function bytesOf(out: unknown): Promise<Uint8Array> {
 }
 
 export async function workersAiImage(ai: unknown, slug: string, prompt: string, aspect: Aspect): Promise<ImageResult> {
-  const [w, h] = SIZES[aspect], gw = gatewayId(), run = (model: string, input: unknown) => (ai as AiRun).run(model, input, gw ? { gateway: { id: gw } } : undefined);
+  const [w, h] = SIZES[aspect], gw = gatewayId();
+  const run = (model: string, input: unknown, viaGateway = true) => (ai as AiRun).run(model, input, gw && viaGateway ? { gateway: { id: gw } } : undefined);
   let out: unknown;
   if (slug.startsWith('@cf/black-forest-labs/flux-2')) {
-    // The FLUX.2 models take multipart form data, even for a prompt alone.
+    // The FLUX.2 models take multipart form data, even for a prompt alone. AI Gateway cannot pass a streamed body on
+    // ("AI Gateway does not support ReadableStreams yet"), so these go to Workers AI directly and are not in the gateway's log.
     const form = new FormData();
     form.append('prompt', prompt.slice(0, 2000)); form.append('width', String(w)); form.append('height', String(h));
     const body = new Response(form);
-    out = await run(slug, { multipart: { body: body.body, contentType: body.headers.get('content-type') } });
+    out = await run(slug, { multipart: { body: body.body, contentType: body.headers.get('content-type') } }, false);
   } else out = await run(slug, { prompt: prompt.slice(0, 2000), width: w, height: h });
   const bytes = await bytesOf(out);
   return { bytes, type: sniff(bytes), cost: 0 };
