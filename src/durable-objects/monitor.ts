@@ -392,7 +392,7 @@ export class MonitorDO extends DurableObject<Env> {
     const out = new Set<string>();
     const rows = sql.exec<{ term: string; watch: string; n: number; days: number }>(
       `SELECT term, watch, SUM(n) AS n, COUNT(*) AS days FROM ${T.terms} WHERE day >= ?1 AND term IN
-         (SELECT term FROM ${T.terms} WHERE day >= ?2 AND day <= ?3 GROUP BY term HAVING SUM(n) >= 3 ORDER BY SUM(n) DESC LIMIT 3000) GROUP BY term, watch`, from, candFrom, candTo);
+         (SELECT term FROM ${T.terms} WHERE day >= ?2 AND day <= ?3 GROUP BY term HAVING SUM(n) >= 2 ORDER BY SUM(n) DESC LIMIT 3000) GROUP BY term, watch`, from, candFrom, candTo);
     for (const r of rows) { const t = total.get(r.watch) ?? 0; if (t >= 6 && r.days >= 3 && r.n / t >= 0.3) out.add(`${r.watch}\n${r.term}`); }
     return out;
   }
@@ -401,7 +401,7 @@ export class MonitorDO extends DurableObject<Env> {
     const counts: Counts = new Map(), seen = new Map<string, Set<string>>(), T = this.tables();
     const rows = this.ctx.storage.sql.exec<{ term: string; watch: string; n: number }>(
       `SELECT term, watch, SUM(n) AS n FROM ${T.terms} WHERE day >= ?1 AND day <= ?2 AND term IN
-         (SELECT term FROM ${T.terms} WHERE day >= ?3 AND day <= ?4 GROUP BY term HAVING SUM(n) >= 3 ORDER BY SUM(n) DESC LIMIT 3000)
+         (SELECT term FROM ${T.terms} WHERE day >= ?3 AND day <= ?4 GROUP BY term HAVING SUM(n) >= 2 ORDER BY SUM(n) DESC LIMIT 3000)
        GROUP BY term, watch`, from, to, candFrom, candTo);
     for (const r of rows) {
       const g = of.get(r.watch);
@@ -421,7 +421,7 @@ export class MonitorDO extends DurableObject<Env> {
     const present = new Map<string, number>();
     for (const r of sql.exec<{ term: string; d: number }>(
       `SELECT term, COUNT(DISTINCT day) AS d FROM ${T.terms} WHERE day >= ?1 AND term IN
-         (SELECT term FROM ${T.terms} WHERE day >= ?2 AND day <= ?3 GROUP BY term HAVING SUM(n) >= 3 ORDER BY SUM(n) DESC LIMIT 3000) GROUP BY term`, keepFrom, candFrom, candTo)) present.set(r.term, r.d);
+         (SELECT term FROM ${T.terms} WHERE day >= ?2 AND day <= ?3 GROUP BY term HAVING SUM(n) >= 2 ORDER BY SUM(n) DESC LIMIT 3000) GROUP BY term`, keepFrom, candFrom, candTo)) present.set(r.term, r.d);
     return findEvergreen(present, withData);
   }
   private async compute(daysIn: number, only?: Set<string>) {
@@ -665,11 +665,13 @@ export class MonitorDO extends DurableObject<Env> {
     const idx = new Map(shown.map((g, i) => [g.key, i] as const)), { days, by } = this.volume(c.of, shown), pool = c.terms.filter(notSteady);
     const { top, describe } = this.describeTopics({ ...c, groups: shown }, pool, 20);
     // Terms and what goes with them, never the items themselves.
-    const out = (t: ScoredTerm & { label?: string; related?: string[]; members?: string[] }) => ({ term: t.term, label: t.label ?? t.term, related: t.related ?? [], members: t.members ?? [], signal: t.signal, change: t.change, isNew: t.isNew, kind: t.kind, breadth: t.breadth, active: t.active,
-      top: idx.get(t.topGroup) ?? 0, parts: shown.map((g) => t.groups.find((x) => x.key === g.key)?.part ?? 0) });
+    const out = (t: ScoredTerm & { label?: string; related?: string[]; members?: string[]; headlines?: Array<{ title: string; url: string; by: string }> }) => ({ term: t.term, label: t.label ?? t.term, related: t.related ?? [], members: t.members ?? [], signal: t.signal, change: t.change, isNew: t.isNew, kind: t.kind, breadth: t.breadth, active: t.active,
+      top: idx.get(t.topGroup) ?? 0, parts: shown.map((g) => t.groups.find((x) => x.key === g.key)?.part ?? 0), shares: shown.map((g) => t.groups.find((x) => x.key === g.key)?.share ?? 0),
+      // Items are shown only on a Signal that has sources switched on (its proof pages show them too).
+      ...(board.proof ? { headlines: (t.headlines ?? []).slice(0, 1).map((h) => ({ title: h.title, url: h.url, by: h.by })) } : {}) });
     return {
-      slug: board.slug, title: board.title, description: board.description, proof: board.proof === true,
-      days: c.days, from: c.from, to: c.to, baselineOk: c.baselineOk, volumeDays: days,
+      slug: board.slug, title: board.title, description: board.description, proof: board.proof === true, ai: this.tables().ai,
+      days: c.days, from: c.from, to: c.to, baselineOk: c.baselineOk, volumeDays: days, steadyHidden: c.terms.length - pool.length,
       groups: shown.map((g) => ({ name: g.name, weight: g.weight, items: c.items[g.key] ?? 0, perDay: by[g.key] })),
       top: top.map(out), rising: rising(c.terms, 10).map((t) => out(describe(t))),
       shared: pool.filter((t) => t.kind === 'shared').slice(0, 10).map((t) => out(describe(t))), single: pool.filter((t) => t.kind === 'single').slice(0, 10).map((t) => out(describe(t))),

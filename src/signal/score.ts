@@ -30,6 +30,7 @@ export interface ScoredTerm {
 export const SPIKE = 2;
 export const SMOOTH = 5;        // added to a group's item count, so three items cannot make a 100% share
 const EPS = 0.002;              // a share this small counts as nothing when comparing windows
+export const SMALL_WINDOW = 400;   // fewer items than this in the window counts as little data
 const MIN_BASELINE_ITEMS = 10;  // fewer items than this in the earlier window and a change means nothing
 const MIN_BASELINE_SHARE = 0.4; // nor when the earlier window holds under this part of this window's items: a source just added would make everything look new
 
@@ -64,7 +65,9 @@ export function foldPlurals(counts: Counts): Counts {
 }
 
 export function scoreTerms(inp: ScoreInput): { terms: ScoredTerm[]; baselineOk: boolean; active: GroupInfo[] } {
-  const minDocs = inp.minDocs ?? 3;
+  // A small window (a board of a few feeds) rarely repeats a story three times: two mentions are enough when there is little data.
+  const total = Object.values(inp.items).reduce((n, v) => n + v, 0);
+  const minDocs = inp.minDocs ?? (total < SMALL_WINDOW ? 2 : 3);
   const active = inp.groups.filter((g) => g.weight > 0 && (inp.items[g.key] ?? 0) > 0);
   const wsum = active.reduce((n, g) => n + g.weight, 0);
   const prevTotal = Object.values(inp.prevItems).reduce((n, v) => n + v, 0);

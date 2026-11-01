@@ -40,12 +40,14 @@ export async function complete(env: Env, model: string, messages: Msg[], opts: {
   if (!key) throw new Error('No OpenRouter API key is configured: add the OPENROUTER_API_KEY secret');
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', 'x-title': 'Tweet Explorer' },
-    body: JSON.stringify({ model, messages, max_tokens: opts.maxTokens ?? 2000, temperature: 0.2 }), signal: AbortSignal.timeout(120_000),
+    body: JSON.stringify({ model, messages, max_tokens: opts.maxTokens ?? 2000, temperature: 0.2, usage: { include: true } }), signal: AbortSignal.timeout(120_000),
   });
   if (!res.ok) throw Object.assign(new Error(`OpenRouter ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`), { status: res.status });
-  const r = (await res.json()) as { choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>; usage?: { prompt_tokens?: number; completion_tokens?: number }; error?: { message?: string } };
+  const r = (await res.json()) as { choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>; usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number }; error?: { message?: string } };
   if (r.error) throw new Error(`OpenRouter: ${String(r.error.message ?? 'error').slice(0, 200)}`);
   const text = String(r.choices?.[0]?.message?.content ?? ''), tin = Number(r.usage?.prompt_tokens ?? 0), tout = Number(r.usage?.completion_tokens ?? 0);
   if (!text.trim()) throw new Error(`the model returned nothing (finish: ${r.choices?.[0]?.finish_reason ?? 'unknown'}, ${tout} tokens out)`);
-  return { text, tokensIn: tin, tokensOut: tout, cost: costOf(model, tin, tout) };
+  // OpenRouter says what it really charged (caching, provider price); the list price from the token counts is only the fallback.
+  const charged = Number(r.usage?.cost);
+  return { text, tokensIn: tin, tokensOut: tout, cost: Number.isFinite(charged) && charged >= 0 && r.usage?.cost !== undefined ? charged : costOf(model, tin, tout) };
 }

@@ -78,7 +78,7 @@ export interface SourceInfo { kind: 'search' | 'list' | 'flist' | 'xlist' | 'xgr
 export interface Provenance { from: number; to: number; fetched: number; used: number; accounts: number; topAccounts: Array<{ handle: string; count: number }>; sources: SourceInfo[]; truncated: boolean; partial?: boolean;
   /** RSS feeds and Hacker News watches the posts came from, with how many items each gave. Absent on issues that used none. */
   feeds?: Array<{ source: 'rss' | 'hn' | 'youtube'; label: string; url?: string; count: number }> }
-interface Spend { meter: Meter; tokensIn: number; tokensOut: number; model: string; screen: number }     // screen: dollars spent by the decision model that screens the tweets
+interface Spend { meter: Meter; tokensIn: number; tokensOut: number; model: string; screen: number; /** Dollars for the briefing model, priced per call: a retry on a stronger model is not priced at the first model's rate. */ text: number; priced: boolean }     // screen: dollars spent by the decision model that screens the tweets
 export interface Issue {
   id: string; topic: string; status: IssueStatus; created: number; publishedAt: number;
   markdown: string; tldr: string; tweets: number; model: string; tokens: number; windowHours: number;
@@ -417,7 +417,7 @@ export class PublishDO extends DurableObject<Env> {
     t = { ...t, running: Date.now(), pending: false };
     this.saveTopic(t);
     let error = '', issueId = '';
-    const spend: Spend = { meter: newMeter(), tokensIn: 0, tokensOut: 0, model: '', screen: 0 };
+    const spend: Spend = { meter: newMeter(), tokensIn: 0, tokensOut: 0, model: '', screen: 0, text: 0, priced: true };
     try {
       issueId = await this.generate(t, spend);
     } catch (err) {
@@ -427,7 +427,7 @@ export class PublishDO extends DurableObject<Env> {
     // Money was spent even when the run failed (the tweets were fetched), so the ledger gets it either way.
     if (spend.meter.calls || spend.tokensIn) {
       await recordCost(this.env, { kind: 'publish', ref: slug, label: t.title, twitter: spend.meter.cost, tweets: spend.meter.tweets, calls: spend.meter.calls,
-        llm: (llmCost(spend.model, spend.tokensIn, spend.tokensOut) ?? 0) + spend.screen, tokensIn: spend.tokensIn, tokensOut: spend.tokensOut, model: spend.model, run: { ok: !error, note: error || issueId } });
+        llm: spend.text + spend.screen, tokensIn: spend.tokensIn, tokensOut: spend.tokensOut, model: spend.model, run: { ok: !error, note: error || issueId } });
     }
     if (!error && issueId && t.imageAuto) await this.makeImage(slug, issueId);   // likewise
     if (!error && issueId && t.audioAuto) await this.makeAudio(slug, issueId);   // its outcome is recorded on the issue, it cannot fail the briefing
@@ -501,7 +501,8 @@ export class PublishDO extends DurableObject<Env> {
       for await (const ev of streamSummary({ req: { instruction, length: t.length, tweets: used.map(compact) }, sources, model: attempt.model, modelId: attempt.id,
         screen })) {
         if (ev.type === 'text') markdown += ev.delta;
-        else if (ev.type === 'usage') { tokens = ev.inputTokens + ev.outputTokens; usedModel = ev.model ?? usedModel; spend.tokensIn += ev.inputTokens; spend.tokensOut += ev.outputTokens; spend.model = usedModel; }
+        else if (ev.type === 'usage') { tokens = ev.inputTokens + ev.outputTokens; usedModel = ev.model ?? usedModel; spend.tokensIn += ev.inputTokens; spend.tokensOut += ev.outputTokens; spend.model = usedModel;
+          const c = llmCost(usedModel, ev.inputTokens, ev.outputTokens, { read: ev.cacheRead, write: ev.cacheWrite }); if (c === null) spend.priced = false; else spend.text += c; }
         else if (ev.type === 'error') fail = ev.message;
       }
       if (!fail || !/maximum token limit|connection error/i.test(fail) || n === tries.length - 1) break;
@@ -527,7 +528,7 @@ export class PublishDO extends DurableObject<Env> {
       const h = x.author?.userName; if (!h) continue;
       const e = byAccount.get(h.toLowerCase()) ?? { handle: h, count: 0 }; e.count++; byAccount.set(h.toLowerCase(), e);
     }
-    const llm0 = llmCost(usedModel, spend.tokensIn, spend.tokensOut), llm = llm0 === null && !spend.screen ? null : (llm0 ?? 0) + spend.screen;
+    const llm = !spend.priced && !spend.text && !spend.screen ? null : spend.text + spend.screen;
     const links = [...new Set(used.flatMap((x) => (x.source && x.source !== 'x' ? [x.url, x.discussionUrl] : [])).filter((u): u is string => /^https?:\/\//.test(u ?? '')))].slice(0, 400);
     this.saveIssue({
       id, topic: t.slug, status: live ? 'published' : 'draft', created: now, publishedAt: live ? now : 0,

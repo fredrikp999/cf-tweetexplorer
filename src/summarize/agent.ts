@@ -53,7 +53,7 @@ export type SumEvent =
   | { type: 'tool'; id: string; name: string; input: unknown }
   | { type: 'toolDone'; id: string; ok: boolean; note: string }
   | { type: 'text'; delta: string }
-  | { type: 'usage'; inputTokens: number; outputTokens: number; model?: string }
+  | { type: 'usage'; inputTokens: number; outputTokens: number; /** Input read from / written to Anthropic's prompt cache, billed apart from inputTokens. */ cacheRead?: number; cacheWrite?: number; model?: string }
   | { type: 'warning'; text: string }
   | { type: 'sources'; items: number; xPosts: number; feeds: SourceRef[]; cited: CitedItem[] }
   | { type: 'done'; stopReason: string }
@@ -392,7 +392,7 @@ export async function* streamSummary(opts: { req: SummaryRequest; sources: Sourc
     } catch (err) { yield { type: 'warning', text: 'Screening was skipped: ' + friendlyError(err) }; }
   }
   const limits = { turns: 8, outputTokens: LENGTH_TOKENS[req.length], totalTokens: 250_000 };
-  let inputTokens = 0, outputTokens = 0, stopReason = 'endTurn', toolCalls = 0, wrote = false, written = '';
+  let inputTokens = 0, outputTokens = 0, cacheRead = 0, cacheWrite = 0, stopReason = 'endTurn', toolCalls = 0, wrote = false, written = '';
   const seen = new Map<string, CompactTweet>();   // everything the writer was shown, to say afterwards which feeds it read
   const note = (items: CompactTweet[]) => { for (const t of items) seen.set(t.id, t); };
   note(req.tweets ?? []);
@@ -407,7 +407,7 @@ export async function* streamSummary(opts: { req: SummaryRequest; sources: Sourc
         if (e.type === 'modelStreamUpdateEvent') {
           const inner = e.event;
           if (inner?.type === 'modelContentBlockDeltaEvent' && inner.delta?.type === 'textDelta') { wrote = true; written += String(inner.delta.text); yield { type: 'text', delta: String(inner.delta.text) }; }
-          if (inner?.type === 'modelMetadataEvent' && inner.usage) { inputTokens += inner.usage.inputTokens ?? 0; outputTokens += inner.usage.outputTokens ?? 0; }
+          if (inner?.type === 'modelMetadataEvent' && inner.usage) { inputTokens += inner.usage.inputTokens ?? 0; outputTokens += inner.usage.outputTokens ?? 0; cacheRead += inner.usage.cacheReadInputTokens ?? 0; cacheWrite += inner.usage.cacheWriteInputTokens ?? 0; }
         } else if (e.type === 'beforeToolCallEvent') {
           toolCalls++;
           yield { type: 'tool', id: e.toolUse.toolUseId, name: e.toolUse.name, input: e.toolUse.input };
@@ -431,6 +431,6 @@ export async function* streamSummary(opts: { req: SummaryRequest; sources: Sourc
   if (active && active !== opts.modelId) yield { type: 'warning', text: `${opts.modelId} could not start (out of credits or at capacity), so ${active} on OpenRouter wrote this.` };
   const refs = sourceRefs(seen.values(), written);
   if (refs) yield refs;
-  yield { type: 'usage', inputTokens, outputTokens, model: active };
+  yield { type: 'usage', inputTokens, outputTokens, ...(cacheRead ? { cacheRead } : {}), ...(cacheWrite ? { cacheWrite } : {}), model: active };
   yield { type: 'done', stopReason };
 }

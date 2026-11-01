@@ -3,6 +3,7 @@
 // this cost?". Amounts are estimates: twitterapi.io at its list price from response sizes, models at list price
 // from token counts. This is shown only in /admin, never on the public pages.
 import { DurableObject } from 'cloudflare:workers';
+import { llmCost } from '../summarize/pricing';
 
 export type CostKind = 'explore' | 'history' | 'monitor' | 'summarize' | 'publish' | 'audio' | 'image' | 'analysis' | 'signal';
 export interface CostEntry {
@@ -25,19 +26,40 @@ export class CostDO extends DurableObject<Env> {
     sql.exec(`CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL, label TEXT NOT NULL,
       twitter REAL NOT NULL, llm REAL NOT NULL, tweets INTEGER NOT NULL, tin INTEGER NOT NULL, tout INTEGER NOT NULL, model TEXT NOT NULL, ok INTEGER NOT NULL, note TEXT NOT NULL)`);
     sql.exec('CREATE INDEX IF NOT EXISTS runs_by_ref ON runs (kind, ref, ts)');
+    // Entries that used a model but could not be priced (a model missing from the price tables): counted, so the Costs tab can say its numbers are low.
+    try { sql.exec('ALTER TABLE daily ADD COLUMN unpriced INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
+    this.repriceOld();
     sql.exec('DELETE FROM daily WHERE day < ?', day(Date.now() - 800 * DAY));
     sql.exec('DELETE FROM runs WHERE ts < ?', Date.now() - 400 * DAY);
+  }
+
+  /**
+   * Briefings and summaries written through Anthropic directly were recorded at 0 for the model (its id had no price). Those runs kept their
+   * tokens and model, so they are priced now; a run that also paid a screening model (its llm is not 0) cannot be told apart and stays as it was.
+   */
+  private repriceOld(): void {
+    const sql = this.ctx.storage.sql;
+    const rows = sql.exec<{ id: number; ts: number; kind: string; ref: string; tin: number; tout: number; model: string }>(
+      "SELECT id, ts, kind, ref, tin, tout, model FROM runs WHERE kind IN ('publish', 'summarize') AND llm = 0 AND (tin > 0 OR tout > 0) AND model != '' AND model != 'mock'").toArray();
+    for (const r of rows) {
+      const c = llmCost(r.model, r.tin, r.tout);
+      if (c === null || c <= 0) continue;
+      sql.exec('UPDATE runs SET llm = ? WHERE id = ?', c, r.id);
+      sql.exec('UPDATE daily SET llm = llm + ? WHERE day = ? AND kind = ? AND ref = ?', c, day(r.ts), r.kind, r.ref);
+    }
   }
 
   /** RPC: add one entry. */
   add(e: CostEntry): void {
     const now = Date.now(), ref = String(e.ref ?? '').slice(0, 80), label = String(e.label ?? ref).slice(0, 120);
     const twitter = num(e.twitter), llm = num(e.llm), tweets = Math.round(num(e.tweets)), calls = Math.round(num(e.calls)), tin = Math.round(num(e.tokensIn)), tout = Math.round(num(e.tokensOut));
+    // Tokens went to a text model but no money was counted for them: the model has no price in our tables.
+    const unpriced = (tin > 0 || e.tokensOut) && llm === 0 && e.kind !== 'audio' && e.kind !== 'image' && String(e.model ?? '') !== 'mock' ? 1 : 0;
     this.ctx.storage.sql.exec(
-      `INSERT INTO daily (day, kind, ref, label, twitter, llm, tweets, calls, tin, tout, n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      `INSERT INTO daily (day, kind, ref, label, twitter, llm, tweets, calls, tin, tout, n, unpriced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
        ON CONFLICT (day, kind, ref) DO UPDATE SET label = excluded.label, twitter = twitter + excluded.twitter, llm = llm + excluded.llm,
-         tweets = tweets + excluded.tweets, calls = calls + excluded.calls, tin = tin + excluded.tin, tout = tout + excluded.tout, n = n + 1`,
-      day(now), e.kind, ref, label, twitter, llm, tweets, calls, tin, tout);
+         tweets = tweets + excluded.tweets, calls = calls + excluded.calls, tin = tin + excluded.tin, tout = tout + excluded.tout, n = n + 1, unpriced = unpriced + excluded.unpriced`,
+      day(now), e.kind, ref, label, twitter, llm, tweets, calls, tin, tout, unpriced);
     if (e.run) {
       this.ctx.storage.sql.exec('INSERT INTO runs (ts, kind, ref, label, twitter, llm, tweets, tin, tout, model, ok, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         now, e.kind, ref, label, twitter, llm, tweets, tin, tout, String(e.model ?? '').slice(0, 120), e.run.ok ? 1 : 0, String(e.run.note ?? '').slice(0, 200));
@@ -56,8 +78,8 @@ export class CostDO extends DurableObject<Env> {
     return {
       days: n, since, totals,
       byDay: rows(`SELECT day, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image FROM daily WHERE day >= ? GROUP BY day ORDER BY day`, since),
-      byKind: rows(`SELECT kind, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image, SUM(tweets) AS tweets, SUM(calls) AS calls, SUM(tin) AS tin, SUM(tout) AS tout, SUM(n) AS n FROM daily WHERE day >= ? GROUP BY kind ORDER BY SUM(twitter) + SUM(llm) DESC`, since),
-      byRef: rows(`SELECT kind, ref, MAX(label) AS label, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image, SUM(tweets) AS tweets, SUM(n) AS n FROM daily WHERE day >= ? AND kind IN ('publish', 'monitor', 'history', 'audio', 'image', 'analysis') GROUP BY kind, ref ORDER BY SUM(twitter) + SUM(llm) DESC LIMIT 40`, since),
+      byKind: rows(`SELECT kind, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image, SUM(tweets) AS tweets, SUM(calls) AS calls, SUM(tin) AS tin, SUM(tout) AS tout, SUM(n) AS n, SUM(unpriced) AS unpriced FROM daily WHERE day >= ? GROUP BY kind ORDER BY SUM(twitter) + SUM(llm) DESC`, since),
+      byRef: rows(`SELECT kind, ref, MAX(label) AS label, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image, SUM(tweets) AS tweets, SUM(n) AS n, SUM(unpriced) AS unpriced FROM daily WHERE day >= ? AND kind IN ('publish', 'monitor', 'history', 'audio', 'image', 'analysis', 'signal', 'summarize') GROUP BY kind, ref ORDER BY SUM(twitter) + SUM(llm) DESC LIMIT 40`, since),
       runs: rows('SELECT ts, kind, ref, label, twitter, CASE WHEN kind IN (\'audio\', \'image\') THEN 0 ELSE llm END AS llm, CASE WHEN kind = \'audio\' THEN llm ELSE 0 END AS audio, CASE WHEN kind = \'image\' THEN llm ELSE 0 END AS image, tweets, tin, tout, model, ok, note FROM runs WHERE ts >= ? ORDER BY ts DESC LIMIT 80', Date.now() - n * DAY),
     };
   }

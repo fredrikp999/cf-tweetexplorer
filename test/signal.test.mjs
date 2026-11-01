@@ -72,7 +72,9 @@ describe('scoreTerms', () => {
   });
 
   test('terms below the minimum, and everything when nothing has a weight, are left out', () => {
-    assert.deepEqual(scoreTerms({ groups, items, prevItems, prev: counts({}), cur: counts({ rare: { x: 2 } }) }).terms, []);
+    const big = { x: 1000, news: 1000, hn: 1000 };
+    assert.deepEqual(scoreTerms({ groups, items: big, prevItems, prev: counts({}), cur: counts({ rare: { x: 2 } }) }).terms, []);
+    assert.equal(scoreTerms({ groups, items, prevItems, prev: counts({}), cur: counts({ rare: { x: 2 }, once: { x: 1 } }) }).terms.length, 1, 'a small window: two mentions are enough, one is not');
     assert.deepEqual(scoreTerms({ groups: [G('x', 0)], items, prevItems, prev: counts({}), cur: counts({ t: { x: 50 } }) }).terms, []);
   });
 
@@ -261,5 +263,23 @@ describe('always-there terms', () => {
     assert.equal(normTopic('openai'), null);
     assert.equal(normTopic('Chip exports'), 'chip export');
     assert.equal(normTopic('Mozilla ethics'), 'mozilla ethics');
+  });
+});
+
+import { llmCost, openrouterIdOf } from '../src/summarize/pricing.ts';
+describe('model prices', () => {
+  test("Anthropic's own model ids are priced like the same model on OpenRouter", () => {
+    assert.equal(openrouterIdOf('claude-sonnet-5-5'), 'anthropic/claude-sonnet-5.5');
+    assert.equal(openrouterIdOf('meta-llama/llama-4-scout'), 'meta-llama/llama-4-scout');
+    assert.ok(llmCost('claude-sonnet-5-5', 1_000_000, 0) > 0, 'a briefing written through Anthropic is not free');
+    assert.equal(llmCost('mock', 1000, 1000), null);
+  });
+});
+
+describe('cache tokens', () => {
+  test('cached input is billed apart: a read at a tenth, a write at a quarter more', () => {
+    const base = llmCost('claude-sonnet-5-5', 1_000_000, 0);
+    assert.ok(Math.abs(llmCost('claude-sonnet-5-5', 0, 0, { read: 1_000_000 }) - base * 0.1) < 1e-9);
+    assert.ok(Math.abs(llmCost('claude-sonnet-5-5', 0, 0, { write: 1_000_000 }) - base * 1.25) < 1e-9);
   });
 });

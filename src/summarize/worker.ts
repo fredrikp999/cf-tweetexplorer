@@ -156,7 +156,7 @@ export async function handleSummarize(request: Request, env: Env): Promise<Respo
       const send = (s: string) => { try { controller.enqueue(enc.encode(s)); } catch { /* client gone */ } };
       const ping = setInterval(() => send(': ping\n\n'), 15_000);   // keeps the connection warm during slow tool calls
       const meter = newMeter();
-      let usage: { inputTokens: number; outputTokens: number; model?: string } | null = null, failed = '', screenCost = 0;
+      let usage: { inputTokens: number; outputTokens: number; cacheRead?: number; cacheWrite?: number; model?: string } | null = null, failed = '', screenCost = 0;
       try {
         for await (const ev of streamSummary({ req: parsed, sources: workerSources(env, meter), model, modelId: built.id, signal: ac.signal,
           screen: async (tweets, instr) => { const r = await screenTweets(env, tweets, instr); if (r) screenCost += r.cost; return r; } })) {
@@ -172,7 +172,7 @@ export async function handleSummarize(request: Request, env: Env): Promise<Respo
         if (meter.calls || usage) {   // also under the dev mock: the tweets it fetched were real
           const s = parsed.source, what = s?.type === 'search' ? 'search: ' + s.query.slice(0, 60) : s?.type === 'xlist' ? `${s.listIds.length} X list${s.listIds.length === 1 ? '' : 's'}` : s?.type ?? (parsed.tweets ? 'tweets on screen' : 'free');
           await recordCost(env, { kind: 'summarize', ref: s?.type ?? 'screen', label: `Summarize: ${what}`, twitter: meter.cost, tweets: meter.tweets, calls: meter.calls,
-            llm: (llmCost(usage?.model ?? built.id, usage?.inputTokens ?? 0, usage?.outputTokens ?? 0) ?? 0) + screenCost, tokensIn: usage?.inputTokens, tokensOut: usage?.outputTokens, model: usage?.model ?? built.id,
+            llm: (llmCost(usage?.model ?? built.id, usage?.inputTokens ?? 0, usage?.outputTokens ?? 0, { read: usage?.cacheRead, write: usage?.cacheWrite }) ?? 0) + screenCost, tokensIn: usage?.inputTokens, tokensOut: usage?.outputTokens, model: usage?.model ?? built.id,
             run: { ok: !failed, note: failed } });
         }
         try { controller.close(); } catch { /* already closed */ }
