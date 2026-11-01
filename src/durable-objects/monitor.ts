@@ -56,8 +56,10 @@ interface Spend { day: string; cost: number }
 const today = () => new Date().toISOString().slice(0, 10); // UTC day
 /** A top-level Signal: a named set of groups, with its own page when published (/signal/<slug>). */
 interface Board { id: string; slug: string; title: string; description: string; groups: string[]; public: boolean; /** The public page may show the items behind each topic, with their sources. */ proof?: boolean }
-const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/, BOARD_RESERVED = new Set(['admin', 'custom']);
+const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/, BOARD_RESERVED = new Set(['admin', 'custom', 'method']);
 const slugify = (t: string) => t.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
+/** How much people reacted to an item: likes (HN points, stars and upvotes arrive as likes), plus replies, retweets and quotes counted double. */
+const reactionsOf = (j: unknown): number => { const x = j as { likeCount?: number; replyCount?: number; retweetCount?: number; quoteCount?: number }; return Math.max(0, Math.round((Number(x.likeCount) || 0) + 2 * ((Number(x.replyCount) || 0) + (Number(x.retweetCount) || 0) + (Number(x.quoteCount) || 0)))); };
 const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const cleanGroup = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
 
@@ -83,6 +85,7 @@ export class MonitorDO extends DurableObject<Env> {
     // Proof for Signal: the items themselves (title, link, source, date) for 30 days, so any topic can be traced back to what was published.
     sql.exec('CREATE TABLE IF NOT EXISTS item_log (watch TEXT NOT NULL, item TEXT NOT NULL, day TEXT NOT NULL, ts INTEGER NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, disc TEXT NOT NULL, by TEXT NOT NULL, match TEXT NOT NULL, PRIMARY KEY (watch, item)) WITHOUT ROWID');
     sql.exec('CREATE INDEX IF NOT EXISTS item_log_day ON item_log (day)');
+    try { sql.exec('ALTER TABLE item_log ADD COLUMN eng INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }   // reactions (likes, replies, shares) when the item was logged
     this.backfillSignal();
     this.backfillItemLog();
   }
@@ -302,9 +305,9 @@ export class MonitorDO extends DurableObject<Env> {
     const x = !j.source, text = String(j.text ?? ''), user = String(j.author?.userName ?? '');
     const safe = (u: unknown) => (/^https:\/\//.test(String(u ?? '')) ? String(u).slice(0, 400) : '');
     const url = safe(j.url) || (x && /^\d+$/.test(id) ? `https://x.com/${user || 'i'}/status/${id}` : '');
-    this.ctx.storage.sql.exec('INSERT OR IGNORE INTO item_log (watch, item, day, ts, title, url, disc, by, match) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', watch, id, day, ts,
+    this.ctx.storage.sql.exec('INSERT OR IGNORE INTO item_log (watch, item, day, ts, title, url, disc, by, match, eng) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', watch, id, day, ts,
       (x ? text : String(j.title ?? '') || text.split('\n')[0]).replace(/\s+/g, ' ').slice(0, 200), url, safe(j.discussionUrl), (x ? '@' : '') + user.slice(0, 60),
-      String(j.source === 'youtube' && j.title ? j.title : text).slice(0, 600));
+      String(j.source === 'youtube' && j.title ? j.title : text).slice(0, 600), reactionsOf(f.json));
   }
   /** Once: log what the live feed already holds. */
   private backfillItemLog(): void {
@@ -587,7 +590,7 @@ export class MonitorDO extends DurableObject<Env> {
       const ts = Date.parse(j.createdAt ?? '') || r.seen_at;
       if (ts < fromMs || ts >= toMs) continue;
       const text = String(j.text ?? ''), x = r.source === 'x';
-      const eng = Math.max(0, (Number(j.likeCount) || 0) + 2 * (Number(j.replyCount) || 0) + 2 * (Number(j.retweetCount) || 0) + 2 * (Number(j.quoteCount) || 0));
+      const eng = reactionsOf(j);
       items.push({ ts, eng, terms: new Set((ai ? ai.get(`${r.watch}\n${j.id}`) ?? [] : extractTerms(r.source === 'youtube' && j.title ? j.title : text)).filter((t) => !blocked(t))) });
       const url = /^https:\/\//.test(j.url ?? '') ? j.url! : x && /^\d+$/.test(j.id ?? '') ? `https://x.com/${j.author?.userName ?? 'i'}/status/${j.id}` : '';
       meta.push({ title: (x ? text : j.title || text.split('\n')[0]).replace(/\s+/g, ' ').slice(0, 160), url, by: x ? '@' + (j.author?.userName ?? '') : j.feed || r.label, group: g, ts });
@@ -598,7 +601,7 @@ export class MonitorDO extends DurableObject<Env> {
   private describeTopics(c: { of: Map<string, string>; groups: GroupInfo[]; from: string; to: string }, pool: ScoredTerm[], nTop: number) {
     const { items, meta } = this.windowItems(c.of, new Set(c.groups.filter((g) => g.weight > 0).map((g) => g.key)), c.from, c.to), post = indexItems(items);
     const describe = (t: ScoredTerm, label?: string, members: string[] = [t.term]) => ({ ...t, label: label ?? t.term, members: members.filter((m) => m !== t.term),
-      related: relatedTerms(members, items, post), headlines: topicItems(members, items, post, 2).map((i) => meta[i]) });
+      related: relatedTerms(members, items, post), reactions: topicEngagement(members, items, post), headlines: topicItems(members, items, post, 2).map((i) => ({ ...meta[i], reactions: items[i].eng ?? 0 })) });
     const clusters = mergeTopics(pool.slice(0, 60), post, nTop);
     const ordered = boostByEngagement(clusters, clusters.map((cl) => topicEngagement(cl.members.map((m) => m.term), items, post)));
     return { top: ordered.map((cl) => describe(cl.lead, cl.label, cl.members.map((m) => m.term))), describe };
@@ -663,12 +666,13 @@ export class MonitorDO extends DurableObject<Env> {
     const shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
     if (!shown.length) return { groups: [] };
     const idx = new Map(shown.map((g, i) => [g.key, i] as const)), { days, by } = this.volume(c.of, shown), pool = c.terms.filter(notSteady);
-    const { top, describe } = this.describeTopics({ ...c, groups: shown }, pool, 20);
+    const { top, describe } = this.describeTopics({ ...c, groups: shown }, pool, 30);
     // Terms and what goes with them, never the items themselves.
-    const out = (t: ScoredTerm & { label?: string; related?: string[]; members?: string[]; headlines?: Array<{ title: string; url: string; by: string }> }) => ({ term: t.term, label: t.label ?? t.term, related: t.related ?? [], members: t.members ?? [], signal: t.signal, change: t.change, isNew: t.isNew, kind: t.kind, breadth: t.breadth, active: t.active,
+    const out = (t: ScoredTerm & { label?: string; related?: string[]; members?: string[]; reactions?: number; headlines?: Array<{ title: string; url: string; by: string; reactions?: number }> }) => ({ term: t.term, label: t.label ?? t.term, related: t.related ?? [], members: t.members ?? [], signal: t.signal, change: t.change, isNew: t.isNew, kind: t.kind, breadth: t.breadth, active: t.active,
       top: idx.get(t.topGroup) ?? 0, parts: shown.map((g) => t.groups.find((x) => x.key === g.key)?.part ?? 0), shares: shown.map((g) => t.groups.find((x) => x.key === g.key)?.share ?? 0),
       // Items are shown only on a Signal that has sources switched on (its proof pages show them too).
-      ...(board.proof ? { headlines: (t.headlines ?? []).slice(0, 1).map((h) => ({ title: h.title, url: h.url, by: h.by })) } : {}) });
+      reactions: t.reactions ?? 0,
+      ...(board.proof ? { headlines: (t.headlines ?? []).slice(0, 1).map((h) => ({ title: h.title, url: h.url, by: h.by, reactions: h.reactions ?? 0 })) } : {}) });
     return {
       slug: board.slug, title: board.title, description: board.description, proof: board.proof === true, ai: this.tables().ai,
       days: c.days, from: c.from, to: c.to, baselineOk: c.baselineOk, volumeDays: days, steadyHidden: c.terms.length - pool.length,
@@ -706,14 +710,14 @@ export class MonitorDO extends DurableObject<Env> {
     const labels = new Map(this.watches().map((w) => [w.id, w.label] as const)), ai = this.aiTopics(from);
     const want = new Set(q.terms.map((t) => t.toLowerCase().trim()).filter(Boolean));
     if (!want.size) throw new Error('term required');
-    const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; disc: string; by: string; match: string }>(
-      'SELECT watch, item, ts, title, url, disc, by, match FROM item_log WHERE day >= ? AND day <= ? ORDER BY ts DESC LIMIT 8000', from, to).toArray();
-    const hits: Array<{ watch: string; group: string; ts: number; title: string; url: string; disc: string; by: string; match: string; matched: string[] }> = [];
+    const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number }>(
+      'SELECT watch, item, ts, title, url, disc, by, match, eng FROM item_log WHERE day >= ? AND day <= ? ORDER BY ts DESC LIMIT 8000', from, to).toArray();
+    const hits: Array<{ watch: string; group: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number; matched: string[] }> = [];
     for (const r of rows) {
       const g = of.get(r.watch); if (!g || (q.only && !q.only.has(g))) continue;
       const have = ai ? new Set(ai.get(`${r.watch}\n${r.item}`) ?? []) : new Set(extractTerms(r.match));
       const matched = [...want].filter((t) => have.has(t));
-      if (matched.length) hits.push({ watch: r.watch, group: g, ts: r.ts, title: r.title, url: r.url, disc: r.disc, by: r.by, match: r.match, matched });
+      if (matched.length) hits.push({ watch: r.watch, group: g, ts: r.ts, title: r.title, url: r.url, disc: r.disc, by: r.by, match: r.match, eng: r.eng, matched });
     }
     const tally = <K extends string>(key: (h: (typeof hits)[number]) => K) => { const m = new Map<K, number>(); for (const h of hits) m.set(key(h), (m.get(key(h)) ?? 0) + 1); return m; };
     const byGroup = tally((h) => h.group), byWatch = tally((h) => h.watch);
@@ -723,7 +727,7 @@ export class MonitorDO extends DurableObject<Env> {
       terms: [...want], from, to, total: hits.length, shown: shown.length, truncated: rows.length >= 8000,
       groups: [...byGroup].map(([key, n]) => ({ key, name: names.get(key) ?? key, n })).sort((a, b) => b.n - a.n),
       sources: [...byWatch].map(([watch, n]) => ({ watch, label: labels.get(watch) ?? watch, group: of.get(watch) ?? '', n })).sort((a, b) => b.n - a.n).slice(0, 30),
-      items: shown.slice(offset, offset + limit).map((h) => ({ watch: h.watch, label: labels.get(h.watch) ?? h.watch, group: h.group, ts: h.ts, title: h.title, url: h.url, discussionUrl: h.disc, by: h.by, matched: h.matched,
+      items: shown.slice(offset, offset + limit).map((h) => ({ watch: h.watch, label: labels.get(h.watch) ?? h.watch, group: h.group, ts: h.ts, title: h.title, url: h.url, discussionUrl: h.disc, by: h.by, reactions: h.eng, matched: h.matched,
         snippet: h.match.replace(/\s+/g, ' ').trim() === h.title ? '' : h.match.replace(/\s+/g, ' ').slice(0, 260) })),
       more: offset + limit < shown.length,
     };
@@ -742,6 +746,45 @@ export class MonitorDO extends DurableObject<Env> {
     return { slug: board.slug, title: board.title, days: c.days, term, label: topic?.label ?? term, terms: r.terms, from: r.from, to: r.to, total: r.total,
       groups: r.groups.map((g) => ({ name: g.name, n: g.n })), sources: r.sources.map((x) => ({ label: x.label, group: this.groupName(r.groups, x.group), n: x.n })).slice(0, 15),
       items: r.items.map((i) => ({ title: i.title, url: i.url, discussionUrl: i.discussionUrl, source: i.label, by: i.by, group: this.groupName(r.groups, i.group), ts: i.ts })) };
+  }
+  /**
+   * One topic of a published Signal, for its own public page: its numbers, where it shows up, how it moved day by day, what goes with it and, only when
+   * the Signal shows its sources, the items behind it. Null when the Signal is not public or the topic is not in it.
+   */
+  private async signalPublicTopic(slug: string, term: string, daysIn: number) {
+    const board = this.boards().find((b) => b.public && b.slug === slug);
+    if (!board) return null;
+    const c = await this.compute(daysIn, new Set(board.groups));
+    const shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
+    if (!shown.length) return null;
+    const { top, describe } = this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), 40);
+    let topic = top.find((t) => t.term === term || t.members.includes(term));
+    if (!topic) { const raw = c.terms.find((t) => t.term === term); if (!raw) return null; topic = describe(raw) as (typeof top)[number]; }
+    const T = this.tables(), sql = this.ctx.storage.sql, days: string[] = [];
+    for (let ms = Date.parse(c.from + 'T00:00:00Z'); ms <= Date.parse(c.to + 'T00:00:00Z'); ms += 86_400_000) days.push(dayOf(ms));
+    const gi = new Map(shown.map((g, i) => [g.key, i] as const)), docs = shown.map(() => days.map(() => 0)), items = shown.map(() => days.map(() => 0));
+    for (const r of sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${T.terms} WHERE term = ? AND day >= ? AND day <= ?`, topic.term, c.from, c.to)) {
+      const g = gi.get(c.of.get(r.watch) ?? ''), d = days.indexOf(r.day); if (g !== undefined && d >= 0) docs[g][d] += r.n;
+    }
+    for (const r of sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${T.items} WHERE day >= ? AND day <= ?`, c.from, c.to)) {
+      const g = gi.get(c.of.get(r.watch) ?? ''), d = days.indexOf(r.day); if (g !== undefined && d >= 0) items[g][d] += r.n;
+    }
+    const known = new Set(c.terms.map((t) => t.term));
+    const out: Record<string, unknown> = {
+      slug: board.slug, title: board.title, proof: board.proof === true, days: c.days, from: c.from, to: c.to, baselineOk: c.baselineOk,
+      term: topic.term, label: topic.label, members: topic.members, signal: topic.signal, change: topic.change, isNew: topic.isNew, kind: topic.kind, breadth: topic.breadth, active: topic.active,
+      reactions: topic.reactions, related: (topic.related ?? []).filter((r: string) => known.has(r)),
+      groups: shown.map((g, i) => ({ name: g.name, weight: g.weight, items: c.items[g.key] ?? 0, part: topic!.groups.find((x) => x.key === g.key)?.part ?? 0, share: topic!.groups.find((x) => x.key === g.key)?.share ?? 0,
+        docs: topic!.groups.find((x) => x.key === g.key)?.docs ?? 0, perDay: docs[i], perDayItems: items[i] })),
+      days_: days,
+    };
+    if (board.proof) {
+      const r = await this.signalItems({ terms: [topic.term, ...topic.members], days: c.days, group: '', watch: '', offset: 0, limit: 50, only: new Set(board.groups) });
+      out.total = r.total;
+      out.sources = r.sources.map((x) => ({ label: x.label, group: this.groupName(r.groups, x.group), n: x.n })).slice(0, 15);
+      out.items = r.items.map((i) => ({ title: i.title, url: i.url, discussionUrl: i.discussionUrl, source: i.label, by: i.by, group: this.groupName(r.groups, i.group), ts: i.ts, reactions: i.reactions }));
+    }
+    return out;
   }
   private groupName(groups: Array<{ key: string; name: string }>, key: string): string { return groups.find((g) => g.key === key)?.name ?? ''; }
   private async signalGroup(key: string, daysIn: number) {
@@ -797,6 +840,10 @@ export class MonitorDO extends DurableObject<Env> {
         if (name === 'signal-filter') return json(this.filterInfo());
         if (name === 'signal-public-items') {
           const out = await this.signalPublicItems(url.searchParams.get('slug') ?? '', (url.searchParams.get('term') ?? '').toLowerCase().slice(0, 80), Number(url.searchParams.get('days')));
+          return out ? json(out) : json({ error: 'not shown' }, 404);
+        }
+        if (name === 'signal-public-topic') {
+          const out = await this.signalPublicTopic(url.searchParams.get('slug') ?? '', (url.searchParams.get('term') ?? '').toLowerCase().slice(0, 80), Number(url.searchParams.get('days')));
           return out ? json(out) : json({ error: 'not shown' }, 404);
         }
         if (name === 'signal-public-boards') return json(await this.publicBoards());
