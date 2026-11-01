@@ -34,6 +34,9 @@
 
   // Language models: OpenRouter only (the OPENROUTER_API_KEY secret). The Workers AI binding was removed; add `"ai": { "binding": "AI" }` back to use it again.
 
+  // The id of the deployed version: part of the public page cache key, so a deploy starts with a fresh cache.
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
+
   "observability": { "enabled": true, "logs": { "head_sampling_rate": 1 } },
   "upload_source_maps": true,
 
@@ -62,6 +65,7 @@
         ]
       },
       "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "tweet-explorer-audio-staging" }],
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "vars": {
         "SUMMARY_PROVIDER": "openrouter",
         "SUMMARY_MODEL": "anthropic/claude-haiku-5.5"
