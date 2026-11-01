@@ -4069,7 +4069,7 @@ function renderImgTemplates() {
   const d = $('#libTpl');
   d.innerHTML = `<div class="card"><h2>Image templates</h2>
     <p class="muted">An image model plus a prompt. All briefings share the templates; each briefing picks one.</p>
-    <details class="about" data-about="image-templates"><summary>How image templates work</summary><div><p>A template is an image model plus a prompt. The prompt is combined with the briefing: <code>{title}</code>, <code>{date}</code>, <code>{tldr}</code> (the headline summary) and <code>{briefing}</code> (the start of the text) are filled in, and a prompt that uses neither of the last two gets the start of the briefing added after it. Pictures are made on Replicate${imgInfo.mock ? ' (development mode: placeholder pictures)' : ''}; the price is per picture and depends on the model.</p></div></details>
+    <details class="about" data-about="image-templates"><summary>How image templates work</summary><div><p>A template is an image model plus a prompt. The prompt is combined with the briefing: <code>{title}</code>, <code>{date}</code>, <code>{tldr}</code> (the headline summary) and <code>{briefing}</code> (the start of the text) are filled in, and a prompt that uses neither of the last two gets the start of the briefing added after it. Pictures are made on Replicate${imgInfo.mock ? ' (development mode: placeholder pictures)' : ''}; the price is per picture and depends on the model. The models marked <i>on Cloudflare</i> run on Workers AI inside its free 10,000 Neurons a day, so they cost nothing; once today's allowance would run out (it resets at 00:00 UTC), or Workers AI fails, the picture is made with the named Replicate model instead, at its price.${imgInfo.neurons?.ai ? ` Used today: ${imgInfo.neurons.used.toLocaleString()} of ${imgInfo.neurons.free.toLocaleString()} Neurons.` : ''}</p></div></details>
     ${imgInfo.configured ? '' : '<p class="perr">Pictures are not set up: add the <code>REPLICATE_API_TOKEN</code> secret (see DEPLOY.md). You can still edit templates.</p>'}
     <div style="display:grid;gap:10px">${imgTemplates.map((x) => `<div class="card" style="padding:12px 14px" data-tid="${esc(x.id)}"><div class="actions"><b>${esc(x.name)}</b>
         <span class="spill">${esc(imgModelOf(x.model)?.label ?? x.model)}</span><span class="spill">${esc(x.aspect)}</span><span class="spill">≈ ${usd(imgModelOf(x.model)?.usd ?? 0)} per picture</span>
@@ -4095,7 +4095,7 @@ function renderImgEditor(t) {
   $('#pubImgEdit').scrollIntoView({ behavior: 'smooth' });
 }
 function syncImgCost() {
-  const f = $('#pubImgForm'), el = $('#pubImgCost'); if (f && el) el.textContent = `A picture costs about ${usd(imgModelOf(f.elements.model.value)?.usd ?? 0)}; a sample costs the same.`;
+  const f = $('#pubImgForm'), el = $('#pubImgCost'); if (f && el) { const m = imgModelOf(f.elements.model.value); el.textContent = m?.provider === 'workers-ai' ? `Free on Workers AI while today's Neurons last (${(imgInfo.neurons?.used ?? 0).toLocaleString()} of ${(imgInfo.neurons?.free ?? 10000).toLocaleString()} used), then the Replicate fallback's price. A sample counts too.` : `A picture costs about ${usd(m?.usd ?? 0)}; a sample costs the same.`; }
 }
 $('#libTpl').addEventListener('change', (e) => { if (e.target.closest('#pubImgForm')) syncImgCost(); });
 const formImgTpl = (f) => ({ ...Object.fromEntries(new FormData(f)), id: f.dataset.id });
@@ -4115,8 +4115,8 @@ function imgTplClick(e) {
         const box = $('#pubImgSample'); box.textContent = 'Drawing a sample…';
         const res = await fetch('/pub/image-preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(formImgTpl($('#pubImgForm'))) });
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
-        const prompt = decodeURIComponent(res.headers.get('x-prompt') || '');
-        box.innerHTML = `<img alt="Sample" style="display:block;width:100%;max-width:640px;border-radius:10px" src="${URL.createObjectURL(await res.blob())}"><details style="margin-top:6px"><summary class="muted">The prompt that was sent</summary><p class="muted" style="white-space:pre-wrap">${esc(prompt)}</p></details>`;
+        const prompt = decodeURIComponent(res.headers.get('x-prompt') || ''), note = decodeURIComponent(res.headers.get('x-image-note') || '');
+        box.innerHTML = `${note ? `<p class="muted" style="margin:0 0 6px">${esc(note)}</p>` : ''}<img alt="Sample" style="display:block;width:100%;max-width:640px;border-radius:10px" src="${URL.createObjectURL(await res.blob())}"><details style="margin-top:6px"><summary class="muted">The prompt that was sent</summary><p class="muted" style="white-space:pre-wrap">${esc(prompt)}</p></details>`;
       }
     } catch (err) { toast(err.message); const bx = $('#pubImgSample'); if (bx) bx.textContent = ''; }
   })();

@@ -90,18 +90,26 @@ export async function replicateTts(token: string, s: TtsSettings, text: string):
 
 // ---- Images. Billed per image. Confirmed on Replicate's runs list ("approximate cost"): nano-banana-pro $0.15, imagen-4-fast $0.02, and
 // flux-schnell under $0.01 (its published price is $3 per 1,000 images). Change them here if an invoice says otherwise.
+// The `cf-` models run on Workers AI (media/workersai.ts) inside the free daily Neurons, so they cost nothing; once the day's allowance
+// would run out, or Workers AI fails, the picture is made with `fallback` on Replicate instead (at its price).
+interface ImageModelInfo { slug: string; label: string; usd: number; provider: 'replicate' | 'workers-ai'; fallback?: 'best' | 'cheaper' | 'cheapest' }
 export const IMAGE_MODELS = {
-  best: { slug: 'google/nano-banana-pro', label: 'Nano Banana Pro (best quality)', usd: 0.15 },
-  cheaper: { slug: 'google/imagen-4-fast', label: 'Imagen 4 Fast (cheaper)', usd: 0.02 },
-  cheapest: { slug: 'black-forest-labs/flux-schnell', label: 'FLUX.1 schnell (very cheap)', usd: 0.003 },
-} as const;
+  best: { slug: 'google/nano-banana-pro', label: 'Nano Banana Pro (best quality)', usd: 0.15, provider: 'replicate' },
+  cheaper: { slug: 'google/imagen-4-fast', label: 'Imagen 4 Fast (cheaper)', usd: 0.02, provider: 'replicate' },
+  cheapest: { slug: 'black-forest-labs/flux-schnell', label: 'FLUX.1 schnell (very cheap)', usd: 0.003, provider: 'replicate' },
+  'cf-klein4b': { slug: '@cf/black-forest-labs/flux-2-klein-4b', label: 'FLUX.2 klein 4B on Cloudflare (free, about 90 a day; then FLUX.1 schnell)', usd: 0, provider: 'workers-ai', fallback: 'cheapest' },
+  'cf-klein9b': { slug: '@cf/black-forest-labs/flux-2-klein-9b', label: 'FLUX.2 klein 9B on Cloudflare (free, about 6 a day; then Imagen 4 Fast)', usd: 0, provider: 'workers-ai', fallback: 'cheaper' },
+  'cf-phoenix': { slug: '@cf/leonardo/phoenix-1.0', label: 'Leonardo Phoenix on Cloudflare (free, about 4 a day; then Imagen 4 Fast)', usd: 0, provider: 'workers-ai', fallback: 'cheaper' },
+} as const satisfies Record<string, ImageModelInfo>;
 export type ImageModel = keyof typeof IMAGE_MODELS;
+export type ReplicateImageModel = 'best' | 'cheaper' | 'cheapest';
 export const isImageModel = (m: unknown): m is ImageModel => typeof m === 'string' && m in IMAGE_MODELS;
+export const imageModelInfo = (m: ImageModel): ImageModelInfo => IMAGE_MODELS[m];
 export const ASPECTS = ['16:9', '4:3', '1:1'] as const;      // the shapes all three models accept (Imagen 4 Fast has no 3:2)
 export type Aspect = (typeof ASPECTS)[number];
 export interface ImageResult { bytes: Uint8Array; type: string; cost: number }
 
-export async function replicateImage(token: string, model: ImageModel, prompt: string, aspect: Aspect): Promise<ImageResult> {
+export async function replicateImage(token: string, model: ReplicateImageModel, prompt: string, aspect: Aspect): Promise<ImageResult> {
   const input: Record<string, unknown> = { prompt, aspect_ratio: aspect, output_format: 'jpg' };
   if (model === 'best') input.resolution = '2K';
   if (model === 'cheapest') input.num_outputs = 1;

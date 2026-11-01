@@ -2,6 +2,7 @@
 // questions, and get typed answers back. A choice question names the best option, a noul question gives the probability of yes. They are
 // served on their own endpoint (/api/v1/systemone), not chat completions, and cost a fraction of a cent per thousand tweets.
 import { mapPool } from '../lib/pool.ts';
+import { orFetch } from './gateway.ts';
 
 export interface DeciderInfo { id: string; label: string; inPrice: number; outPrice: number; note: string }
 /** USD per million input tokens (output is free). The `~` ids are OpenRouter aliases that follow the newest version. */
@@ -30,7 +31,7 @@ export async function decide(env: Env, model: string, state: unknown, questions:
   }
   const key = (env as { OPENROUTER_API_KEY?: string }).OPENROUTER_API_KEY;
   if (!key) throw new Error('No OpenRouter API key is configured: add the OPENROUTER_API_KEY secret');
-  const res = await fetch('https://openrouter.ai/api/v1/systemone', {
+  const res = await orFetch('https://openrouter.ai/api/v1/systemone', {
     method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', 'x-title': 'Tweet Explorer' },
     body: JSON.stringify({ model, state, questions }),
     signal: opts.signal ? AbortSignal.any([opts.signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000),

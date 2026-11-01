@@ -5,6 +5,7 @@ import { HN_TAGS, type HnTag } from '../sources/hn';
 import { checkFeedUrl } from '../sources/rss';
 import { setYoutubeKey } from '../sources/youtube';
 import { MAX_MEMBERS as MAX_FEED_MEMBERS, memberKey, readMembers, resolveLines, type FeedMember } from '../sources/feedlist';
+import { useGateway } from '../llm/gateway.ts';
 
 const HANDLE = /^[A-Za-z0-9_]{1,15}$/;
 const MAX_LISTS = 100, MAX_MEMBERS = 500;
@@ -88,6 +89,7 @@ export class ListsDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API
+    useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS lists (id TEXT PRIMARY KEY, updated INTEGER NOT NULL, data TEXT NOT NULL)');
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS xlists (id TEXT PRIMARY KEY, ord INTEGER NOT NULL, data TEXT NOT NULL)');
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS flists (id TEXT PRIMARY KEY, updated INTEGER NOT NULL, data TEXT NOT NULL)');

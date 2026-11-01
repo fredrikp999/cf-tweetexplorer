@@ -7,6 +7,7 @@ import { handleMcp } from './mcp';
 import { recordCost } from './lib/costs';
 import { serveAudio, serveImage } from './media/audio-serve';
 import { PROFILE_PRICE, tweetCallCost } from './summarize/pricing.ts';
+import { useGateway } from './llm/gateway.ts';
 export { MonitorDO } from './durable-objects/monitor';
 export { HistoryDO } from './durable-objects/history';
 export { ListsDO } from './durable-objects/lists';
@@ -57,6 +58,7 @@ const PRIVATE = /^\/(admin|custom)(\/|$)/;
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     setYoutubeKey(env.YOUTUBE_API_KEY);   // Summarize can read feed lists in this Worker
+    useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     const url = new URL(request.url);
     // The MCP server has its own Access application (and audience), so a service token for it reaches nothing else.
     if (url.pathname === '/mcp') {

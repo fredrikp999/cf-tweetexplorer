@@ -5,6 +5,7 @@ import OpenAI from 'openai';
 import { OpenAIModel } from '@strands-agents/sdk/models/openai';
 import type { Model } from '@strands-agents/sdk';
 import type { AiModelInfo } from './workers-ai.ts';
+import { orFetch } from '../llm/gateway.ts';
 
 export const OPENROUTER_MODELS: AiModelInfo[] = [
   { id: 'meta-llama/llama-4-scout', label: 'Llama 4 Scout', context: '1.3M', inPrice: 0.1, outPrice: 0.3, note: 'Fast and cheap, terser' },
@@ -20,6 +21,6 @@ export const openrouterModelInfo = (id: string): AiModelInfo | undefined => OPEN
 export const OPENROUTER_ID = /^[\w.-]+\/[\w.:-]{1,80}$/;
 
 export function openrouterModel(apiKey: string, modelId = DEFAULT_OPENROUTER_MODEL, maxTokens = 16_000): Model {
-  const client = new OpenAI({ apiKey, baseURL: 'https://openrouter.ai/api/v1', maxRetries: 0, defaultHeaders: { 'X-Title': 'Tweet Explorer' } });
+  const client = new OpenAI({ apiKey, baseURL: 'https://openrouter.ai/api/v1', maxRetries: 0, defaultHeaders: { 'X-Title': 'Tweet Explorer' }, fetch: orFetch });   // through AI Gateway when one is set up
   return new OpenAIModel({ api: 'chat', modelId, maxTokens, client });
 }

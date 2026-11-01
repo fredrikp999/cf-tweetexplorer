@@ -32,7 +32,9 @@
   // Audio versions of briefings (text to speech with Gemini on Replicate): the MP3 files. Create once: `npx wrangler r2 bucket create tweet-explorer-audio`.
   "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "tweet-explorer-audio" }],
 
-  // Language models: OpenRouter only (the OPENROUTER_API_KEY secret). The Workers AI binding was removed; add `"ai": { "binding": "AI" }` back to use it again.
+  // Workers AI: pictures with the Cloudflare-hosted image models (media/workersai.ts), inside the free 10,000 Neurons a day.
+  // Language models still go to OpenRouter (the OPENROUTER_API_KEY secret).
+  "ai": { "binding": "AI" },
 
   // The id of the deployed version: part of the public page cache key, so a deploy starts with a fresh cache.
   "version_metadata": { "binding": "CF_VERSION_METADATA" },
@@ -45,7 +47,11 @@
   "vars": {
     // Summarize tab and briefings: "openrouter" (needs the OPENROUTER_API_KEY secret), "workers-ai" (needs the AI binding) or "anthropic" (ANTHROPIC_API_KEY).
     "SUMMARY_PROVIDER": "openrouter",
-    "SUMMARY_MODEL": "anthropic/claude-haiku-5.5"
+    "SUMMARY_MODEL": "anthropic/claude-haiku-5.5",
+    // Cloudflare AI Gateway (llm/gateway.ts): OpenRouter calls and Workers AI pictures are logged there (dashboard: AI > AI Gateway).
+    // "default" is created on first use, with authentication on: give it a token with `npx wrangler secret put AI_GATEWAY_TOKEN`
+    // (a Cloudflare API token with "AI Gateway: Run"). Without one, OpenRouter calls go direct. Remove the line to skip the gateway.
+    "AI_GATEWAY": "default"
   },
 
   // A second Worker to look at changes before they go live: `npm run staging`. It has its own Durable Objects (so its own, empty data) and its own
@@ -65,6 +71,7 @@
         ]
       },
       "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "tweet-explorer-audio-staging" }],
+      "ai": { "binding": "AI" },
       "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "vars": {
         "SUMMARY_PROVIDER": "openrouter",

@@ -127,7 +127,7 @@ export function workerSources(env: Env, meter?: Meter): Sources {
 // (with SUMMARY_FALLBACK_MODEL) to back up the main provider when it runs out of credits.
 export function configOf(env: Env): ProviderConfig | null {
   const want = env.SUMMARY_PROVIDER as string, orKey = (env as { OPENROUTER_API_KEY?: string }).OPENROUTER_API_KEY || undefined;
-  const ai = (env as { AI?: unknown }).AI;      // the Workers AI binding: optional, not in wrangler.jsonc by default
+  const ai = (env as { AI?: unknown }).AI;      // the Workers AI binding (in wrangler.jsonc for pictures); writes only when SUMMARY_PROVIDER picks it or is unset
   const provider: Provider | null = want === 'anthropic' ? (env.ANTHROPIC_API_KEY ? 'anthropic' : null) : want === 'openrouter' ? (orKey ? 'openrouter' : null) : ai ? 'workers-ai' : null;
   if (!provider) return null;
   return { provider, ai: ai as never, anthropicKey: env.ANTHROPIC_API_KEY || undefined, openrouterKey: orKey, configured: env.SUMMARY_MODEL, fallback: (env as { SUMMARY_FALLBACK_MODEL?: string }).SUMMARY_FALLBACK_MODEL || undefined };

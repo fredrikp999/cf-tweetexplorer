@@ -4,6 +4,7 @@
 import { OPENROUTER_MODELS, openrouterModelInfo } from '../summarize/openrouter.ts';
 import { DECIDER_MODELS, deciderInfo } from './decisions.ts';
 import type { Msg } from '../history/analysis.ts';
+import { orFetch } from './gateway.ts';
 export type { Msg };
 
 export interface Completion { text: string; tokensIn: number; tokensOut: number; cost: number }
@@ -38,7 +39,7 @@ export async function complete(env: Env, model: string, messages: Msg[], opts: {
   }
   const key = (env as { OPENROUTER_API_KEY?: string }).OPENROUTER_API_KEY;
   if (!key) throw new Error('No OpenRouter API key is configured: add the OPENROUTER_API_KEY secret');
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const res = await orFetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', 'x-title': 'Tweet Explorer' },
     body: JSON.stringify({ model, messages, max_tokens: opts.maxTokens ?? 2000, temperature: 0.2, usage: { include: true } }), signal: AbortSignal.timeout(120_000),
   });

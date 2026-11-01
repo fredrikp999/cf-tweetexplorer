@@ -10,6 +10,7 @@ import { complete, costOf, defaultTiers, modelOptions } from '../llm/analysis';
 import { decide, decideAll, isDecider } from '../llm/decisions';
 import { aggregate, BATCH, cleanSubjects, cleanThemes, decisionQuestions, decisionState, KINDS, labelSystem, labelTokens, labelUser, narrativeMessages, normKey, isTrivial, packStance, parseDecision, parseJson, parseLabels, parseLines, parseProposal, proposeMessages, STRONG_BATCH, unpackStance } from '../history/analysis';
 import type { Label, Results, Subject, Theme } from '../history/analysis';
+import { useGateway } from '../llm/gateway.ts';
 
 const PAGE = 20;
 const SHARDS_ALLOWED = [900, 1800, 3600, 21_600, 86_400, 604_800];
@@ -57,6 +58,7 @@ export class HistoryDO extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    useGateway(env);                      // OpenRouter calls through AI Gateway, when AI_GATEWAY is set
     const sql = ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS tweets (job TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (job, id))');

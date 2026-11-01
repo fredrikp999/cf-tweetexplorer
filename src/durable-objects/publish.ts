@@ -13,7 +13,8 @@ import { recordCost } from '../lib/costs';
 import { buildScript, cleanStyle } from '../media/audio-script.ts';
 import type { Pause } from '../media/audio-script.ts';
 import { ASPECTS, IMAGE_MODELS, isImageModel, isTtsModel, mockImage, mockMp3, replicateImage, replicateTts, TTS_MODELS, ttsCost, usdPerChar, VOICES, VOICE_NAMES } from '../media/replicate.ts';
-import type { Aspect, ImageModel, TtsModel } from '../media/replicate.ts';
+import type { Aspect, ImageModel, ImageResult, ReplicateImageModel, TtsModel } from '../media/replicate.ts';
+import { FREE_NEURONS, isAllowanceError, NEURON_MARGIN, neuronsFor, workersAiImage } from '../media/workersai.ts';
 import { imagePrompt } from '../media/image-prompt.ts';
 import type { Length, SourceSpec, XMode } from '../summarize/agent.ts';
 import { compact, dedupeSort, type RawTweet } from '../summarize/tweets.ts';
@@ -24,6 +25,7 @@ import { modelFor, workerSources } from '../summarize/worker';
 import { screenTweets } from '../summarize/screen.ts';
 import { sectionsOf, themesOf } from '../site/brief.ts';
 import { setYoutubeKey } from '../sources/youtube';
+import { useGateway } from '../llm/gateway.ts';
 
 export type TopicSource =
   | { type: 'search'; query: string; sort: 'Latest' | 'Top' }
@@ -241,6 +243,7 @@ export class PublishDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API
+    useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     const sql = ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS topics (slug TEXT PRIMARY KEY, data TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS issues (topic TEXT NOT NULL, id TEXT NOT NULL, status TEXT NOT NULL, created INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (topic, id))');
@@ -249,6 +252,8 @@ export class PublishDO extends DurableObject<Env> {
     sql.exec('CREATE TABLE IF NOT EXISTS audio_jobs (topic TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (topic, id))');
     sql.exec('CREATE TABLE IF NOT EXISTS image_templates (id TEXT PRIMARY KEY, ord INTEGER NOT NULL, data TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS image_jobs (topic TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (topic, id))');
+    // Workers AI Neurons used per UTC day by pictures, so they stay inside the free daily allowance (media/workersai.ts).
+    sql.exec('CREATE TABLE IF NOT EXISTS ai_neurons (day TEXT PRIMARY KEY, used INTEGER NOT NULL)');
     // Errors readers reported on a briefing (one theme of it, or all of it). `who` is a hash of the address and the day, only to limit how many one reader can send.
     sql.exec("CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, created INTEGER NOT NULL, topic TEXT NOT NULL, issue TEXT NOT NULL, theme TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', who TEXT NOT NULL)");
     if (sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM audio_templates').one().n === 0) this.restoreBuiltins();
@@ -312,6 +317,39 @@ export class PublishDO extends DurableObject<Env> {
     const e = this.env as { REPLICATE_API_TOKEN?: string; AUDIO_MOCK?: string };
     return e.AUDIO_MOCK === '1' ? 'mock' : e.REPLICATE_API_TOKEN || undefined;
   }
+  private ai = (): unknown => (this.env as { AI?: unknown }).AI;
+  /** Whether a picture can be made with this model: Workers AI with the AI binding, or Replicate (also every Workers AI model's fallback). */
+  private canDraw = (model: ImageModel) => !!this.ttsKey() || (IMAGE_MODELS[model].provider === 'workers-ai' && !!this.ai());
+
+  /** One picture. A Workers AI model is used while today's free Neurons last; after that, or if Workers AI fails, its Replicate fallback. */
+  private async drawImage(model: ImageModel, prompt: string, aspect: Aspect, label: string): Promise<ImageResult & { slug: string; note?: string }> {
+    const key = this.ttsKey(), info = IMAGE_MODELS[model];
+    if (key === 'mock') return { ...mockImage(label, aspect), slug: info.slug };
+    let note: string | undefined;
+    if (info.provider === 'workers-ai') {
+      const day = new Date().toISOString().slice(0, 10), sql = this.ctx.storage.sql;
+      const used = sql.exec<{ used: number }>('SELECT used FROM ai_neurons WHERE day = ?', day).toArray()[0]?.used ?? 0, need = neuronsFor(info.slug, aspect);
+      if (!this.ai()) note = 'Workers AI is not set up (no AI binding)';
+      else if (used + need > FREE_NEURONS - NEURON_MARGIN) note = `today's free Workers AI Neurons are used up (${used} of ${FREE_NEURONS})`;
+      else {
+        try {
+          const img = await workersAiImage(this.ai(), info.slug, prompt, aspect);
+          sql.exec('INSERT INTO ai_neurons (day, used) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET used = used + excluded.used', day, need);
+          return { ...img, slug: info.slug };
+        } catch (err) {
+          if (isAllowanceError(err)) sql.exec('INSERT OR REPLACE INTO ai_neurons (day, used) VALUES (?, ?)', day, FREE_NEURONS);
+          note = `Workers AI failed (${(err instanceof Error ? err.message : String(err)).slice(0, 120)})`;
+        }
+      }
+      if (!key) throw new Error(`${note}, and there is no fallback: add the REPLICATE_API_TOKEN secret`);
+      const fb = IMAGE_MODELS[info.fallback];
+      note += `; made with ${fb.label.replace(/ \(.*\)$/, '')} instead`;
+      console.warn('image fallback', note);
+      return { ...(await replicateImage(key, info.fallback, prompt, aspect)), slug: fb.slug, note };
+    }
+    if (!key) throw new Error('Images are not configured: add the REPLICATE_API_TOKEN secret');
+    return { ...(await replicateImage(key, model as ReplicateImageModel, prompt, aspect)), slug: info.slug };
+  }
 
   /** Reads a briefing aloud with the topic's template and stores the MP3 in R2. Never throws: the outcome is on the issue. */
   private async makeAudio(slug: string, id: string): Promise<void> {
@@ -355,17 +393,16 @@ export class PublishDO extends DurableObject<Env> {
     const tpl = this.imageTemplateFor(t), started = Date.now();
     const save = (image: IssueImage) => { issue = { ...(this.issue(slug, id) ?? issue!), image }; this.saveIssue(issue); };
     save({ status: 'pending', template: tpl?.id ?? '', templateName: tpl?.name ?? '', created: started });
-    let spent = 0, error = '';
+    let spent = 0, error = '', madeWith = '', note = '';
     try {
       if (!tpl) throw new Error('create an image template first');
-      const key = this.ttsKey(), mock = key === 'mock';
-      if (!key) throw new Error('Images are not configured: add the REPLICATE_API_TOKEN secret');
+      if (!this.canDraw(tpl.model)) throw new Error('Images are not configured: add the REPLICATE_API_TOKEN secret');
       const prompt = imagePrompt(issue.markdown, tpl.prompt, { title: t.title, date: dateLabel(issue.publishedAt || issue.created), tldr: issue.tldr });
-      const img = mock ? mockImage(t.title, tpl.aspect) : await replicateImage(key, tpl.model, prompt, tpl.aspect);
-      spent = img.cost;
+      const img = await this.drawImage(tpl.model, prompt, tpl.aspect, t.title);
+      spent = img.cost; madeWith = img.slug; note = img.note ?? '';
       const objectKey = `image/${slug}/${id}`;
       await this.env.AUDIO.put(objectKey, img.bytes, { httpMetadata: { contentType: img.type } });     // the AUDIO bucket holds the pictures too
-      save({ status: 'ready', template: tpl.id, templateName: tpl.name, created: Date.now(), key: objectKey, type: img.type, bytes: img.bytes.length, cost: spent, model: IMAGE_MODELS[tpl.model].slug, aspect: tpl.aspect, prompt });
+      save({ status: 'ready', template: tpl.id, templateName: tpl.name, created: Date.now(), key: objectKey, type: img.type, bytes: img.bytes.length, cost: spent, model: img.slug, aspect: tpl.aspect, prompt });
       const cur = this.issue(slug, id);
       if (cur?.cost) this.saveIssue({ ...cur, cost: withTotal({ ...cur.cost, image: spent }) });
     } catch (err) {
@@ -374,7 +411,8 @@ export class PublishDO extends DurableObject<Env> {
       save({ status: 'failed', template: tpl?.id ?? '', templateName: tpl?.name ?? '', created: Date.now(), error: error.slice(0, 240) });
     }
     this.ctx.storage.sql.exec('DELETE FROM image_jobs WHERE topic = ? AND id = ?', slug, id);
-    if (spent && tpl) await recordCost(this.env, { kind: 'image', ref: slug, label: `${t.title} · image`, llm: spent, model: IMAGE_MODELS[tpl.model].slug, run: { ok: !error, note: error || `${id} · ${tpl.name}` } });
+    // Free Workers AI pictures are logged too (at $0), so the ledger shows which model made each one and when it fell back.
+    if ((spent || madeWith) && tpl) await recordCost(this.env, { kind: 'image', ref: slug, label: `${t.title} · image`, llm: spent, model: madeWith || IMAGE_MODELS[tpl.model].slug, run: { ok: !error, note: error || `${id} · ${tpl.name}${note ? ' · ' + note : ''}` } });
   }
 
   // Public view of an issue's list entry (no body).
@@ -637,7 +675,9 @@ export class PublishDO extends DurableObject<Env> {
       // Admin.
       if (path === '/adm/image-templates') {
         const key = this.ttsKey();
-        return json({ templates: this.imageTemplates(), configured: !!key, mock: key === 'mock', aspects: ASPECTS, models: Object.entries(IMAGE_MODELS).map(([id, m]) => ({ id, label: m.label, usd: m.usd })) });
+        const neurons = this.ctx.storage.sql.exec<{ used: number }>('SELECT used FROM ai_neurons WHERE day = ?', new Date().toISOString().slice(0, 10)).toArray()[0]?.used ?? 0;
+        return json({ templates: this.imageTemplates(), configured: !!key || !!this.ai(), mock: key === 'mock', aspects: ASPECTS, neurons: { used: neurons, free: FREE_NEURONS, ai: !!this.ai() },
+          models: Object.entries(IMAGE_MODELS).map(([id, m]) => ({ id, label: m.label, usd: m.usd, provider: m.provider })) });
       }
       if (path === '/adm/audio-templates') {
         const key = this.ttsKey();
@@ -695,20 +735,20 @@ export class PublishDO extends DurableObject<Env> {
       if (path === '/adm/image-templates-restore') return json({ added: this.restoreImageBuiltins() });
       // A sample picture with the (possibly unsaved) template and a made-up briefing, so a model and prompt can be tried. Costs one picture; not stored.
       if (path === '/adm/image-preview') {
-        const key = this.ttsKey();
-        if (!key) throw new Error('Images are not configured: add the REPLICATE_API_TOKEN secret');
         const tpl = cleanImageTemplate({ ...b, name: b.name || 'Preview' });
+        if (!this.canDraw(tpl.model)) throw new Error('Images are not configured: add the REPLICATE_API_TOKEN secret');
         const sample = 'A new open model has topped the leaderboard, and developers are already comparing notes.\n\nResearchers praise its reasoning, while some question the benchmark.\n\nThat is the picture so far.';
         const prompt = imagePrompt(sample, tpl.prompt, { title: str(b.title, 80) || 'AI News', date: dateLabel(Date.now()), tldr: 'A new open model tops the leaderboard; developers compare notes.' });
-        const img = key === 'mock' ? mockImage('Sample', tpl.aspect) : await replicateImage(key, tpl.model, prompt, tpl.aspect);
-        await recordCost(this.env, { kind: 'image', ref: 'preview', label: 'Template preview', llm: img.cost, model: IMAGE_MODELS[tpl.model].slug, run: { ok: true, note: tpl.name } });
-        return new Response(img.bytes, { headers: { 'content-type': img.type, 'cache-control': 'no-store', 'x-prompt': encodeURIComponent(prompt.slice(0, 600)) } });
+        const img = await this.drawImage(tpl.model, prompt, tpl.aspect, 'Sample');
+        await recordCost(this.env, { kind: 'image', ref: 'preview', label: 'Template preview', llm: img.cost, model: img.slug, run: { ok: true, note: tpl.name + (img.note ? ' · ' + img.note : '') } });
+        return new Response(img.bytes, { headers: { 'content-type': img.type, 'cache-control': 'no-store', 'x-prompt': encodeURIComponent(prompt.slice(0, 600)), ...(img.note ? { 'x-image-note': encodeURIComponent(img.note) } : {}) } });
       }
       if (path === '/adm/image-create') {
         const id = str(b.id, 20), i = this.issue(slug, id);
         if (!i) throw new Error('unknown issue');
-        if (!this.ttsKey()) throw new Error('Images are not configured: add the REPLICATE_API_TOKEN secret');
-        if (!this.imageTemplateFor(this.topic(slug)!)) throw new Error('create an image template first');
+        const itpl = this.imageTemplateFor(this.topic(slug)!);
+        if (!itpl) throw new Error('create an image template first');
+        if (!this.canDraw(itpl.model)) throw new Error('Images are not configured: add the REPLICATE_API_TOKEN secret');
         if (i.image?.status === 'pending') throw new Error('an image is already being created');
         this.saveIssue({ ...i, image: { status: 'pending', template: '', templateName: '', created: Date.now() } });
         this.ctx.storage.sql.exec('INSERT OR IGNORE INTO image_jobs (topic, id) VALUES (?, ?)', slug, id);

@@ -19,6 +19,7 @@ import { DEFAULT_FILTER, cleanFilter, makeBlocker, type FilterWord } from '../si
 import { GENERIC } from '../signal/terms';
 import { STOP } from '../history/stats';
 import { complete, defaultTiers, modelOptions } from '../llm/analysis';
+import { useGateway } from '../llm/gateway.ts';
 
 const OVERLAP = 90;        // seconds re-read before the checkpoint; duplicates removed by id
 const MAX_PAGES = 5;
@@ -90,6 +91,7 @@ export class MonitorDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API
+    useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     const sql = ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS watches (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS seen (watch TEXT NOT NULL, tweet TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (watch, tweet))');

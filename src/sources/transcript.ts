@@ -6,6 +6,7 @@
 // TRANSCRIPT_FALLBACK (openrouter or replicate) is tried when the first way fails, so captions can be the default and a paid
 // service the safety net. The text is written by strangers: it is capped, and the caller treats it as untrusted.
 import { decode } from './rss.ts';
+import { orFetch } from '../llm/gateway.ts';
 
 export type TranscriptProvider = 'captions' | 'openrouter' | 'replicate';
 export interface TranscriptConfig {
@@ -95,7 +96,7 @@ export async function captionsTranscript(videoId: string, lang = 'en'): Promise<
 // ---- OpenRouter: a Gemini model reads the video itself
 export async function openrouterTranscript(cfg: TranscriptConfig, videoId: string): Promise<Transcript> {
   if (!cfg.openrouterKey) throw new Error('needs the OPENROUTER_API_KEY secret');
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const res = await orFetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST', signal: AbortSignal.timeout(170_000),
     headers: { authorization: `Bearer ${cfg.openrouterKey}`, 'content-type': 'application/json', 'x-title': 'Tweet Explorer' },
     body: JSON.stringify({
