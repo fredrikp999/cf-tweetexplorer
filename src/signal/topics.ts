@@ -27,11 +27,14 @@ export interface Cluster { lead: ScoredTerm; /** The name of the topic: the stro
  * Terms (strongest first) that appear in mostly the same items become one topic. A term that is in fewer than two items cannot be compared and stands alone.
  * `n` topics at most; the lead is the strongest term of each.
  */
+/** The words of a name in a fixed order: "anthropic claude" and "claude anthropic" are one topic. */
+const wordKey = (t: string) => t.split(' ').sort().join(' ');
+
 export function mergeTopics(terms: ScoredTerm[], post: Postings, n: number, minJaccard = 0.5): Cluster[] {
   const out: Array<{ lead: ScoredTerm; members: ScoredTerm[] }> = [];
   for (const t of terms) {
     const mine = post.get(t.term) ?? [];
-    const home = mine.length >= 2 ? out.find((c) => jaccard(mine, post.get(c.lead.term) ?? []) >= minJaccard) : undefined;
+    const home = out.find((c) => wordKey(c.lead.term) === wordKey(t.term)) ?? (mine.length >= 2 ? out.find((c) => jaccard(mine, post.get(c.lead.term) ?? []) >= minJaccard) : undefined);
     if (home) home.members.push(t);
     else if (out.length < n) out.push({ lead: t, members: [t] });
   }
@@ -57,14 +60,16 @@ export function relatedTerms(own: string[], items: TopicItem[], post: Postings, 
     .slice(0, n).map(([t]) => t);
 }
 
-/** How much people reacted to the items of a topic, summed over its items. */
-export function topicEngagement(own: string[], items: TopicItem[], post: Postings): number {
+/** How much people reacted to the items of a topic, summed over its items (each item counted up to `perItemCap`). */
+export function topicEngagement(own: string[], items: TopicItem[], post: Postings, perItemCap = Infinity): number {
   const idx = new Set<number>();
   for (const t of own) for (const i of post.get(t) ?? []) idx.add(i);
   let n = 0;
-  for (const i of idx) n += items[i].eng ?? 0;
+  for (const i of idx) n += Math.min(perItemCap, items[i].eng ?? 0);
   return n;
 }
+/** One item can lift a topic by at most this many reactions: one viral post is not a topic people talk about. */
+export const REACTION_CAP = 1000;
 
 /**
  * Topics ordered by signal, lifted by reactions: a topic whose items got the most reactions in the window gains up to half again on its signal

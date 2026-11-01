@@ -26,7 +26,7 @@ interface PubAList { id: string; name: string; topic: string; handles: string[] 
 interface PubFList { id: string; name: string; topic: string; feeds: { source: 'rss' | 'youtube' | 'hn'; label: string; query: string; hnTag?: string; minPoints?: number }[] }
 // lists: X lists (live on x.com); alists: curated sets of X accounts; flists: curated sets of feeds (RSS, YouTube, Hacker News)
 interface Ctx { topics: PubTopic[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[] }
-interface PubBoard { slug: string; title: string; description: string; groups: string[]; proof?: boolean }
+interface PubBoard { slug: string; title: string; description: string; groups: string[]; proof?: boolean; /** Addresses it had before: they redirect here. */ aliases?: string[] }
 /** One topic of a published Signal, as its own page. Items, sources and `total` are present only when the Signal shows its sources. */
 interface PubTopicPage { slug: string; title: string; proof: boolean; days: number; from: string; to: string; baselineOk: boolean; term: string; label: string; members: string[]; signal: number; change: number | null; isNew: boolean;
   kind: 'shared' | 'single' | 'mixed'; breadth: number; active: number; reactions: number; related: string[]; days_: string[];
@@ -39,6 +39,9 @@ interface PubSignal { slug: string; title: string; description: string; proof?: 
   top: PubSigTerm[]; rising: PubSigTerm[]; shared: PubSigTerm[]; single: PubSigTerm[] }
 const listTotal = (c: Ctx) => c.lists.length + c.alists.length + c.flists.length;
 type PubPage = { topic: TopicInfo; issue: IssueFull; archive: Brief[] };
+/** A Signal's top topics, as a strip on other pages: a name and its link. */
+interface SigStrip { slug: string; title: string; topics: Array<{ term: string; label: string; isNew: boolean; change: number | null }> }
+interface Mention { slug: string; title: string; id: string; publishedAt: number; tldr: string }
 
 const ISSUE_ID = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
 
@@ -140,6 +143,8 @@ figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-templa
 .sglist{list-style:none;margin:0;padding:0}.sglist li{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line);font-size:14.5px}.sglist small{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .act.stack>div i{min-height:0}
 .sgitems{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}.sgitems li{border-left:3px solid var(--line);padding-left:12px}.sgitems .by{font-size:13px;color:var(--muted)}.sgitems a{color:var(--text)}.sgitems a:hover{color:var(--accent)}.sgrow .t a{color:inherit;text-decoration:none}.sgrow .t a:hover{color:var(--accent);text-decoration:underline}.sglist a{color:inherit;text-decoration:none}.sglist a:hover{text-decoration:underline}
+.sgstrip{margin:18px 0 22px}.sgstrip h2{display:flex;justify-content:space-between;gap:10px;align-items:baseline;font-size:15px;margin:0 0 8px}.sgstrip h2 a{font-weight:400;font-size:13.5px;color:var(--muted)}
+.sgstrip div{display:flex;flex-wrap:wrap;gap:6px}.sgstrip div a{padding:4px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--text);text-decoration:none;font-size:14px}.sgstrip small.up{color:var(--accent,#c9265f)}
 .chip.react{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}.stat{border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:var(--card)}.stat b{display:block;font-size:24px;letter-spacing:-.02em}.stat span{color:var(--muted);font-size:13px}
 .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px}
 .sgrow .hl{grid-column:1/-1;font-size:13.5px;color:var(--muted);margin-top:-2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sgrow .hl a{color:var(--muted)}.sgrow .hl small{margin-left:4px}
@@ -179,7 +184,7 @@ ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}$
 
 const NOTE = '<p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals.</p>';
 
-export function landingHtml(ctx: Ctx): string {
+export function landingHtml(ctx: Ctx, strip?: SigStrip): string {
   const topics = ctx.topics;
   const cards = [...topics].sort((a, b) => b.latest.publishedAt - a.latest.publishedAt).map((t) => {
     const facts = [t.latest.tweets ? `${n(t.latest.tweets)} posts` : '', t.latest.accounts ? `${n(t.latest.accounts)} accounts` : ''].filter(Boolean).join(' · ');
@@ -188,11 +193,17 @@ ${t.latest.tldr ? `<p class="tldr">${inline(t.latest.tldr)}</p>` : ''}<div class
   }).join('');
   return shell('Signals · Agent Cortex', rail(ctx), `<header class="pagehead"><div class="eyebrow">${topics.length ? `${topics.length} topic${topics.length === 1 ? '' : 's'}` : 'Briefings'}</div><h1>Signals</h1>
 <p class="lede">Short briefings on what is being said online, drawn from X, news and blog feeds, YouTube and Hacker News, and kept up to date.${listTotal(ctx) ? ` <a href="/lists">Browse the ${listTotal(ctx)} lists they draw from &rarr;</a>` : ''}</p></header>
+${strip?.topics.length ? stripHtml(strip, 'Talked about now') : ''}
 ${cards ? `<ul class="topics">${cards}</ul>` : ctx.reports.length ? '' : '<p class="lede">Nothing published yet.</p>'}
 ${ctx.reports.length ? `<h2 class="sect">Reports</h2><ul class="topics">${reportCards(ctx.reports)}</ul>` : ''}`,
   { description: 'Short briefings on what is being said online, from X, feeds, YouTube and Hacker News, kept up to date.' });
 }
 
+
+/** A row of Signal topics linking to their pages, with what is new or rising marked. */
+function stripHtml(st: SigStrip, title: string): string {
+  return `<section class="sgstrip" aria-label="${esc(title)}"><h2><span>${esc(title)}</span> <a href="/signal/${esc(st.slug)}">${esc(st.title)} in Signal &rarr;</a></h2><div>${st.topics.map((t) => `<a href="/signal/${esc(st.slug)}/t/${encodeURIComponent(t.term)}">${esc(t.label)}${t.isNew ? ' <small class="up">new</small>' : t.change !== null && t.change >= 1.5 ? ` <small class="up">&uarr;</small>` : ''}</a>`).join('')}</div></section>`;
+}
 
 // ---- Signal: what the watched sources are talking about, combined. Counted automatically (no AI), from the groups marked public in the admin.
 const SIG_COLORS = ['#1f7a8c', '#e3a008', '#7c5cbf', '#c2410c', '#2f9e6b', '#d6336c', '#4263eb', '#868e96'];
@@ -211,7 +222,7 @@ const kfmt = (v: number) => (v >= 10000 ? Math.round(v / 1000) + 'k' : v >= 1000
 const topicHref = (slug: string, term: string, days: number) => `/signal/${esc(slug)}/t/${encodeURIComponent(term)}${days === 7 ? '' : '/' + days}`;
 
 /** One topic of a published Signal: its numbers, where it shows up, how it moved, what goes with it and, if the Signal shows sources, the items behind it. */
-export function signalTopicHtml(d: PubTopicPage, ctx: Ctx): string {
+export function signalTopicHtml(d: PubTopicPage, ctx: Ctx, mentions: Mention[] = []): string {
   const win = [[1, 'Today'], [3, '3 days'], [7, '7 days'], [14, '14 days']].map(([k, label]) => `<a href="${topicHref(d.slug, d.term, k as number)}"${d.days === k ? ' aria-current="page"' : ''}>${label}</a>`).join('');
   const perDay = d.days_.map((_, i) => d.groups.reduce((n, g) => n + (g.perDay[i] ?? 0), 0)), peak = Math.max(1, ...perDay);
   const chart = `<div class="act stack" role="img" aria-label="Items mentioning it per day, by group">${d.days_.map((day, i) => `<div style="height:${perDay[i] ? Math.max(4, (100 * perDay[i]) / peak) : 0}%" title="${esc(day)}: ${perDay[i]} item${perDay[i] === 1 ? '' : 's'}">${d.groups.map((g, j) => `<i style="flex:${g.perDay[i] ?? 0};background:${sigColor(j)}"></i>`).join('')}</div>`).join('')}</div><div class="axis"><span>${esc(d.days_[0])}</span><span>${esc(d.days_[d.days_.length - 1])}</span></div>`;
@@ -226,6 +237,7 @@ ${i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_b
 <div class="stats">${tile(sigPct(d.signal), 'score')}${tile(change, d.baselineOk ? 'against the period before' : 'earlier data too thin to compare')}${tile(d.kind === 'shared' ? 'everywhere' : d.kind === 'single' ? 'one group' : 'mixed', `${d.breadth} of ${d.active} group${d.active === 1 ? '' : 's'}`)}${d.reactions ? tile('&#9650; ' + kfmt(d.reactions), 'reactions to the items') : ''}</div>
 <h2 class="sect">Day by day</h2><section class="panel">${chart}</section>
 <h2 class="sect">Where it shows up</h2><section class="panel"><ul class="sglist">${where}</ul></section>
+${mentions.length ? `<h2 class="sect">In the briefings</h2><ul class="sglist">${mentions.map((m) => `<li><a href="/${esc(m.slug)}/${esc(m.id)}">${esc(m.title)}</a><small>${date(m.publishedAt)}</small></li>`).join('')}</ul>` : ''}
 ${d.related.length ? `<h2 class="sect">Goes with</h2><p class="meta">${d.related.map((r) => `<a href="${topicHref(d.slug, r, d.days)}">${esc(r)}</a>`).join(' &middot; ')}</p>` : ''}
 ${d.proof ? `<h2 class="sect">Items${d.total && d.total > (d.items?.length ?? 0) ? ` <small class="dim">the newest ${d.items?.length} of ${n(d.total)}</small>` : ''}</h2>
 ${d.sources?.length ? `<p class="meta">${d.sources.map((x) => `${esc(x.label)} <small>${n(x.n)}</small>`).join(' &middot; ')}</p>` : ''}
@@ -303,7 +315,8 @@ export function signalPageHtml(d: PubSignal, ctx: Ctx, q: { sort: SigSort; group
     const total = d.groups.reduce((n, g) => n + (g.perDay[i] ?? 0), 0);
     return `<div style="height:${total ? Math.max(3, (100 * total) / peak) : 0}%" title="${esc(day)}: ${n(total)} items">${d.groups.map((g, j) => `<i style="flex:${g.perDay[i] ?? 0};background:${sigColor(j)}"></i>`).join('')}</div>`;
   }).join('')}</div><div class="axis"><span>${esc(d.volumeDays[0])}</span><span>${esc(d.volumeDays[d.volumeDays.length - 1])}</span></div>`;
-  const win = [[1, 'Today'], [3, '3 days'], [7, '7 days'], [14, '14 days']].map(([k, label]) => `<a href="/signal/${esc(d.slug)}${k === 7 ? '' : '/' + k}"${d.days === k ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+  const keep = [q.sort !== 'strength' ? 'sort=' + q.sort : '', q.group >= 0 ? 'group=' + q.group : ''].filter(Boolean).join('&amp;');   // the window keeps the sort and the group
+  const win = [[1, 'Today'], [3, '3 days'], [7, '7 days'], [14, '14 days']].map(([k, label]) => `<a href="/signal/${esc(d.slug)}${k === 7 ? '' : '/' + k}${keep ? '?' + keep : ''}"${d.days === k ? ' aria-current="page"' : ''}>${label}</a>`).join('');
   return shell(`${d.title} · Signal · Signals`, rail(ctx, undefined, 'signal', d.slug), `<header class="pagehead"><div class="eyebrow">${esc(d.from)}${d.from === d.to ? '' : ' to ' + esc(d.to)}</div><h1>${esc(d.title)}</h1>
 <p class="lede">${d.description ? esc(d.description) + ' ' : ''}What is being talked about across ${d.groups.length === 1 ? 'one group of sources' : `${d.groups.length} groups of sources`}, combined into one score, and where each topic shows up.</p></header>
 <nav class="sgwin" aria-label="Period">${win}</nav>
@@ -467,11 +480,11 @@ export const listenHtml = (slug: string, i: IssueFull): string => i.audio
 
 const span = (h: number) => (h >= 48 ? Math.round(h / 24) + ' days' : h + ' hours');
 
-export function issueHtml(p: PubPage, origin: string, ctx: Ctx): string {
+export function issueHtml(p: PubPage, origin: string, ctx: Ctx, strip?: SigStrip): string {
   const { topic, issue, archive } = p;
   const isLatest = archive[0]?.id === issue.id;
   return topicPage(topic, isLatest ? 'latest' : 'issue', Math.max(0, archive.length - 1), `<p class="meta">${stamp(issue.publishedAt)} · based on ${issue.tweets} ${unit(issue)} from the last ${span(issue.windowHours)}${isLatest ? '' : ` · <a href="/${esc(topic.slug)}">see the latest</a>`}</p>
-${imageHtml(topic.slug, issue)}${listenHtml(topic.slug, issue)}<article>${markdown(issue.markdown, issue.links)}</article>${sourcesHtml(issue)}${NOTE}`,
+${imageHtml(topic.slug, issue)}${listenHtml(topic.slug, issue)}<article>${markdown(issue.markdown, issue.links)}</article>${strip?.topics.length ? stripHtml(strip, 'In Signal') : ''}${sourcesHtml(issue)}${NOTE}`,
     { title: `${topic.title} · ${date(issue.publishedAt)}`, description: issue.tldr.replace(/\*\*/g, '') || topic.description, canonical: `${origin}/${topic.slug}/${issue.id}`, ...(issue.image ? { image: `${origin}/image/${topic.slug}/${issue.id}.jpg?v=${issue.image.v}` } : {}) }, ctx);
 }
 
@@ -529,6 +542,19 @@ const PUBLIC_HEADERS = {
 
 const publish = (env: Env, path: string) => env.PUBLISH.getByName('main').fetch(new Request('https://internal' + path));
 
+/** The top topics of the first published Signal (or only those a text mentions), for a strip on another page. Never fails the page. */
+async function signalStrip(env: Env, ctx: Ctx, n: number, text?: string): Promise<SigStrip | undefined> {
+  const b = ctx.boards[0]; if (!b) return undefined;
+  try {
+    const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public?slug=${b.slug}&days=7`));
+    const d = (await r.json()) as PubSignal;
+    if (!r.ok || !d?.top) return undefined;
+    const low = text?.toLowerCase(), says = (t: PubSigTerm) => [t.label, t.term, ...t.members].some((x) => x.length >= 3 && new RegExp(`(^|[^\\p{L}\\p{N}])${x.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u').test(low!));
+    const topics = (low ? d.top.filter(says) : d.top).slice(0, n).map((t) => ({ term: t.term, label: t.label, isNew: t.isNew, change: t.change }));
+    return { slug: b.slug, title: b.title, topics };
+  } catch { return undefined; }
+}
+
 async function render(env: Env, url: URL): Promise<Response> {
   const parts = url.pathname.split('/').filter(Boolean);
   const html = (body: string, status = 200) => new Response(body, { status, headers: { ...PUBLIC_HEADERS, ...(status === 200 ? { 'cache-control': 'public, max-age=60' } : NO_STORE) } });
@@ -543,10 +569,13 @@ async function render(env: Env, url: URL): Promise<Response> {
   const ctx: Ctx = { topics, lists, alists, flists, reports, boards };
   const missing = () => html(notFoundHtml(ctx), 404);
 
-  if (parts.length === 0) return html(landingHtml(ctx));
+  if (parts.length === 0) return html(landingHtml(ctx, await signalStrip(env, ctx, 8)));
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
   if (parts[0] === 'signal') {
     if (parts.length === 1) return ctx.boards.length ? html(signalIndexHtml(ctx)) : missing();
+    // An address a Signal had before: send readers (and old links) to where it is now.
+    const moved = !ctx.boards.some((b) => b.slug === parts[1]) && ctx.boards.find((b) => b.aliases?.includes(parts[1]));
+    if (moved) return new Response(null, { status: 301, headers: { location: ['/signal', moved.slug, ...parts.slice(2)].map((x) => x.replace(/[^\w\-/%.~]/g, encodeURIComponent)).join('/') + url.search, 'cache-control': 'public, max-age=3600' } });
     if (parts[1] === 'method' && parts.length === 2) return html(signalMethodHtml(ctx));
     if (parts[2] === 't') {   // /signal/<slug>/t/<term>[/<days>]: one topic of a published Signal
       const days = parts.length === 4 ? 7 : Number(parts[4]);
@@ -554,7 +583,10 @@ async function render(env: Env, url: URL): Promise<Response> {
       if (parts.length < 4 || parts.length > 5 || !SLUG.test(parts[1]) || ![1, 3, 7, 14].includes(days) || !term || term.length > 80 || !ctx.boards.some((b) => b.slug === parts[1])) return missing();
       const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public-topic?slug=${parts[1]}&days=${days}&term=${encodeURIComponent(term)}`));
       const d = (await r.json().catch(() => null)) as PubTopicPage | null;
-      return r.ok && d?.groups?.length ? html(signalTopicHtml(d, ctx)) : missing();
+      if (!r.ok || !d?.groups?.length) return missing();
+      const names = [d.label, d.term, ...d.members].filter((x, i, a) => a.indexOf(x) === i).join('|');
+      const mentions = await publish(env, `/pub/mentions?q=${encodeURIComponent(names)}`).then((x) => (x.ok ? (x.json() as Promise<Mention[]>) : [])).catch(() => [] as Mention[]);
+      return html(signalTopicHtml(d, ctx, mentions));
     }
     const days = parts.length === 2 ? 7 : Number(parts[2]);
     if (parts.length > 3 || !SLUG.test(parts[1]) || ![1, 3, 7, 14].includes(days) || !ctx.boards.some((b) => b.slug === parts[1])) return missing();
@@ -586,7 +618,8 @@ async function render(env: Env, url: URL): Promise<Response> {
   }
   const res = await publish(env, parts[1] ? `/pub/issue?slug=${parts[0]}&id=${parts[1]}` : `/pub/topic?slug=${parts[0]}`);
   if (!res.ok) { await res.body?.cancel(); return missing(); }
-  return html(issueHtml((await res.json()) as PubPage, url.origin, ctx));
+  const page = (await res.json()) as PubPage;
+  return html(issueHtml(page, url.origin, ctx, await signalStrip(env, ctx, 8, page.issue.markdown)));
 }
 
 export async function handlePublic(request: Request, env: Env, url: URL): Promise<Response> {

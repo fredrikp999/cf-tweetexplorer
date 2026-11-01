@@ -11,7 +11,8 @@ import { isYoutubeFeed, resolveYoutubeFeed } from '../sources/youtube';
 import { isSource, toFeedShape, type FetchResult, type SourceKind } from '../sources/types';
 import { extractTerms } from '../signal/terms';
 import { distinctive, findEvergreen, notSteady, rising, scoreTerms, type Counts, type GroupInfo, type ScoredTerm } from '../signal/score';
-import { boostByEngagement, indexItems, mergeTopics, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
+import { boostByEngagement, indexItems, mergeTopics, REACTION_CAP, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
+import { cleanTitle, isBait } from '../signal/clean';
 import { AI_BATCH, VAGUE, estimatePer1000, parseTopics, topicSystem, topicUser } from '../signal/ai';
 import { DEFAULT_FILTER, cleanFilter, makeBlocker, type FilterWord } from '../signal/filter';
 import { GENERIC } from '../signal/terms';
@@ -55,16 +56,25 @@ interface Spend { day: string; cost: number }
 
 const today = () => new Date().toISOString().slice(0, 10); // UTC day
 /** A top-level Signal: a named set of groups, with its own page when published (/signal/<slug>). */
-interface Board { id: string; slug: string; title: string; description: string; groups: string[]; public: boolean; /** The public page may show the items behind each topic, with their sources. */ proof?: boolean }
+interface Board { id: string; slug: string; title: string; description: string; groups: string[]; public: boolean; /** Addresses it had before: they redirect to the current one. */ oldSlugs?: string[]; /** The public page may show the items behind each topic, with their sources. */ proof?: boolean }
 const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/, BOARD_RESERVED = new Set(['admin', 'custom', 'method']);
 const slugify = (t: string) => t.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
 /** How much people reacted to an item: likes (HN points, stars and upvotes arrive as likes), plus replies, retweets and quotes counted double. */
 const reactionsOf = (j: unknown): number => { const x = j as { likeCount?: number; replyCount?: number; retweetCount?: number; quoteCount?: number }; return Math.max(0, Math.round((Number(x.likeCount) || 0) + 2 * ((Number(x.replyCount) || 0) + (Number(x.retweetCount) || 0) + (Number(x.quoteCount) || 0)))); };
 const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+/** Merged and renamed topics from the browser: lowercase names of at most 80 characters, chains followed to their end, no name pointing at itself. */
+function cleanAliases(raw: unknown): Record<string, string> {
+  const name = (v: unknown) => String(v ?? '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 80);
+  const map: Record<string, string> = {};
+  if (raw && typeof raw === 'object') for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, 500)) { const a = name(k), b = name(v); if (a && b && a !== b) map[a] = b; }
+  for (const k of Object.keys(map)) { let t = map[k]; for (let i = 0; i < 10 && map[t] && map[t] !== k; i++) t = map[t]; if (t === k) delete map[k]; else map[k] = t; }
+  return map;
+}
 const cleanGroup = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
 
 export class MonitorDO extends DurableObject<Env> {
   private running = new Set<string>();
+  private pubCache = new Map<string, { at: number; v: unknown }>();   // public Signal answers, cleared by any change
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -285,10 +295,11 @@ export class MonitorDO extends DurableObject<Env> {
     for (const f of items) {
       const ts = Number.isFinite(f.ts) ? Math.min(f.ts, now) : now;
       if (ts < floor) continue;
+      const j = f.json as { text?: unknown; title?: unknown; source?: unknown };
+      if (isBait(`${j.title ?? ''} ${j.text ?? ''}`)) continue;   // giveaways and "like and reply to win": not counted at all
       const day = dayOf(ts);
       days.set(day, (days.get(day) ?? 0) + 1);
       this.logItem(watch, f, ts, day);
-      const j = f.json as { text?: unknown; title?: unknown; source?: unknown };
       // A video's description is mostly the channel's footer (links, sponsors, "join the Discord"), so only its title says what it is about.
       for (const t of extractTerms(String(j.source === 'youtube' && j.title ? j.title : j.text ?? ''))) terms.set(`${day}\n${t}`, (terms.get(`${day}\n${t}`) ?? 0) + 1);
     }
@@ -306,7 +317,7 @@ export class MonitorDO extends DurableObject<Env> {
     const safe = (u: unknown) => (/^https:\/\//.test(String(u ?? '')) ? String(u).slice(0, 400) : '');
     const url = safe(j.url) || (x && /^\d+$/.test(id) ? `https://x.com/${user || 'i'}/status/${id}` : '');
     this.ctx.storage.sql.exec('INSERT OR IGNORE INTO item_log (watch, item, day, ts, title, url, disc, by, match, eng) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', watch, id, day, ts,
-      (x ? text : String(j.title ?? '') || text.split('\n')[0]).replace(/\s+/g, ' ').slice(0, 200), url, safe(j.discussionUrl), (x ? '@' : '') + user.slice(0, 60),
+      cleanTitle(x ? text : String(j.title ?? '') || text.split('\n')[0], 200), url, safe(j.discussionUrl), (x ? '@' : '') + user.slice(0, 60),
       String(j.source === 'youtube' && j.title ? j.title : text).slice(0, 600), reactionsOf(f.json));
   }
   /** Once: log what the live feed already holds. */
@@ -406,12 +417,13 @@ export class MonitorDO extends DurableObject<Env> {
       `SELECT term, watch, SUM(n) AS n FROM ${T.terms} WHERE day >= ?1 AND day <= ?2 AND term IN
          (SELECT term FROM ${T.terms} WHERE day >= ?3 AND day <= ?4 GROUP BY term HAVING SUM(n) >= 2 ORDER BY SUM(n) DESC LIMIT 3000)
        GROUP BY term, watch`, from, to, candFrom, candTo);
+    const alias = this.aliasFn();
     for (const r of rows) {
-      const g = of.get(r.watch);
-      if (!g || !allow.has(g) || boiler.has(`${r.watch}\n${r.term}`) || blocked(r.term)) continue;
-      const c = counts.get(r.term) ?? counts.set(r.term, {}).get(r.term)!;
+      const g = of.get(r.watch), term = alias(r.term);
+      if (!g || !allow.has(g) || boiler.has(`${r.watch}\n${r.term}`) || blocked(term)) continue;
+      const c = counts.get(term) ?? counts.set(term, {}).get(term)!;
       c[g] = (c[g] ?? 0) + r.n;
-      (seen.get(r.term) ?? seen.set(r.term, new Set()).get(r.term)!).add(r.watch);
+      (seen.get(term) ?? seen.set(term, new Set()).get(term)!).add(r.watch);
     }
     // A term heard from one source only is not corroborated, unless that source is the only one its group has: then there is no one to ask.
     const heard = (w: Set<string>) => (w.size === 1 && (perGroup.get(of.get([...w][0]) ?? '') ?? 0) <= 1 ? 2 : w.size);
@@ -421,10 +433,10 @@ export class MonitorDO extends DurableObject<Env> {
   private evergreen(candFrom: string, candTo: string): Set<string> {
     const sql = this.ctx.storage.sql, T = this.tables(), keepFrom = dayOf(Date.now() - SIGNAL_KEEP_DAYS * 86_400_000);
     const withData = sql.exec<{ n: number }>(`SELECT COUNT(DISTINCT day) AS n FROM ${T.items} WHERE day >= ?`, keepFrom).one().n;
-    const present = new Map<string, number>();
+    const present = new Map<string, number>(), alias = this.aliasFn();
     for (const r of sql.exec<{ term: string; d: number }>(
       `SELECT term, COUNT(DISTINCT day) AS d FROM ${T.terms} WHERE day >= ?1 AND term IN
-         (SELECT term FROM ${T.terms} WHERE day >= ?2 AND day <= ?3 GROUP BY term HAVING SUM(n) >= 2 ORDER BY SUM(n) DESC LIMIT 3000) GROUP BY term`, keepFrom, candFrom, candTo)) present.set(r.term, r.d);
+         (SELECT term FROM ${T.terms} WHERE day >= ?2 AND day <= ?3 GROUP BY term HAVING SUM(n) >= 2 ORDER BY SUM(n) DESC LIMIT 3000) GROUP BY term`, keepFrom, candFrom, candTo)) { const t = alias(r.term); present.set(t, Math.max(present.get(t) ?? 0, r.d)); }
     return findEvergreen(present, withData);
   }
   private async compute(daysIn: number, only?: Set<string>) {
@@ -462,8 +474,13 @@ export class MonitorDO extends DurableObject<Env> {
     this.setMeta('signalFilter', DEFAULT_FILTER);   // a new setup starts with "ai" on the list, and it can be taken off
     return DEFAULT_FILTER;
   }
+  /** Topic names you merged or renamed: old name -> the name it is counted under. Applied when reading, so it also covers what was counted before. */
+  private aliases(): Record<string, string> { return this.getMeta<Record<string, string>>('signalAliases', {}); }
+  private aliasFn(): (t: string) => string { const a = this.aliases(); return (t) => a[t] ?? t; }
+  /** A topic and every name that is counted under it. */
+  private namesOf(term: string): string[] { const a = this.aliases(); return [term, ...Object.keys(a).filter((k) => a[k] === term)]; }
   private filterInfo() {
-    return { words: this.filterWords(), builtIn: { generic: [...GENERIC].filter(Boolean).sort(), vague: [...VAGUE].sort(), stopCount: STOP.size } };
+    return { words: this.filterWords(), aliases: this.aliases(), builtIn: { generic: [...GENERIC].filter(Boolean).sort(), vague: [...VAGUE].sort(), stopCount: STOP.size } };
   }
 
   // ---- Signal topics written by a model (optional; the setting is on the Signal tab)
@@ -481,7 +498,7 @@ export class MonitorDO extends DurableObject<Env> {
   }
   /** The topic names already in use over the last two weeks, most mentioned first: the model is told to reuse them, so one thing keeps one name. */
   private knownTopics(): string[] {
-    return this.ctx.storage.sql.exec<{ term: string }>('SELECT term FROM ai_terms WHERE day >= ? GROUP BY term ORDER BY SUM(n) DESC LIMIT 60', dayOf(Date.now() - AI_BACKLOG_DAYS * 86_400_000)).toArray().map((r) => r.term);
+    return this.ctx.storage.sql.exec<{ term: string }>('SELECT term FROM ai_terms WHERE day >= ? GROUP BY term ORDER BY SUM(n) DESC LIMIT 80', dayOf(Date.now() - AI_BACKLOG_DAYS * 86_400_000)).toArray().map((r) => this.aliasFn()(r.term)).filter((t, i, a) => a.indexOf(t) === i).slice(0, 60);
   }
   private aiSpend(): { day: string; cost: number } {
     const s = this.getMeta<{ day: string; cost: number }>('aiSpend', { day: today(), cost: 0 });
@@ -514,6 +531,7 @@ export class MonitorDO extends DurableObject<Env> {
       const ts = Number.isFinite(f.ts) ? Math.min(f.ts, now) : now;
       if (ts < floor || !f.id) continue;
       const j = f.json as { text?: unknown; title?: unknown; source?: unknown };
+      if (isBait(`${j.title ?? ''} ${j.text ?? ''}`)) continue;
       sql.exec('INSERT OR IGNORE INTO ai_queue (watch, item, day, text) VALUES (?, ?, ?, ?)', watch, String(f.id), dayOf(ts), String(j.source === 'youtube' && j.title ? j.title : j.text ?? '').slice(0, 600));
     }
     sql.exec('DELETE FROM ai_queue WHERE seq <= (SELECT MAX(seq) FROM ai_queue) - ?', AI_QUEUE_MAX);
@@ -582,7 +600,7 @@ export class MonitorDO extends DurableObject<Env> {
   /** The items of the live feed that fall in the window and belong to the counted groups: what they were counted under, and what to show for them. */
   private windowItems(of: Map<string, string>, allow: Set<string>, from: string, to: string) {
     const fromMs = Date.parse(from + 'T00:00:00Z'), toMs = Date.parse(to + 'T00:00:00Z') + 86_400_000;
-    const items: TopicItem[] = [], meta: Array<{ title: string; url: string; by: string; group: string; ts: number }> = [], ai = this.aiTopics(from), blocked = makeBlocker(this.filterWords());
+    const items: TopicItem[] = [], meta: Array<{ title: string; url: string; by: string; group: string; ts: number }> = [], ai = this.aiTopics(from), blocked = makeBlocker(this.filterWords()), alias = this.aliasFn();
     for (const r of this.ctx.storage.sql.exec<{ watch: string; label: string; seen_at: number; json: string; source: string }>('SELECT watch, label, seen_at, json, source FROM feed ORDER BY seq DESC LIMIT 2500')) {
       const g = of.get(r.watch);
       if (!g || !allow.has(g)) continue;
@@ -590,10 +608,11 @@ export class MonitorDO extends DurableObject<Env> {
       const ts = Date.parse(j.createdAt ?? '') || r.seen_at;
       if (ts < fromMs || ts >= toMs) continue;
       const text = String(j.text ?? ''), x = r.source === 'x';
+      if (isBait(`${j.title ?? ''} ${text}`)) continue;
       const eng = reactionsOf(j);
-      items.push({ ts, eng, terms: new Set((ai ? ai.get(`${r.watch}\n${j.id}`) ?? [] : extractTerms(r.source === 'youtube' && j.title ? j.title : text)).filter((t) => !blocked(t))) });
+      items.push({ ts, eng, terms: new Set((ai ? ai.get(`${r.watch}\n${j.id}`) ?? [] : extractTerms(r.source === 'youtube' && j.title ? j.title : text)).map(alias).filter((t) => !blocked(t))) });
       const url = /^https:\/\//.test(j.url ?? '') ? j.url! : x && /^\d+$/.test(j.id ?? '') ? `https://x.com/${j.author?.userName ?? 'i'}/status/${j.id}` : '';
-      meta.push({ title: (x ? text : j.title || text.split('\n')[0]).replace(/\s+/g, ' ').slice(0, 160), url, by: x ? '@' + (j.author?.userName ?? '') : j.feed || r.label, group: g, ts });
+      meta.push({ title: cleanTitle(x ? text : j.title || text.split('\n')[0]), url, by: x ? '@' + (j.author?.userName ?? '') : j.feed || r.label, group: g, ts });
     }
     return { items, meta };
   }
@@ -603,7 +622,7 @@ export class MonitorDO extends DurableObject<Env> {
     const describe = (t: ScoredTerm, label?: string, members: string[] = [t.term]) => ({ ...t, label: label ?? t.term, members: members.filter((m) => m !== t.term),
       related: relatedTerms(members, items, post), reactions: topicEngagement(members, items, post), headlines: topicItems(members, items, post, 2).map((i) => ({ ...meta[i], reactions: items[i].eng ?? 0 })) });
     const clusters = mergeTopics(pool.slice(0, 60), post, nTop);
-    const ordered = boostByEngagement(clusters, clusters.map((cl) => topicEngagement(cl.members.map((m) => m.term), items, post)));
+    const ordered = boostByEngagement(clusters, clusters.map((cl) => topicEngagement(cl.members.map((m) => m.term), items, post, REACTION_CAP)));
     return { top: ordered.map((cl) => describe(cl.lead, cl.label, cl.members.map((m) => m.term))), describe };
   }
   private async signalOverview(daysIn: number, boardRef = '', hideSteady = true) {
@@ -651,12 +670,14 @@ export class MonitorDO extends DurableObject<Env> {
     if (BOARD_RESERVED.has(slug) || slug.startsWith('admin') || slug.startsWith('custom')) throw new Error('that address is reserved');
     if (this.boards().some((b) => b.slug === slug && b.id !== prev?.id)) throw new Error('another Signal already has that address');
     const groups = [...new Set((Array.isArray(raw.groups) ? raw.groups : []).map((g) => String(g).slice(0, 80)).filter(Boolean))].slice(0, 40);
-    return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), slug, title, description: String(raw.description ?? '').trim().slice(0, 300), groups, public: raw.public === true, proof: raw.proof === true };
+    const oldSlugs = [...new Set([...(prev && prev.slug !== slug ? [prev.slug] : []), ...(prev?.oldSlugs ?? [])])].filter((x) => x !== slug).slice(0, 10);
+    return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), slug, title, description: String(raw.description ?? '').trim().slice(0, 300), groups, public: raw.public === true, proof: raw.proof === true, ...(oldSlugs.length ? { oldSlugs } : {}) };
   }
   /** The published Signals, for the public rail and index: names only, and only groups that count. */
   private async publicBoards() {
     const live = new Map((await this.groups()).groups.filter((g) => g.weight > 0).map((g) => [g.key, g.name] as const));
-    return this.boards().filter((b) => b.public).map((b) => ({ slug: b.slug, title: b.title, description: b.description, proof: b.proof === true, groups: b.groups.map((k) => live.get(k)).filter((n): n is string => !!n) })).filter((b) => b.groups.length);
+    // The first Signal was made at /signal/overview by a migration, before old addresses were remembered: that one is known here.
+    return this.boards().filter((b) => b.public).map((b) => ({ slug: b.slug, aliases: [...(b.oldSlugs ?? []), ...(b.id === 'main' && b.slug !== 'overview' ? ['overview'] : [])], title: b.title, description: b.description, proof: b.proof === true, groups: b.groups.map((k) => live.get(k)).filter((n): n is string => !!n) })).filter((b) => b.groups.length);
   }
   /** What the public page may see: group names, weights and counts, and terms. No watch names, addresses, handles or items. */
   private async signalPublic(slug: string, daysIn: number) {
@@ -684,15 +705,15 @@ export class MonitorDO extends DurableObject<Env> {
   private async signalTerm(term: string) {
     const { of, groups } = await this.groups(), { days, by } = this.volume(of, groups);
     const docs: Record<string, number[]> = Object.fromEntries(groups.map((g) => [g.key, days.map(() => 0)]));
-    for (const r of this.ctx.storage.sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${this.tables().terms} WHERE term = ? AND day >= ?`, term, days[0])) {
+    for (const r of this.ctx.storage.sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${this.tables().terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify(this.namesOf(term)), days[0])) {
       const g = of.get(r.watch), i = days.indexOf(r.day);
       if (g && i >= 0) docs[g][i] += r.n;
     }
     // A few recent items that mention it. The feed holds the latest items only, so older mentions are counted but not shown.
-    const samples: unknown[] = [], ai = this.aiTopics(days[0]);
+    const samples: unknown[] = [], ai = this.aiTopics(days[0]), aliasT = this.aliasFn();
     for (const r of this.ctx.storage.sql.exec<{ watch: string; label: string; seen_at: number; json: string; source: string }>('SELECT watch, label, seen_at, json, source FROM feed ORDER BY seq DESC LIMIT 2000')) {
       const tweet = JSON.parse(r.json) as { id?: string; text?: string; feed?: string; feedUrl?: string };
-      if (!(ai ? ai.get(`${r.watch}\n${tweet.id}`)?.includes(term) : extractTerms(String(tweet.text ?? '')).includes(term))) continue;
+      if (!(ai ? ai.get(`${r.watch}\n${tweet.id}`) ?? [] : extractTerms(String(tweet.text ?? ''))).some((t) => aliasT(t) === term)) continue;
       if (r.source !== 'x') tweet.feed ??= r.label;
       samples.push({ watchId: r.watch, group: of.get(r.watch) ?? '', label: r.label, seenAt: r.seen_at, source: r.source, tweet });
       if (samples.length >= 12) break;
@@ -708,14 +729,14 @@ export class MonitorDO extends DurableObject<Env> {
     const from = dayOf(now - (days - 1) * 86_400_000), to = dayOf(now);
     const { of, groups } = await this.groups(), names = new Map(groups.map((g) => [g.key, g.name] as const));
     const labels = new Map(this.watches().map((w) => [w.id, w.label] as const)), ai = this.aiTopics(from);
-    const want = new Set(q.terms.map((t) => t.toLowerCase().trim()).filter(Boolean));
+    const alias = this.aliasFn(), want = new Set(q.terms.map((t) => alias(t.toLowerCase().trim())).filter(Boolean));
     if (!want.size) throw new Error('term required');
     const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number }>(
       'SELECT watch, item, ts, title, url, disc, by, match, eng FROM item_log WHERE day >= ? AND day <= ? ORDER BY ts DESC LIMIT 8000', from, to).toArray();
     const hits: Array<{ watch: string; group: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number; matched: string[] }> = [];
     for (const r of rows) {
       const g = of.get(r.watch); if (!g || (q.only && !q.only.has(g))) continue;
-      const have = ai ? new Set(ai.get(`${r.watch}\n${r.item}`) ?? []) : new Set(extractTerms(r.match));
+      const have = new Set((ai ? ai.get(`${r.watch}\n${r.item}`) ?? [] : extractTerms(r.match)).map(alias));
       const matched = [...want].filter((t) => have.has(t));
       if (matched.length) hits.push({ watch: r.watch, group: g, ts: r.ts, title: r.title, url: r.url, disc: r.disc, by: r.by, match: r.match, eng: r.eng, matched });
     }
@@ -727,7 +748,7 @@ export class MonitorDO extends DurableObject<Env> {
       terms: [...want], from, to, total: hits.length, shown: shown.length, truncated: rows.length >= 8000,
       groups: [...byGroup].map(([key, n]) => ({ key, name: names.get(key) ?? key, n })).sort((a, b) => b.n - a.n),
       sources: [...byWatch].map(([watch, n]) => ({ watch, label: labels.get(watch) ?? watch, group: of.get(watch) ?? '', n })).sort((a, b) => b.n - a.n).slice(0, 30),
-      items: shown.slice(offset, offset + limit).map((h) => ({ watch: h.watch, label: labels.get(h.watch) ?? h.watch, group: h.group, ts: h.ts, title: h.title, url: h.url, discussionUrl: h.disc, by: h.by, reactions: h.eng, matched: h.matched,
+      items: shown.slice(offset, offset + limit).map((h) => ({ watch: h.watch, label: labels.get(h.watch) ?? h.watch, group: h.group, ts: h.ts, title: cleanTitle(h.title, 200), url: h.url, discussionUrl: h.disc, by: h.by, reactions: h.eng, matched: h.matched,
         snippet: h.match.replace(/\s+/g, ' ').trim() === h.title ? '' : h.match.replace(/\s+/g, ' ').slice(0, 260) })),
       more: offset + limit < shown.length,
     };
@@ -763,7 +784,7 @@ export class MonitorDO extends DurableObject<Env> {
     const T = this.tables(), sql = this.ctx.storage.sql, days: string[] = [];
     for (let ms = Date.parse(c.from + 'T00:00:00Z'); ms <= Date.parse(c.to + 'T00:00:00Z'); ms += 86_400_000) days.push(dayOf(ms));
     const gi = new Map(shown.map((g, i) => [g.key, i] as const)), docs = shown.map(() => days.map(() => 0)), items = shown.map(() => days.map(() => 0));
-    for (const r of sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${T.terms} WHERE term = ? AND day >= ? AND day <= ?`, topic.term, c.from, c.to)) {
+    for (const r of sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${T.terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ? AND day <= ?`, JSON.stringify(this.namesOf(topic.term)), c.from, c.to)) {
       const g = gi.get(c.of.get(r.watch) ?? ''), d = days.indexOf(r.day); if (g !== undefined && d >= 0) docs[g][d] += r.n;
     }
     for (const r of sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${T.items} WHERE day >= ? AND day <= ?`, c.from, c.to)) {
@@ -835,7 +856,13 @@ export class MonitorDO extends DurableObject<Env> {
           if (!term) throw new Error('term required');
           return json(await this.signalTerm(term));
         }
-        if (name === 'signal-public') return json(await this.signalPublic(url.searchParams.get('slug') ?? '', Number(url.searchParams.get('days'))));
+        if (name === 'signal-public') {   // read by every public page that shows Signal topics: kept for two minutes
+          const k = `${url.searchParams.get('slug')}|${url.searchParams.get('days')}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = await this.signalPublic(url.searchParams.get('slug') ?? '', Number(url.searchParams.get('days')));
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
         if (name === 'signal-ai') return json(this.aiStatus());
         if (name === 'signal-filter') return json(this.filterInfo());
         if (name === 'signal-public-items') {
@@ -856,6 +883,7 @@ export class MonitorDO extends DurableObject<Env> {
       }
       if (request.method !== 'POST') return json({ error: 'GET or POST required' }, 405);
       const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      this.pubCache.clear();
 
       if (name === 'add') {
         if (this.watches().length >= MAX_WATCHES) throw new Error(`at most ${MAX_WATCHES} watches`);
@@ -912,6 +940,10 @@ export class MonitorDO extends DurableObject<Env> {
         if (!key || !Number.isFinite(weight)) throw new Error('key and weight required');
         this.setMeta('signalWeights', { ...this.getMeta<Record<string, number>>('signalWeights', {}), [key]: weight });
         return json({ ok: true });
+      }
+      if (name === 'signal-alias-set') {   // merged and renamed topics, as the whole map old name -> new name
+        this.setMeta('signalAliases', cleanAliases(b.aliases));
+        return json(this.filterInfo());
       }
       if (name === 'signal-filter-set') {   // the whole list of words to leave out
         this.setMeta('signalFilter', cleanFilter(b.words));

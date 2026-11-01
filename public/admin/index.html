@@ -356,6 +356,8 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 
 /* ----- signal ----- */
 
+.ovlist { list-style: none; margin: 0; padding: 0; } .ovlist li { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; padding: 8px 0 8px 12px; border-top: 1px solid var(--line); border-left: 3px solid var(--line); }
+.ovlist li:first-child { border-top: 0; } .ovlist li.bad { border-left-color: var(--err); } .ovlist li.warn { border-left-color: #e3a008; } .ovlist li a { white-space: nowrap; }
 .sigflow { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 18px; }
 .sigflow a { display: block; text-decoration: none; color: inherit; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--card); }
 .sigflow a b { display: block; font-size: 22px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; } .sigflow a span { display: block; color: var(--muted); font-size: 13px; } .sigflow a.warn { border-color: var(--err); }
@@ -417,8 +419,9 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
 <aside class="rail">
   <div class="brand"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c9265f"/><polyline pathLength="1" points="5,17 11,17 14,8 18,24 21,14 23,17 27,17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Signals admin</span></div>
   <nav id="tabs" aria-label="Sections">
+    <button data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>Overview</span><span id="ovBadge" class="badge" hidden></span></button>
     <div class="grp">Work</div>
-    <button data-tab="search" class="on"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span>Find tweets</span></button>
+    <button data-tab="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span>Find tweets</span></button>
     <button data-tab="user"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.5-5.5 7-5.5s6.2 1.9 7 5.5"/></svg><span>Look up account</span></button>
     <button data-tab="trends"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 4 7-8"/><path d="M15 8h5v5"/></svg><span>Trending</span></button>
     <button data-tab="summarize"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 11h8M5 16h14"/><path d="M18.5 8.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z"/></svg><span>Ask AI</span></button>
@@ -440,6 +443,11 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   <div class="railfoot"><span id="who"></span><span id="balance"></span></div>
 </aside>
 <main>
+  <section id="overview" hidden>
+    <header class="page"><h1>Overview</h1><p>What needs your attention, and what is happening today.</p></header>
+    <div class="card" style="margin-bottom:14px"><h3>Needs attention</h3><div id="ovStatus"><div class="note">Checking…</div></div></div>
+    <div class="grid" id="ovToday"></div>
+  </section>
   <section id="search">
     <header class="page"><h1>Find tweets</h1><p>Search X for any topic and see what the tweets add up to.</p></header>
     <details class="about" data-about="search"><summary>How this works and what it costs</summary>
@@ -688,6 +696,8 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <details class="card" id="sigFilter" open style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Filtered words <span class="note" id="sigFilterNote" style="font-weight:400"></span></summary>
       <div class="note" style="margin:8px 0">Words and phrases you do not want as topics. They are left out everywhere (this tab, the public pages and the MCP view) and the change applies at once, also to what was counted before. You can also use <b>Hide this term</b> when you open a topic.</div>
       <div id="sigFilterList" class="optrow" style="margin-bottom:10px"></div>
+      <div class="note" style="margin:4px 0 6px">Merged and renamed topics <span id="sigAliasNote"></span> · made with <b>Merge / rename</b> on a topic</div>
+      <div id="sigAliasList" class="optrow" style="margin-bottom:10px"></div>
       <div class="optrow"><input id="sigFilterInput" placeholder="a word or phrase" maxlength="40" style="width:220px" aria-label="Word to leave out">
         <label class="chk"><input type="checkbox" id="sigFilterPhrases"> also phrases that contain it</label>
         <button class="go" id="sigFilterAdd" type="button">Add</button></div>
@@ -1693,7 +1703,7 @@ async function initFeatures() {
   if (features.sources) loadFLists();
   // Open the tab named in the address (/admin/#costs); otherwise land on Briefings when they exist.
   const want = location.hash.slice(1), wantTab = want === 'agent' ? 'summarize' : want === 'library' ? 'lists' : want, btn = want && document.querySelector(`#tabs button[data-tab="${CSS.escape(wantTab)}"]`);
-  if (btn && !btn.hidden) show(want); else if (features.publish) show('publish');
+  if (btn && !btn.hidden) show(want); else show('overview');
   if (features.account) fetch('/act/session').then((r) => r.json()).then(setSession).catch(() => {});
   loadMon();
 }
@@ -2925,6 +2935,54 @@ document.addEventListener('toggle', (e) => {
 }, true);
 restoreFolds();
 
+// Overview: one list of what is broken or waiting, gathered from the other tabs' own data, each linking to where it is fixed.
+async function loadOverview() {
+  const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const [mon, ai, topics, costs, sigd] = await Promise.all([get('/mon/state'), features.signal ? get('/mon/signal-ai') : null, features.publish ? get('/pub/topics') : null,
+    features.costs ? get('/costs/summary?days=7') : null, features.signal ? get('/mon/signal?days=1') : null]);
+  const items = [], go = (tab, label) => `<a href="#${tab}" data-tabgo="${tab}">${label}</a>`;
+  const add = (level, text, link) => items.push({ level, html: `<li class="ov ${level}"><span>${text}</span>${link}</li>` });
+  if (mon) {
+    const watches = mon.watches ?? [], out = watches.filter((w) => /^Out of credits/.test(w.lastError || '')), failing = watches.filter((w) => w.enabled && w.lastError && !out.includes(w));
+    if (out.length) add('bad', `${out.length} watch${out.length === 1 ? ' was' : 'es were'} paused: out of credits`, go('monitor', 'Live feed'));
+    if (failing.length) add('warn', `${failing.length} source${failing.length === 1 ? '' : 's'} failing: ${esc(failing.slice(0, 4).map((w) => w.label).join(', '))}${failing.length > 4 ? '…' : ''} <span class="note">(${esc(failing[0].lastError.slice(0, 80))})</span>`, go('monitor', 'Live feed'));
+    if (mon.capped) add('warn', `X data cap reached today ($${(+mon.spend.cost).toFixed(2)} of $${(+mon.settings.dailyCap).toFixed(2)}): X watches wait until tomorrow`, go('monitor', 'Raise the cap'));
+  }
+  if (ai && ai.enabled) {
+    if (ai.error) add('warn', `Signal topics: ${esc(ai.error)}`, go('signalsetup', 'Signal setup'));
+    else if (ai.spentToday >= ai.dailyCap) add('warn', `Signal topics hit today's cap ($${(+ai.dailyCap).toFixed(2)}); ${fmt(ai.queued)} items wait`, go('signalsetup', 'Signal setup'));
+    else if (ai.queued > 300) add('info', `${fmt(ai.queued)} items wait to be read for Signal topics`, go('signalsetup', 'Signal setup'));
+  }
+  if (topics) {
+    for (const t of topics.filter((x) => x.enabled && x.lastError)) add('bad', `Briefing <b>${esc(t.title)}</b> failed: ${esc(t.lastError.slice(0, 120))}`, go('publish', 'Briefings'));
+    const drafts = topics.flatMap((t) => (t.issues ?? []).filter((i) => i.status === 'draft' && Date.now() - i.created < 3 * 86400000).map(() => t.title));
+    if (drafts.length) add('info', `${drafts.length} draft${drafts.length === 1 ? '' : 's'} waiting for approval: ${esc([...new Set(drafts)].join(', '))}`, go('publish', 'Review'));
+  }
+  if (costs) {
+    const un = (costs.byKind ?? []).reduce((n, r) => n + (r.unpriced || 0), 0);
+    if (un) add('info', `${un} cost entr${un === 1 ? 'y' : 'ies'} this week used a model with no price, so costs read low`, go('costs', 'Costs'));
+  }
+  const order = { bad: 0, warn: 1, info: 2 };
+  items.sort((a, b) => order[a.level] - order[b.level]);
+  $('#ovStatus').innerHTML = items.length ? `<ul class="ovlist">${items.map((i) => i.html).join('')}</ul>` : '<div class="note">All good: every source, briefing and model is working.</div>';
+  const bad = items.filter((i) => i.level !== 'info').length, badge = $('#ovBadge');
+  badge.hidden = !bad; badge.textContent = bad;
+  // Today, at a glance.
+  const cards = [];
+  if (topics) {
+    const latest = topics.map((t) => ({ t, i: (t.issues ?? [])[0] })).filter((x) => x.i);
+    cards.push(`<div class="card"><h3>Briefings</h3>${latest.length ? `<ul class="siglist">${latest.map(({ t, i }) => `<li><span>${esc(t.title)}</span><small>${i.status === 'published' ? 'published' : esc(i.status)} · ${new Date(i.created).toLocaleDateString()}</small></li>`).join('')}</ul>` : '<div class="note">None yet.</div>'}<div style="margin-top:8px">${go('publish', 'Open Briefings')}</div></div>`);
+  }
+  if (sigd && sigd.lists) {
+    const top = sigd.lists.top.slice(0, 8);
+    cards.push(`<div class="card"><h3>Signal today</h3>${top.length ? `<ul class="siglist">${top.map((k) => `<li><span>${esc(sigd.terms[k].label)}</span><small>${(sigd.terms[k].signal * 100).toFixed(1)}%</small></li>`).join('')}</ul>` : '<div class="note">Nothing counted today yet.</div>'}<div style="margin-top:8px">${go('signal', 'Open Signal')}</div></div>`);
+  }
+  if (costs) {
+    const t = costs.totals, total = t.twitter + t.llm + t.audio + t.image;
+    cards.push(`<div class="card"><h3>Spend, last 7 days</h3><div class="gnum" style="font-size:26px;font-weight:650">$${total.toFixed(2)}</div><div class="note">X data $${t.twitter.toFixed(2)} · text models $${t.llm.toFixed(2)} · audio $${t.audio.toFixed(2)} · images $${t.image.toFixed(2)}</div><div style="margin-top:8px">${go('costs', 'Open Costs')}</div></div>`);
+  }
+  $('#ovToday').innerHTML = cards.join('');
+}
 function show(tab) {
   if (tab === 'library') tab = 'lists';
   document.querySelectorAll('main > section').forEach((s) => (s.hidden = s.id !== tab));
@@ -2937,6 +2995,7 @@ function show(tab) {
   if (tab === 'lists') loadLists();
   if (tab === 'summarize') refreshSummarize();
   if (tab === 'costs') loadCosts();
+  if (tab === 'overview') loadOverview();
   if (tab === 'publish') window.loadPublish?.();
   if (location.hash.slice(1) !== tab && history.replaceState) history.replaceState(null, '', '#' + tab);
 }
@@ -2993,6 +3052,8 @@ function renderSigFilter() {
   const f = sig.filter; if (!f) return;
   $('#sigFilterNote').textContent = `· ${f.words.length} word${f.words.length === 1 ? '' : 's'}`;
   $('#sigFilterList').innerHTML = f.words.length ? f.words.map((w) => `<span class="badge" style="display:inline-flex;gap:6px;align-items:center;font-size:13px;padding:2px 4px 2px 10px">${esc(w.term)}${w.phrases ? ' <span class="note">+ phrases</span>' : ''}<button class="link" data-fdel="${esc(w.term)}" aria-label="Remove ${esc(w.term)} from the filter" title="Remove" style="padding:0 6px;font-size:15px">×</button></span>`).join('') : '<span class="note">Nothing filtered by you yet.</span>';
+  const al = Object.entries(f.aliases || {});
+  $('#sigAliasList').innerHTML = al.length ? al.map(([a, b]) => `<span class="badge" style="display:inline-flex;gap:6px;align-items:center;font-size:13px;padding:2px 4px 2px 10px">${esc(a)} → <b>${esc(b)}</b><button class="link" data-adel="${esc(a)}" aria-label="Undo ${esc(a)}" title="Undo" style="padding:0 6px;font-size:15px">×</button></span>`).join('') : '<span class="note">None.</span>';
   $('#sigStopCount').textContent = f.builtIn.stopCount;
   $('#sigBuiltIn').textContent = [...f.builtIn.generic, ...f.builtIn.vague.filter((v) => !f.builtIn.generic.includes(v))].join(' · ');
 }
@@ -3125,6 +3186,9 @@ async function showSigTerm(term, scroll) {
   if (d.error || sigPick?.id !== term) return;
   const t = sig.terms[term], live = d.groups.filter((g) => g.docs.some((n) => n > 0));
   $('#sigDetail').innerHTML = `<div class="card" style="margin-top:14px"><h3>${esc(t?.label ?? term)} ${sigClose}<button class="link" data-fhide="${esc(term)}" style="float:right;font-weight:400;margin-right:14px" title="Leave this term out of Signal">Hide this term</button></h3>
+    <div class="optrow" data-aterm="${esc(term)}" style="margin-bottom:8px"><input list="sigTopicNames" placeholder="another topic, or a new name" maxlength="80" style="width:240px" aria-label="Merge into or rename to">
+      <button class="go ghost" data-amerge title="Count this topic (and the names counted with it) under the name you typed: an existing topic merges them">Merge / rename</button><span class="note">Applies everywhere, also to what was counted before. Undo it in Signal setup.</span></div>
+    <datalist id="sigTopicNames">${sig.lists.top.filter((k) => k !== term).map((k) => `<option value="${esc(k)}">`).join('')}</datalist>
     ${t?.members?.length || t?.related?.length ? `<div class="note" style="margin-bottom:6px">${t.members.length ? `Counted together: <b>${esc([t.term, ...t.members].join(', '))}</b>. ` : ''}${t.related.length ? `Goes with: ${esc(t.related.join(', '))}.` : ''}</div>` : ''}
     ${t ? `<div class="optrow" style="margin-bottom:8px">${sigChips(t)}<span class="note">${t.groups.filter((g) => g.docs).map((g) => `<span class="sigdot" style="--gc:${sigCol(g.key)}"></span>${esc(sigName(g.key))} ${fmt(g.docs)} (${sigPct(g.share)})`).join(' · ')}</span></div>` : ''}
     <div style="height:210px"><canvas id="sigChart"></canvas></div>
@@ -3191,6 +3255,17 @@ sigOn('click', async (e) => {
     else if (e.target.closest('[data-pwatch]')) { sigProof.watch = e.target.closest('[data-pwatch]').dataset.pwatch; await loadProof(true); }
     else if (e.target.closest('[data-pmore]')) await loadProof(false);
     else if (e.target.closest('[data-fdel]')) await sigSetFilter(sig.filter.words.filter((w) => w.term !== e.target.closest('[data-fdel]').dataset.fdel));
+    else if (e.target.closest('[data-amerge]')) {
+      const row = e.target.closest('[data-aterm]'), from = row.dataset.aterm, to = row.querySelector('input').value.trim().toLowerCase();
+      if (!to || to === from) return toast('Type the topic to merge into, or a new name');
+      const t = sig.terms[from], aliases = { ...(sig.filter.aliases || {}) };
+      for (const k of [from, ...(t?.members ?? [])]) aliases[k] = to;
+      sig.filter = await post('/mon/signal-alias-set', { aliases }); sigPick = null; $('#sigDetail').innerHTML = ''; await loadSignal(); toast(`Counted as “${to}” from now on, also in the past`);
+    }
+    else if (e.target.closest('[data-adel]')) {
+      const aliases = { ...(sig.filter.aliases || {}) }; delete aliases[e.target.closest('[data-adel]').dataset.adel];
+      sig.filter = await post('/mon/signal-alias-set', { aliases }); await loadSignal(); toast('Undone');
+    }
     else if (e.target.closest('[data-fhide]')) { const term = e.target.closest('[data-fhide]').dataset.fhide; sigPick = null; $('#sigDetail').innerHTML = ''; await sigSetFilter([...sig.filter.words, { term, phrases: false }]); toast(`“${term}” is filtered. Undo it under Filtered words.`); }
     else if (e.target.closest('[data-sigjump]')) { e.preventDefault(); const a = e.target.closest('[data-sigjump]'), m = $('#' + a.dataset.sigjump); if (m.tagName === 'DETAILS') m.open = true; m.scrollIntoView({ behavior: 'smooth' }); }
     else if (e.target.closest('[data-bnew]')) sigBoardForm();

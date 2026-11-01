@@ -564,6 +564,20 @@ export class PublishDO extends DurableObject<Env> {
         return json({ topic: this.publicTopic(t), issue: this.pubIssue(issue), archive: published.map(this.brief) });
       }
 
+      // Which recent published briefings mention any of these names (a Signal topic and the names counted under it), newest first.
+      if (path === '/pub/mentions') {
+        const names = (q.get('q') ?? '').split('|').map((x) => x.trim().toLowerCase()).filter((x) => x.length >= 3).slice(0, 8);
+        const since = Date.now() - 14 * 86_400_000, out: Array<{ slug: string; title: string; id: string; publishedAt: number; tldr: string }> = [];
+        const has = (text: string, n: string) => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u').test(text);
+        if (names.length) for (const t of this.topics().filter((x) => x.listed)) {
+          for (const i of this.issues(t.slug, 'published', 14)) {
+            if (i.publishedAt < since) break;
+            const text = i.markdown.toLowerCase();
+            if (names.some((n) => has(text, n))) out.push({ slug: t.slug, title: t.title, id: i.id, publishedAt: i.publishedAt, tldr: i.tldr });
+          }
+        }
+        return json(out.sort((a, b) => b.publishedAt - a.publishedAt).slice(0, 6));
+      }
       if (path === '/pub/archive') {
         const t = this.topic(q.get('slug') ?? '');
         const [latest, ...older] = t ? this.issues(t.slug, 'published', 31) : [];

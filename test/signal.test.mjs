@@ -283,3 +283,32 @@ describe('cache tokens', () => {
     assert.ok(Math.abs(llmCost('claude-sonnet-5-5', 0, 0, { write: 1_000_000 }) - base * 1.25) < 1e-9);
   });
 });
+
+import { cleanTitle, isBait } from '../src/signal/clean.ts';
+describe('clean', () => {
+  test('giveaways and like-and-reply-to-win posts are bait; news is not', () => {
+    for (const t of ["I'm giving away a new iPhone 18 Pro Max. In 5 hours I'll pick 85 random people from my replies to win. RULES: like this post, comment \"Ready\" and follow",
+      'GIVEAWAY: 3 GPUs! Like + RT to enter', 'Comment "AI" to get my free guide', 'Like and retweet to win a Claude Max subscription']) assert.ok(isBait(t), t);
+    for (const t of ['Anthropic takes steps to block Claude from reverse-engineering video games', 'Nvidia gives away nothing in its earnings call, analysts say it will win the year',
+      'Like many developers, I comment my code']) assert.equal(isBait(t), false, t);
+  });
+  test('titles lose links and are cut at a word', () => {
+    assert.equal(cleanTitle('Read this https://t.co/abc now'), 'Read this now');
+    assert.equal(cleanTitle('Trailing link: https://t.co/x'), 'Trailing link');
+    const long = cleanTitle('word '.repeat(60), 50);
+    assert.ok(long.endsWith('…') && long.length <= 51 && !long.includes('wo…'));
+  });
+});
+describe('merging reordered names', () => {
+  test('"claude anthropic" and "anthropic claude" become one topic', () => {
+    const T = (term, signal) => ({ term, signal, docs: 2, prev: 0, change: null, isNew: false, breadth: 1, active: 1, exclusivity: 1, topGroup: 'x', kind: 'single', groups: [], evergreen: false });
+    const post = new Map([['claude anthropic', [0, 1]], ['anthropic claude', [2, 3]]]);
+    const m = mergeTopics([T('claude anthropic', 0.2), T('anthropic claude', 0.1)], post, 10);
+    assert.equal(m.length, 1);
+    assert.equal(m[0].members.length, 2);
+  });
+  test('one viral item lifts a topic only up to the cap', () => {
+    const items = [{ terms: new Set(['k']), ts: 1, eng: 50000 }, { terms: new Set(['k']), ts: 2, eng: 10 }];
+    assert.equal(topicEngagement(['k'], items, indexItems(items), 1000), 1010);
+  });
+});
