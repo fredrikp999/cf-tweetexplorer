@@ -355,6 +355,14 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 #pubEditor textarea { min-height: 360px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
 
 /* ----- signal ----- */
+
+.sigflow { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.sigflow a { display: block; text-decoration: none; color: inherit; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--card); }
+.sigflow a b { display: block; font-size: 22px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; } .sigflow a span { display: block; color: var(--muted); font-size: 13px; } .sigflow a.warn { border-color: var(--err); }
+.ssh { display: flex; align-items: baseline; gap: 10px; font-size: 18px; margin: 26px 0 10px; } .ssh span { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--card); border: 1px solid var(--line); font-size: 13px; } .ssh small { font-weight: 400; color: var(--muted); font-size: 14px; }
+.ssgrp { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); } .ssgrp:first-child { border-top: 0; margin-top: 0; }
+.ssboard { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; } .ssboard .top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; } .ssboard .top b { font-size: 16px; }
+.ssboard .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .sigsteps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; } .sigsteps .go { margin-left: 6px; }
 .sigctl { display: flex; gap: 10px 16px; flex-wrap: wrap; align-items: center; margin: 0 0 16px; }
 .siggrp { display: flex; flex-direction: column; gap: 8px; border-top: 3px solid var(--gc); }
@@ -417,6 +425,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <div class="grp">Watch</div>
     <button data-tab="monitor"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></svg><span>Live feed</span><span id="monBadge" class="badge" hidden></span></button>
     <button data-tab="signal" data-feature="signal" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19v-6M10 19V5M15 19v-9M20 19V8"/></svg><span>Signal</span></button>
+    <button data-tab="signalsetup" data-feature="signal" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h9M18 7h1M5 17h1M10 17h9"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>Signal setup</span></button>
     <button data-tab="history"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Archives</span></button>
     <div class="grp" data-feature="publish" hidden>Publish</div>
     <button data-tab="publish" data-feature="publish" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12.5h5"/></svg><span>Briefings</span></button>
@@ -628,44 +637,15 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
         <li>Every watch belongs to a <b>group</b>: the feed list it was made from, or its kind of source (X, RSS, Hacker News, YouTube), or a name you give it. Groups vote.</li>
         <li>A word, two-word phrase or hashtag is scored by the <b>share of a group's items that mention it</b>, averaged over the groups, each counted by its <b>weight</b> (0 mutes a group, 3 triples its voice). It is shares, not counts, so a busy group cannot drown a small one.</li>
         <li><b>Everywhere</b> means most groups mention it. <b>Only in …</b> means nearly all of it comes from one group. <b>Rising</b> compares the window with the one before it.</li>
-        <li>Terms are counted for free as items are captured (no language model) and kept for 30 days. Only what your watches capture is counted, so a topic shows up here only if something you watch covers it.</li></ul></div></details>
-    <div class="card" id="sigSetup" style="margin-bottom:14px">
-      <h3>Set up your sources</h3>
-      <ol class="sigsteps">
-        <li><b>Choose what to watch.</b> Add X accounts and searches, RSS feeds, YouTube, Hacker News, or a whole feed list. <button class="go ghost" data-tabgo="monitor" type="button">Add watches in Live feed</button></li>
-        <li><b>Put them in groups.</b> By default a feed list is one group and each kind of source is one group. Give watches your own group names (for example “News” or “Researchers”) under <a href="#sigManage" data-sigjump="sigManage">Sources and groups</a> below.</li>
-        <li><b>Weigh the groups.</b> Use the slider on each group card; 0 mutes it. Then compare what the groups say.</li>
-        <li><b>Make top-level Signals.</b> Collect groups into named Signals (for example “AI” or “Markets”) under <a href="#sigBoardsCard" data-sigjump="sigBoardsCard">Top-level Signals</a> below. Each can be published on its own page, and you can switch this whole view to one of them.</li>
-      </ol>
-    </div>
+        <li>Topics are counted as items are captured (by counting words, or named by a language model if you turned that on under Signal setup) and kept for 30 days. Only what your watches capture is counted. What feeds Signal, how groups are weighted and what is published are set under <b>Signal setup</b>; this tab only shows the result.</li></ul></div></details>
     <div class="sigctl">
       <div class="seg" role="radiogroup" aria-label="Window"><label><input type="radio" name="sigdays" value="1"><span>Today</span></label><label><input type="radio" name="sigdays" value="3"><span>3 days</span></label><label><input type="radio" name="sigdays" value="7" checked><span>7 days</span></label><label><input type="radio" name="sigdays" value="14"><span>14 days</span></label></div>
       <label class="chk note" title="Topics at the same level as in the period before are always around (for example “ai” on a feed about AI). They are left out so what is new or growing stands out."><input type="checkbox" id="sigHideSteady" checked> Hide background topics</label>
       <label class="note">Showing <select id="sigBoardSel" aria-label="Which Signal to show"></select></label>
       <span class="note" id="sigNote"></span>
+      <button class="go ghost" data-tabgo="signalsetup" type="button" style="margin-left:auto">Set up &amp; publish</button>
     </div>
-    <details class="card" id="sigAi" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Topic detection <span class="note" id="sigAiNote" style="font-weight:400"></span></summary>
-      <div class="note" style="margin:8px 0">
-        <b>Words (free)</b> counts words and two-word phrases. <b>AI</b> has a language model read each new item once and name its topics (“kimi k2”, “scribd breach”), which gives clearer topics than single words.
-        It costs a few cents per 1,000 items, is capped per day, and appears in Costs. The title and text of each item are sent to the model provider (OpenRouter). When you turn it on, items from the last two weeks that are still in the live feed are read too.</div>
-      <div class="optrow">
-        <div class="seg" role="radiogroup" aria-label="Topic detection"><label><input type="radio" name="sigaimode" value="words" checked><span>Words (free)</span></label><label><input type="radio" name="sigaimode" value="ai"><span>AI</span></label></div>
-        <label>Model <select id="sigAiModel"></select></label>
-        <label>Daily cap $ <input type="number" id="sigAiCap" min="0" max="10" step="0.05" style="width:80px"></label>
-        <button class="go" id="sigAiSave" type="button">Save</button></div>
-      <div class="note" id="sigAiStatus" style="margin-top:8px"></div>
-    </details>
-    <details class="card" id="sigFilter" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Filtered words <span class="note" id="sigFilterNote" style="font-weight:400"></span></summary>
-      <div class="note" style="margin:8px 0">Words and phrases you do not want as topics. They are left out everywhere (this tab, the public pages and the MCP view) and the change applies at once, also to what was counted before. You can also use <b>Hide this term</b> when you open a topic.</div>
-      <div id="sigFilterList" class="optrow" style="margin-bottom:10px"></div>
-      <div class="optrow"><input id="sigFilterInput" placeholder="a word or phrase" maxlength="40" style="width:220px" aria-label="Word to leave out">
-        <label class="chk"><input type="checkbox" id="sigFilterPhrases"> also phrases that contain it</label>
-        <button class="go" id="sigFilterAdd" type="button">Add</button></div>
-      <details class="about" style="margin:12px 0 0"><summary>Always left out (built in)</summary>
-        <div><p>Common English and Swedish function words (<span id="sigStopCount"></span> of them), plus these. They are dropped as items are counted, so they cannot be switched back on here.</p>
-          <p class="note" id="sigBuiltIn" style="line-height:1.8"></p></div></details>
-    </details>
-    <div id="sigGroups" class="grid"></div>
+    <div class="note" id="sigBoardInfo" style="margin:-4px 0 12px"></div>
     <div id="sigBody">
       <div class="card" style="margin-bottom:14px">
         <h3 style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between">What is in the signal
@@ -676,13 +656,50 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
       <div class="grid" id="sigLists"></div>
     </div>
     <div id="sigDetail"></div>
+  </section>
+
+  <section id="signalsetup" hidden>
+    <header class="page"><h1>Signal setup</h1><p>What feeds Signal, how it is weighed and what is published. The results are on the <a href="#signal" data-tabgo="signal">Signal</a> tab, which only shows them.</p></header>
+    <div class="sigflow" id="ssFlow" aria-label="From sources to published page"></div>
+
+    <h2 class="ssh" id="ssSources"><span>1</span> Sources <small>what is counted</small></h2>
+    <div class="card" style="margin-bottom:14px">
+      <div class="note" style="margin-bottom:8px">Every watch, the group it votes in, and whether it counts. Type a group name to move a source (the same name merges them); leave it empty for the default (its feed list, or its kind of source). <b>Leave out</b> keeps watching but stops counting it; <b>Delete</b> stops watching it. Briefings can feed Signal too: tick <b>Signal</b> in a briefing's settings.</div>
+      <div id="sigManageRows"></div>
+      <button class="go ghost" data-tabgo="monitor" type="button" style="margin-top:10px">Add watches in Live feed</button>
+    </div>
+
+    <h2 class="ssh" id="ssGroups"><span>2</span> Groups <small>who votes, and how loudly</small></h2>
+    <div class="note" style="margin:-4px 0 10px">A group is a set of sources that vote together. Its <b>weight</b> sets how much it counts (0 mutes it, 3 triples it). Briefing groups start at ×2.</div>
+    <div id="sigGroups" class="grid" style="margin-bottom:14px"></div>
+
+    <h2 class="ssh" id="ssTopics"><span>3</span> Topic rules <small>how topics are found</small></h2>
+    <details class="card" id="sigAi" open style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Topic detection <span class="note" id="sigAiNote" style="font-weight:400"></span></summary>
+      <div class="note" style="margin:8px 0">
+        <b>Words (free)</b> counts words and two-word phrases. <b>AI</b> has a language model read each new item once and name its topics (“kimi k2”, “scribd breach”), which gives clearer topics than single words.
+        It costs a few cents per 1,000 items, is capped per day, and appears in Costs. The title and text of each item are sent to the model provider (OpenRouter). When you turn it on, items from the last two weeks that are still in the live feed are read too.</div>
+      <div class="optrow">
+        <div class="seg" role="radiogroup" aria-label="Topic detection"><label><input type="radio" name="sigaimode" value="words" checked><span>Words (free)</span></label><label><input type="radio" name="sigaimode" value="ai"><span>AI</span></label></div>
+        <label>Model <select id="sigAiModel"></select></label>
+        <label>Daily cap $ <input type="number" id="sigAiCap" min="0" max="10" step="0.05" style="width:80px"></label>
+        <button class="go" id="sigAiSave" type="button">Save</button></div>
+      <div class="note" id="sigAiStatus" style="margin-top:8px"></div>
+    </details>
+    <details class="card" id="sigFilter" open style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Filtered words <span class="note" id="sigFilterNote" style="font-weight:400"></span></summary>
+      <div class="note" style="margin:8px 0">Words and phrases you do not want as topics. They are left out everywhere (this tab, the public pages and the MCP view) and the change applies at once, also to what was counted before. You can also use <b>Hide this term</b> when you open a topic.</div>
+      <div id="sigFilterList" class="optrow" style="margin-bottom:10px"></div>
+      <div class="optrow"><input id="sigFilterInput" placeholder="a word or phrase" maxlength="40" style="width:220px" aria-label="Word to leave out">
+        <label class="chk"><input type="checkbox" id="sigFilterPhrases"> also phrases that contain it</label>
+        <button class="go" id="sigFilterAdd" type="button">Add</button></div>
+      <details class="about" style="margin:12px 0 0"><summary>Always left out (built in)</summary>
+        <div><p>Common English and Swedish function words (<span id="sigStopCount"></span> of them), plus these. They are dropped as items are counted, so they cannot be switched back on here.</p>
+          <p class="note" id="sigBuiltIn" style="line-height:1.8"></p></div></details>
+    </details>
+
+    <h2 class="ssh" id="ssSignals"><span>4</span> Signals &amp; publishing <small>what readers see</small></h2>
     <div class="card" id="sigBoardsCard" style="margin-top:14px"><h3 style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">Top-level Signals <button class="go ghost" data-bnew type="button">New Signal</button></h3>
       <div class="note" style="margin:-6px 0 10px">A Signal is a named set of groups. Publish one to give it its own page on the public site, at <code>/signal/&lt;address&gt;</code>. The public page shows group names and topics; turn on <b>Show sources</b> to let each topic open the items behind it, with their sources and links to the originals.</div>
       <div id="sigBoards"></div><div id="sigBoardForm"></div></div>
-    <details class="card" id="sigManage" style="margin-top:14px"><summary style="cursor:pointer;font-weight:650">Sources and groups <span class="note" style="font-weight:400">· every watch and the group it votes in</span></summary>
-      <div class="note" style="margin:8px 0">Type a group name to move a source. Sources with the same name vote together; leave it empty to use the default (its feed list, or its kind of source). <b>Leave out</b> keeps watching a source but stops counting it in Signal; <b>Delete</b> stops watching it altogether.</div>
-      <div id="sigManageRows"></div>
-      <button class="go ghost" data-tabgo="monitor" type="button" style="margin-top:10px">Add more watches</button></details>
   </section>
 
   <section id="history" hidden>
@@ -2916,7 +2933,7 @@ function show(tab) {
   document.querySelectorAll('input[name=askmode]').forEach((r) => { r.checked = r.value === tab; });
   if (tab === 'history') pollJobs();
   if (tab === 'monitor') { clearUnseen(); renderFeed(); if (features.signal && !sig) loadSignal(); }
-  if (tab === 'signal') loadSignal();
+  if (tab === 'signal' || tab === 'signalsetup') loadSignal();
   if (tab === 'lists') loadLists();
   if (tab === 'summarize') refreshSummarize();
   if (tab === 'costs') loadCosts();
@@ -2960,7 +2977,7 @@ async function loadSignal() {
 const SIG_SRC = { x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube' };
 // One watch, with what can be done to it here. `def` is the group it is in by default; `out` marks one left out of Signal.
 function sigWatchRow(w, def, out) {
-  const kind = `<span class="note">${esc(SIG_SRC[w.source] ?? w.source)}${w.enabled ? '' : ' · paused'}</span>`;
+  const brief = !!w.briefing, kind = `<span class="note">${brief ? 'Briefing' : esc(SIG_SRC[w.source] ?? w.source)}${w.enabled || brief ? '' : ' · paused'}</span>${w.error ? `<span class="badge" style="color:var(--err)" title="${esc(w.error)}">error</span>` : ''}`;
   return `<div class="sigwatch" data-wid="${esc(w.id)}"><span class="grow" title="${esc(w.label)}">${esc(w.label)}</span>${kind}`
     + (out ? '<button class="go ghost" data-wexcl="1">Include again</button>'
       : `<input list="sigNames" value="${esc(w.group ?? '')}" placeholder="${esc(def)}" maxlength="40" aria-label="Group for ${esc(w.label)}"><button class="go ghost" data-wmove>Save</button><button class="go ghost" data-wexcl="0" title="Keeps watching it, but it no longer counts in Signal">Leave out</button>`)
@@ -2997,26 +3014,49 @@ function renderSigAi() {
     ? `${a.using ? `Showing topics written by AI: ${fmt(a.read)} items read in the last two weeks` : 'Nothing is read yet, so words are shown until the first batch is done'}, ${fmt(a.queued)} waiting. Spent $${a.spentToday.toFixed(3)} of $${(+a.dailyCap).toFixed(2)} today.${a.error ? ` <span class="err">${esc(a.error)}</span>` : ''}`
     : 'Off: Signal counts words.';
   clearTimeout(sigTimer);
-  if (a.enabled && a.queued && !a.error && !$('#signal').hidden) sigTimer = setTimeout(loadSignal, 15000);   // follow the reading until it has caught up
+  if (a.enabled && a.queued && !a.error && (!$('#signal').hidden || !$('#signalsetup').hidden)) sigTimer = setTimeout(loadSignal, 15000);   // follow the reading until it has caught up
+}
+function renderSetupFlow() {
+  const srcs = sig.groups.reduce((n, g) => n + g.watches.length, 0), out = sig.excluded?.length ?? 0, bad = sig.groups.reduce((n, g) => n + g.watches.filter((w) => w.error).length, 0), muted = sig.groups.filter((g) => g.weight === 0).length;
+  const pub = sig.boards.filter((b) => b.public).length, a = sig.ai;
+  const tile = (href, n, label, sub, warn) => `<a href="${href}" data-sigjump="${href.slice(1)}"${warn ? ' class="warn"' : ''}><b>${n}</b><span>${label}</span><span>${sub}</span></a>`;
+  $('#ssFlow').innerHTML = tile('#ssSources', srcs, 'sources counted', `${out ? out + ' left out' : 'none left out'}${bad ? ` · ${bad} with errors` : ''}`, bad > 0)
+    + tile('#ssGroups', sig.groups.length, 'groups', muted ? `${muted} muted` : 'all counting')
+    + tile('#ssTopics', a?.enabled ? 'AI' : 'Words', 'topic detection', `${sig.filter?.words.length ?? 0} filtered word${(sig.filter?.words.length ?? 0) === 1 ? '' : 's'}`)
+    + tile('#ssSignals', pub, `published Signal${pub === 1 ? '' : 's'}`, `${sig.boards.length - pub} draft${sig.boards.length - pub === 1 ? '' : 's'}`);
+}
+function renderBoardInfo() {
+  const b = sig.boards.find((x) => x.id === sigBoard);
+  $('#sigBoardInfo').innerHTML = !b ? 'Showing every group, which is not a published page. Pick a Signal to see what readers see.'
+    : b.public ? `<span class="badge active">Published</span> at <a href="/signal/${esc(b.slug)}" target="_blank" rel="noopener">/signal/${esc(b.slug)}</a>${b.proof ? ' with sources' : ''} · <a href="#signalsetup" data-tabgo="signalsetup">Change what is published</a>`
+    : `<span class="badge">Draft</span> not public · <a href="#signalsetup" data-tabgo="signalsetup">Publish it</a>`;
 }
 function renderSignal() {
-  renderSigAi(); renderSigFilter();
+  renderSigAi(); renderSigFilter(); renderBoardInfo();
   const act = sigActive(), total = sig.groups.reduce((n, g) => n + g.items, 0);
   $('#sigBoardSel').innerHTML = '<option value="">Everything</option>' + sig.boards.map((b) => `<option value="${esc(b.id)}"${b.id === sigBoard ? ' selected' : ''}>${esc(b.title)}</option>`).join('');
-  $('#sigBoards').innerHTML = sig.boards.length ? sig.boards.map((b) => `<div class="sigwatch" data-bid="${esc(b.id)}"><span class="grow"><b>${esc(b.title)}</b> <span class="note">${b.groups.length ? esc(b.groups.map((k) => sig.everyGroup.find((g) => g.key === k)?.name ?? '(removed group)').join(', ')) : 'no groups yet'}</span></span>
-      ${b.public ? `<a class="badge active" href="/signal/${esc(b.slug)}" target="_blank" rel="noopener">Published${b.proof ? ' · with sources' : ''}</a>` : '<span class="badge">Draft</span>'}
-      <button class="go ghost" data-bopen>Show</button><button class="go ghost" data-bedit>Edit</button></div>`).join('') : '<div class="note">None yet. Create one to bundle groups and publish them.</div>';
+  const gname = (k) => sig.everyGroup.find((g) => g.key === k)?.name ?? '(removed group)';
+  $('#sigBoards').innerHTML = sig.boards.length ? sig.boards.map((b) => `<div class="ssboard" data-bid="${esc(b.id)}"><div class="top"><b>${esc(b.title)}</b>
+      ${b.public ? '<span class="badge active">Published</span>' : '<span class="badge">Draft · not public</span>'}${b.public && b.proof ? '<span class="badge">with sources</span>' : ''}
+      <div class="acts"><button class="go ghost" data-bopen>View results</button><button class="go ghost" data-bedit>Edit</button>${b.public ? `<a class="go ghost" href="/signal/${esc(b.slug)}" target="_blank" rel="noopener">Open public page</a>` : ''}</div></div>
+      <div class="note">${b.groups.length ? 'Groups: ' + esc(b.groups.map(gname).join(', ')) : 'No groups yet, so nothing is shown.'}</div>
+      <div class="note">${b.public ? `Public address <code>/signal/${esc(b.slug)}</code>. Readers see group names, topics and scores${b.proof ? ', and the items and sources behind each topic' : ''}; never watch names, handles or feed addresses.` : 'Not visible to anyone but you until you publish it.'}</div></div>`).join('') : '<div class="note">None yet. Create one to bundle groups and publish them.</div>';
+  const unused = sig.everyGroup.filter((g) => !sig.boards.some((b) => b.groups.includes(g.key)));
+  $('#sigBoards').innerHTML += sig.boards.length && unused.length ? `<div class="note">Not in any Signal: ${esc(unused.map((g) => g.name).join(', '))}.</div>` : '';
   $('#sigNames').innerHTML = sig.groups.map((g) => `<option value="${esc(g.name)}">`).join('');
-  $('#sigManageRows').innerHTML = (sig.groups.length ? sig.groups.map((g) => `<div class="note" style="margin-top:10px"><span class="sigdot" style="--gc:${sigCol(g.key)}"></span><b>${esc(g.name)}</b> <button class="link" data-sgroup="${esc(g.key)}">Edit group</button></div>`
+  $('#sigManageRows').innerHTML = (sig.groups.length ? sig.groups.map((g) => `<div class="ssgrp"><span class="sigdot" style="--gc:${sigCol(g.key)}"></span><b>${esc(g.name)}</b> <span class="note">${g.watches.length} source${g.watches.length === 1 ? '' : 's'}</span></div>`
     + g.watches.map((w) => sigWatchRow(w, g.name)).join('')).join('') : '<div class="note">No watches yet.</div>')
-    + (sig.excluded?.length ? `<div class="note" style="margin-top:14px"><b>Left out of Signal</b> (still watched in Live feed)</div>${sig.excluded.map((w) => sigWatchRow(w, '', true)).join('')}` : '');
+    + (sig.excluded?.length ? `<div class="ssgrp"><b>Left out of Signal</b> <span class="note">still watched in Live feed</span></div>${sig.excluded.map((w) => sigWatchRow(w, '', true)).join('')}` : '');
+  renderSetupFlow();
   $('#sigNote').textContent = sig.groups.length ? `${fmt(total)} items in ${act.length} of ${sig.groups.length} groups, ${sig.from === sig.to ? sig.to : sig.from + ' to ' + sig.to}${sig.baselineOk ? '' : ' · too little earlier data to say what is rising yet'}${sig.steadyHidden ? ` · ${sig.steadyHidden} background topic${sig.steadyHidden === 1 ? '' : 's'} hidden` : ''}` : '';
   $('#sigBody').hidden = !total;
-  $('#sigGroups').innerHTML = sig.groups.length ? sig.groups.map((g) => `<div class="card siggrp${g.weight > 0 && g.items ? '' : ' off'}" style="--gc:${sigCol(g.key)}">
-      <div class="gname"><button class="link" data-sgroup="${esc(g.key)}" title="What this group talks about, and its sources">${esc(g.name)}</button><span class="note">${g.watches.length} source${g.watches.length === 1 ? '' : 's'} · <button class="link" data-sgroup="${esc(g.key)}">Edit</button></span></div>
-      <div><span class="gnum">${fmt(g.items)}</span> <span class="note">items${g.prevItems ? `, ${fmt(g.prevItems)} before` : ''}</span></div>
+  $('#sigGroups').innerHTML = sig.groups.length ? sig.groups.map((g) => `<div class="card siggrp${g.weight > 0 && g.items ? '' : ' off'}" style="--gc:${sigCol(g.key)}" data-gkey="${esc(g.key)}">
+      <div class="gname"><span>${esc(g.name)}</span><span class="note">${g.watches.length} source${g.watches.length === 1 ? '' : 's'}</span></div>
+      <div><span class="gnum">${fmt(g.items)}</span> <span class="note">items in this window${g.weight === 0 ? ' · muted' : g.items ? '' : ' · nothing captured'}</span></div>
       ${sigSpark(g.perDay, sigCol(g.key))}
-      <label class="wt">Weight <input type="range" min="0" max="3" step="0.25" value="${g.weight}" data-weight="${esc(g.key)}" aria-label="Weight of ${esc(g.name)}"><output>${g.weight === 0 ? 'off' : '×' + g.weight}</output></label></div>`).join('')
+      <label class="wt">Weight <input type="range" min="0" max="3" step="0.25" value="${g.weight}" data-weight="${esc(g.key)}" aria-label="Weight of ${esc(g.name)}"><output>${g.weight === 0 ? 'off' : '×' + g.weight}</output></label>
+      <div class="optrow"><input list="sigNames" value="${esc(g.name)}" maxlength="40" aria-label="Name of ${esc(g.name)}" style="width:150px"><button class="go ghost" data-gmove>Rename</button><button class="link" data-sgroup="${esc(g.key)}" title="See what this group talks about">View</button></div>
+      <div class="optrow"><button class="link" data-greset title="Back to the feed list or kind of source each watch came from">Reset to default</button><button class="link" data-gdel style="color:var(--err)">Delete group</button></div></div>`).join('')
     : '<div class="empty" style="grid-column:1/-1">Nothing is watched yet. Add watches (or watch a feed list) in the Live feed, and they appear here as groups.</div>';
   if (!total) { $('#sigRows').innerHTML = ''; $('#sigLists').innerHTML = ''; return; }
   if (act.length < 2) $('#sigNote').textContent += ' · only one group counts, so everything is “only” in it; watch another kind of source to compare';
@@ -3108,12 +3148,9 @@ async function showSigGroup(key, scroll) {
     <div class="note" style="margin-bottom:10px">${fmt(d.items)} items in this window${d.active ? '' : d.weight === 0 ? ' · weight is 0, so it does not count' : ' · nothing captured, so it does not count'}.</div>
     <div class="grid"><div><h3 style="font-size:14px">Mentioned most</h3>${terms(d.strongest, (r) => `${fmt(r.docs)} items · ${sigPct(r.share)}`)}</div>
       <div><h3 style="font-size:14px">Talked about here more than elsewhere</h3>${terms(d.distinctive, (r) => `×${r.lift.toFixed(1)} · ${sigPct(r.own)} vs ${sigPct(r.others)}`)}</div></div>
-    <h3 style="font-size:14px;margin-top:14px">Sources in this group</h3>
-    <div class="note" style="margin:-6px 0 8px">Sources with the same group name vote together. Type a name to move one (an existing name merges them); leave it empty to go back to the default.</div>
-    ${d.watches.map((w) => sigWatchRow(w, d.name)).join('')}
-    <h3 style="font-size:14px;margin-top:14px">The whole group</h3>
-    <div class="sigwatch" data-gkey="${esc(key)}"><span class="grow note">Rename it, merge it into another group by using that group's name, or remove it.</span>
-      <input list="sigNames" value="${esc(d.name)}" maxlength="40" aria-label="Name of this group"><button class="go ghost" data-gmove>Rename</button><button class="go ghost" data-greset title="Back to the feed list or kind of source each watch came from">Reset to default</button><button class="link" data-gdel style="color:var(--err)">Delete group</button></div></div>`;
+    <h3 style="font-size:14px;margin-top:14px">Sources in this group <a href="#signalsetup" data-tabgo="signalsetup" style="font-weight:400;font-size:13px">Change in Signal setup</a></h3>
+    <ul class="siglist">${d.watches.map((w) => `<li><span>${esc(w.label)}</span><small>${esc(SIG_SRC[w.source] ?? w.source)}${w.enabled ? '' : ' · paused'}</small></li>`).join('')}</ul>
+  </div>`;
   if (scroll) $('#sigDetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -3144,7 +3181,8 @@ $('#sigAiSave').addEventListener('click', async () => {
     delete $('#sigAi').dataset.touched; await loadSignal(); toast('Saved');
   } catch (err) { toast(err.message); } finally { b.disabled = false; }
 });
-$('#signal').addEventListener('click', async (e) => {
+const sigOn = (type, fn) => [$('#signal'), $('#signalsetup')].forEach((r) => r.addEventListener(type, fn));   // viewing and setup are two tabs sharing one set of handlers
+sigOn('click', async (e) => {
   const t = e.target.closest('[data-sterm]'), g = e.target.closest('[data-sgroup]');
   try {
     if (t) { await showSigTerm(t.dataset.sterm, true); renderSignal(); }
@@ -3157,7 +3195,7 @@ $('#signal').addEventListener('click', async (e) => {
     else if (e.target.closest('[data-sigjump]')) { e.preventDefault(); const a = e.target.closest('[data-sigjump]'), m = $('#' + a.dataset.sigjump); if (m.tagName === 'DETAILS') m.open = true; m.scrollIntoView({ behavior: 'smooth' }); }
     else if (e.target.closest('[data-bnew]')) sigBoardForm();
     else if (e.target.closest('[data-bedit]')) sigBoardForm(sig.boards.find((b) => b.id === e.target.closest('[data-bid]').dataset.bid));
-    else if (e.target.closest('[data-bopen]')) { sigBoard = e.target.closest('[data-bid]').dataset.bid; sigPick = null; $('#sigDetail').innerHTML = ''; await loadSignal(); $('#signal').scrollIntoView({ behavior: 'smooth' }); }
+    else if (e.target.closest('[data-bopen]')) { sigBoard = e.target.closest('[data-bid]').dataset.bid; sigPick = null; $('#sigDetail').innerHTML = ''; await loadSignal(); show('signal'); }
     else if (e.target.closest('[data-bcancel]')) $('#sigBoardForm').innerHTML = '';
     else if (e.target.closest('[data-bsave]')) {
       const f = $('#sigBoardForm'), q = (n) => f.querySelector(`[name=${n}]`);
@@ -3193,8 +3231,8 @@ $('#signal').addEventListener('click', async (e) => {
     }
   } catch (err) { toast(err.message); }
 });
-$('#signal').addEventListener('input', (e) => { const w = e.target.closest('[data-weight]'); if (w) w.nextElementSibling.textContent = +w.value === 0 ? 'off' : '×' + w.value; });
-$('#signal').addEventListener('change', async (e) => {
+sigOn('input', (e) => { const w = e.target.closest('[data-weight]'); if (w) w.nextElementSibling.textContent = +w.value === 0 ? 'off' : '×' + w.value; });
+sigOn('change', async (e) => {
   const w = e.target.closest('[data-weight]');
   if (w) { try { await post('/mon/signal-weight', { key: w.dataset.weight, weight: +w.value }); await loadSignal(); } catch (err) { toast(err.message); } return; }
   if (e.target.id === 'sigHideSteady') { loadSignal(); return; }

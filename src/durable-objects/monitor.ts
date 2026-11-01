@@ -361,13 +361,13 @@ export class MonitorDO extends DurableObject<Env> {
   private async groups() {
     const names = await this.listNames(), weights = this.getMeta<Record<string, number>>('signalWeights', {});
     const excluded: Array<{ id: string; label: string; source: SourceKind; enabled: boolean }> = [];
-    const of = new Map<string, string>(), groups = new Map<string, GroupInfo & { watches: Array<{ id: string; label: string; source: SourceKind; enabled: boolean; group?: string }> }>();
+    const of = new Map<string, string>(), groups = new Map<string, GroupInfo & { watches: Array<{ id: string; label: string; source: SourceKind; enabled: boolean; group?: string; error?: string; briefing?: string }> }>();
     for (const w of this.watches()) {
       if (w.noSignal) { excluded.push({ id: w.id, label: w.label, source: sourceOf(w), enabled: w.enabled }); continue; }
       const g = this.groupOf(w, names);
       of.set(w.id, g.key);
       const cur = groups.get(g.key) ?? groups.set(g.key, { key: g.key, name: g.name, weight: weights[g.key] ?? 1, watches: [] }).get(g.key)!;
-      cur.watches.push({ id: w.id, label: w.label, source: sourceOf(w), enabled: w.enabled, group: w.group });
+      cur.watches.push({ id: w.id, label: w.label, source: sourceOf(w), enabled: w.enabled, group: w.group, error: w.lastError || undefined, briefing: w.briefing });
     }
     // A group made only of briefing posts has a head start: those posts were already picked and combined from many sources. A weight you set wins.
     for (const g of groups.values()) if (!(g.key in weights) && g.watches.length && g.watches.every((x) => this.watch(x.id)?.briefing)) g.weight = BRIEF_WEIGHT;
