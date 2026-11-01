@@ -38,10 +38,11 @@ what failed or waits, with a button to retry each.
 | --- | --- | --- |
 | **Public site** `/` | Anyone | **Today** (each briefing's headline and themes), one page per briefing topic with its earlier days and an RSS feed, **feed pages** ("Watch and read"), **Signal** with a page per topic, **Topics** (every topic Signal found, new, rising and A to Z, searchable), and how it works, published reports, and the lists behind the briefings. Readers can report an error in any theme. Server-rendered, no cookies; the only script is optional Cloudflare Web Analytics. |
 | **Admin** `/admin` | You, behind Cloudflare Access | **Overview** (what needs attention, with fixes), then **Day to day**: Signal, Live feed, Briefings, Archives, Costs; **Explore**: Find tweets, Look up account, Trending, Ask AI; **Setup**: Sources, Signal setup, Briefing setup, Lists & templates, Feed pages, Budgets. Viewing and configuration are kept on separate pages. |
-| **MCP server** `/mcp` | Service tokens, behind its own Access application | Read-only tools for briefings, Signal, archives, lists, the live feed and costs. In the Claude app, `get_signal` and `get_costs` open as interactive dashboards. |
+| **MCP server** `/mcp` | You, behind its own Access application: your Access login (OAuth) from the Claude app, or a service token | Read-only tools for briefings, Signal, archives, lists, the live feed and costs. In the Claude app, `get_signal` and `get_costs` open as interactive dashboards (MCP Apps). See [docs/mcp.md](docs/mcp.md). |
 
-Language models come from [OpenRouter](https://openrouter.ai) (Anthropic directly also works for summaries), and audio (Gemini TTS) and
-pictures from [Replicate](https://replicate.com). Everything except X data is optional.
+Language models come from [OpenRouter](https://openrouter.ai) (Anthropic directly also works for summaries), audio (Gemini TTS) from
+[Replicate](https://replicate.com), and pictures from Cloudflare Workers AI (free within its daily allowance) or Replicate. Model calls can go
+through Cloudflare AI Gateway for logs and analytics. Everything except X data is optional.
 
 ## Quick start
 
@@ -85,7 +86,9 @@ with its own data on workers.dev.
 | [Architecture](docs/architecture.md) | How it is deployed, public and private routes, the Durable Objects, the code map, which models are used |
 | [Flows](docs/flows.md) | What happens for archives, AI analysis, Ask AI, briefings, screening and the live feed, step by step |
 | [Configuration](docs/configuration.md) | Secrets, variables, and every setting in the app (Sources, Signal setup, Briefing setup, Budgets) |
-| [Deployment](docs/deployment.md) | How to deploy (release, smoke test, staging), retrying and re-running, and setup one feature at a time: Access, briefings, audio, pictures, archives, MCP, YouTube API, analytics, reader reports |
+| [Deployment](docs/deployment.md) | How to deploy (release, smoke test, staging), retrying and re-running, and setup one feature at a time: Access, briefings, audio, pictures, AI Gateway, archives, YouTube API, analytics, reader reports |
+| [MCP server](docs/mcp.md) | The tools, signing in (Managed OAuth for the Claude app, service tokens for Claude Code), and the MCP Apps (interactive views) |
+| [Setup overview](public/admin/setup.html) | The same setup as one illustrated page, opened from the admin app (Guide → *How it is set up*, at `/admin/setup`, behind the admin login) |
 
 ## Project layout
 
@@ -98,10 +101,10 @@ src/            The Cloudflare Worker
   summarize/      The writing agent, model providers, screening, pricing
   sources/        X, RSS, YouTube, Hacker News, feed lists
   history/        Archive statistics and AI analysis
-  media/          Audio (text to speech) and pictures for briefings
-  llm/, lib/      Model calls, cost recording, shared helpers
+  media/          Audio (text to speech) and pictures for briefings (Replicate, Workers AI)
+  llm/, lib/      Model calls, AI Gateway routing, cost recording, shared helpers
   apps/           The MCP App views (Signal and Costs dashboards); mcp.ts registers the tools
-public/admin/   The admin app (a single HTML page, no build step)
+public/admin/   The admin app (a single HTML page, no build step) and setup.html, the illustrated setup overview
 server/         The local Node app
 scripts/        smoke.mjs: the smoke test run after each release
 test/           Tests (node --test)

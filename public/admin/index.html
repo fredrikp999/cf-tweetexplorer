@@ -819,7 +819,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
       <div><ul><li><b>X data</b> is counted at twitterapi.io's price ($0.15 per 1,000 tweets, $0.18 per 1,000 profiles, at least one tweet's worth per call) from the size of each answer.</li>
       <li><b>Text models</b> (the ones that write summaries and briefings) are counted at the model's list price times the tokens used. Models without a price here count as zero.</li>
       <li><b>Audio models</b> (Gemini TTS on Replicate, for audio versions and template samples) are counted separately, from the token counts Replicate reports for each clip at a price calibrated on Replicate's own figures. They are not part of the text-model figures.</li>
-      <li><b>Image models</b> (Replicate, for the pictures on briefings and template samples) are counted separately at a flat price per picture that depends on the model (Replicate's prices, see <code>IMAGE_MODELS</code> in the code).</li>
+      <li><b>Image models</b> (Replicate or Cloudflare Workers AI, for the pictures on briefings and template samples) are counted separately at a flat price per picture that depends on the model (Replicate's prices, see <code>IMAGE_MODELS</code> in the code). Workers AI pictures stay inside the free daily Neurons and are listed at $0; when a picture fell back to Replicate, its note says so.</li>
       <li>Everything that spends goes into one ledger: Search, Users and Lists, History, Monitor, the Summarize tab, and scheduled briefings. A failed briefing still shows what its data cost.</li>
       <li>These are estimates. Your real balance is the credits count at the bottom of the sidebar. Costs are shown only in this private area, never on the public pages.</li></ul></div></details>
     <div class="lacts" style="border:0;padding-top:0;margin:0 0 14px">
@@ -965,6 +965,11 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
 
   <section id="guide" hidden>
     <header class="page"><h1>Guide</h1><p>Pick a tool by the question you have.</p></header>
+    <div class="card" style="margin-bottom:12px">
+      <h3>How it is set up</h3>
+      <p class="hint" style="margin:4px 0 10px">One page with diagrams of the whole setup: architecture, a briefing run and its request limits, free Workers AI pictures, AI Gateway, signing in to the MCP server, and the interactive views in the Claude app.</p>
+      <a href="/admin/setup" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">Open the setup overview ↗</a>
+    </div>
     <p class="hint" style="margin:-6px 0 18px">Search, track and analyse tweets through <a href="https://twitterapi.io" target="_blank" rel="noopener" style="color:var(--accent)">twitterapi.io</a>. Each tab also has a <i>How this works</i> note with the details.</p>
 
     <div class="card" style="margin-bottom:12px">

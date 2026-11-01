@@ -66,6 +66,7 @@ await check('/lists', { status: [200, 404] });
 await check('/robots.txt', { type: 'text/plain', has: ['Disallow: /admin'] });
 await check('/no-such-page-at-all', { status: 404 });
 await check('/admin/', { status: [302, 401, 403], note: 'must not open without Cloudflare Access' });
+await check('/admin/setup', { status: [302, 401, 403], note: 'the setup overview must not open without Cloudflare Access' });
 await check('/signal/overview', { status: [301, 404], note: 'an old Signal address redirects (404 if it never existed)' });
 
 // Report.

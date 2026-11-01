@@ -10,9 +10,10 @@ Everything you can set: secrets, variables, and the options in the app. Step-by-
 | --- | --- |
 | `TWITTERAPI_IO_KEY` | All tweet data. Required. |
 | `TEAM_DOMAIN`, `POLICY_AUD` | From your Cloudflare Access application: `<team>.cloudflareaccess.com` and the audience (AUD) tag. If either is missing, every request is refused. Required. |
-| `MCP_POLICY_AUD` | The audience tag of the separate Access application for `/mcp`. If missing, `/mcp` refuses every request. Optional. |
+| `MCP_POLICY_AUD` | The audience tag of the separate Access application for `/mcp`. If missing, `/mcp` refuses every request. Optional. Setup: [mcp.md](mcp.md#signing-in). |
 | `OPENROUTER_API_KEY` | Summaries, briefings, History analysis, and screening. Without it these are switched off. |
-| `REPLICATE_API_TOKEN` | Audio versions and briefing pictures. Without it they are not offered. |
+| `REPLICATE_API_TOKEN` | Audio versions, the Replicate picture models, and the fallback for the Workers AI picture models. Without it audio is not offered and the Workers AI pictures have no fallback. |
+| `AI_GATEWAY_TOKEN` | A Cloudflare API token with the permission **AI Gateway → Run**, so OpenRouter calls may pass through the gateway named in `AI_GATEWAY` (whose authentication is on). Without it, or if the gateway refuses it, OpenRouter is called directly. Optional. |
 | `ANTHROPIC_API_KEY` | Only if `SUMMARY_PROVIDER` is `anthropic`. |
 | `YOUTUBE_API_KEY` | A YouTube Data API key. When a channel's public feed fails (YouTube sometimes answers 404 for all of them for days), its videos are read through the API instead: 1 quota unit a check, 10,000 free a day. Optional. How to get one: [deployment.md](deployment.md#youtube-through-the-api-when-youtubes-feeds-fail). |
 | `CF_ANALYTICS_TOKEN` | The token of a Cloudflare Web Analytics site. The public pages then load its beacon (page views, no cookies). Without it they load no script at all. Optional. Where to find it: [deployment.md](deployment.md#visitor-statistics-cloudflare-web-analytics). |
@@ -21,9 +22,10 @@ Everything you can set: secrets, variables, and the options in the app. Step-by-
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SUMMARY_PROVIDER` | `openrouter` | Provider for summaries and briefings: `openrouter`, `anthropic`, or `workers-ai` (needs an `AI` binding, which has been removed). |
+| `SUMMARY_PROVIDER` | `openrouter` | Provider for summaries and briefings: `openrouter`, `anthropic`, or `workers-ai` (uses the `AI` binding). With the binding present, Workers AI models are also offered in the Summarize model picker. |
 | `SUMMARY_MODEL` | `anthropic/claude-haiku-5.5` | The default writing model. Topics and the Summarize tab can pick another from the list. |
 | `SUMMARY_SCREEN_MODEL` | unset | Screening: unset uses Decider Flash when OpenRouter is available, `off` disables it, or set the Decider id for the more accurate model. |
+| `AI_GATEWAY` | `default` | The Cloudflare AI Gateway that OpenRouter calls and Workers AI pictures pass through, for its logs and analytics. `default` is created on first use. Remove it to call everything directly. See [deployment.md](deployment.md#ai-gateway). |
 | `SUMMARY_MOCK` | | Local only (`.dev.vars`): scripted answers instead of model calls. Never active for requests through Cloudflare's edge. |
 | `DEV_BYPASS_ACCESS` | | Local only: skips the Access check under `wrangler dev`. |
 
@@ -44,7 +46,7 @@ A transcript from a paid service is recorded in the Costs tab under **Summarize 
 A run can read at most 5 pages, comment threads and transcripts together, and the text is capped at 12,000 characters by default.
 
 Bindings in `wrangler.jsonc`: the five Durable Objects, the R2 bucket `AUDIO` (create it once with
-`npx wrangler r2 bucket create tweet-explorer-audio`), and the static `ASSETS`.
+`npx wrangler r2 bucket create tweet-explorer-audio`), Workers AI (`AI`, for the picture models and the gateway), the version metadata, and the static `ASSETS`.
 
 ## Settings in the app
 
@@ -115,5 +117,6 @@ run, each next to what has been spent.
 
 Everything that spends goes into the ledger on the **Costs** tab: Search, Users and Lists, History collection, History analysis (split into the cheap
 and the stronger model), Monitor, the Summarize tab, scheduled briefings (with audio and pictures). Tweet data is billed per tweet returned
-(about $0.15 per 1,000); models by tokens at the list prices in `src/summarize/openrouter.ts` and `src/decisions.ts`; Replicate by the prices in `src/replicate.ts`.
+(about $0.15 per 1,000); models by tokens at the list prices in `src/summarize/openrouter.ts` and `src/llm/decisions.ts`; Replicate by the prices in `src/media/replicate.ts`.
+Workers AI pictures are recorded at $0 (they stay inside the free daily Neurons), with the model that made them and a note when a fallback was used.
 Estimates are shown before anything large starts, and History collections, analyses and briefings each have a cap you set.

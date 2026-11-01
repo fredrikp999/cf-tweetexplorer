@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tweet Explorer Setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Newsreader:opsz,wght@6..72,400..600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html{color-scheme:light}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+/* Layout: a single reading column with a sticky contents rail on wide screens; diagrams break out to the full content width. */
+:root{
+  --bg:#f3f6f7; --surface:#ffffff; --ink:#14202b; --muted:#5a6a76; --line:#d5dde3; --soft:#e8eef1;
+  --accent:#0d7480; --accent-soft:#d6eef0; --amber:#c4701c; --amber-soft:#f8e7d4; --ok:#2c8a57; --ok-soft:#dcf1e4; --bad:#b8402a; --bad-soft:#f7dfd9;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif; --body:"Newsreader",Georgia,"Times New Roman",serif; --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d141a; --surface:#142029; --ink:#e4ecf1; --muted:#93a5b2; --line:#263641; --soft:#1a2833;
+  --accent:#41b6c2; --accent-soft:#143840; --amber:#eea457; --amber-soft:#3a2a17; --ok:#5cc489; --ok-soft:#163626; --bad:#ec8a72; --bad-soft:#3d1f19; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0d141a; --surface:#142029; --ink:#e4ecf1; --muted:#93a5b2; --line:#263641; --soft:#1a2833;
+  --accent:#41b6c2; --accent-soft:#143840; --amber:#eea457; --amber-soft:#3a2a17; --ok:#5cc489; --ok-soft:#163626; --bad:#ec8a72; --bad-soft:#3d1f19; color-scheme:dark }
+
+body{background:var(--bg);color:var(--ink);font:18px/1.6 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:200px minmax(0,1fr);gap:56px;padding-block:40px 80px}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr);gap:0}.toc{display:none}}
+.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);align-self:start;font:500 14px/1.5 var(--display)}
+.toc b{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.toc a{display:block;color:var(--muted);text-decoration:none;padding:4px 0 4px 12px;border-left:2px solid var(--line)}
+.toc a:hover,.toc a:focus-visible{color:var(--accent);border-left-color:var(--accent);outline:none}
+main{min-width:0}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(38px,6vw,64px);font-weight:800;letter-spacing:-.02em}
+h2{font-size:30px;font-weight:700;letter-spacing:-.01em;margin-bottom:8px}
+h3{font-size:19px;font-weight:700}
+p{margin:0;max-width:66ch}
+section{padding-top:64px;display:grid;gap:18px}
+.eyebrow{font:600 12px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.lede{font-size:22px;color:var(--muted);max-width:60ch}
+code,.mono{font-family:var(--mono);font-size:.82em}
+code{background:var(--soft);padding:1px 6px;border-radius:4px;overflow-wrap:anywhere}
+a{color:var(--accent)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.hero{display:grid;gap:20px;padding-bottom:8px}
+.facts{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.fact{display:flex;align-items:baseline;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font:500 14px var(--display);color:var(--muted)}
+.fact strong{font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+.figure{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;overflow-x:auto}
+.figure svg{display:block;width:100%;height:auto;min-width:760px}
+.cap{font-size:15px;color:var(--muted)}
+svg text{font-family:var(--display);fill:var(--ink)}
+svg .sub{fill:var(--muted);font-size:11px;font-weight:500}
+svg .zone{fill:var(--soft);stroke:var(--line)}
+svg .zone-label{fill:var(--muted);font-size:11px;font-weight:700;letter-spacing:.1em}
+svg .node{fill:var(--surface);stroke:var(--line);stroke-width:1.2}
+svg .node.key{stroke:var(--accent);stroke-width:2}
+svg .node.ext{fill:var(--bg)}
+svg .node.amber{stroke:var(--amber);stroke-width:2}
+svg .edge{stroke:var(--muted);stroke-width:1.4;fill:none}
+svg .edge.accent{stroke:var(--accent)}
+svg .edge.amber{stroke:var(--amber);stroke-dasharray:5 4}
+svg .arrow{fill:var(--muted)}
+svg .arrow.accent{fill:var(--accent)}
+svg .arrow.amber{fill:var(--amber)}
+svg .tag{font-size:11px;fill:var(--muted);font-weight:500}
+
+.doors{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:760px){.doors{grid-template-columns:minmax(0,1fr)}}
+.door{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:10px;align-content:start;min-width:0}
+.door .path{font:600 15px var(--mono);color:var(--accent)}
+.door dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:15px}
+.door dt{font:600 12px/1.9 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.door dd{margin:0}
+
+.steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;counter-reset:s}
+@media (max-width:760px){.steps{grid-template-columns:minmax(0,1fr)}}
+.step{position:relative;background:var(--surface);border:1px solid var(--line);padding:16px 16px 18px;display:grid;gap:6px;align-content:start;min-width:0}
+.step:first-child{border-radius:12px 0 0 12px}.step:last-child{border-radius:0 12px 12px 0}
+@media (max-width:760px){.step:first-child{border-radius:12px 12px 0 0}.step:last-child{border-radius:0 0 12px 12px}}
+.step + .step{border-left:0}
+@media (max-width:760px){.step + .step{border-left:1px solid var(--line);border-top:0}}
+.step .n{font:700 12px var(--display);color:var(--accent);letter-spacing:.08em}
+.step h3{font-size:17px}
+.step p{font-size:15px;color:var(--muted)}
+.step .req{font:600 13px var(--mono);color:var(--amber)}
+
+.bars{display:grid;gap:12px}
+.bar-row{display:grid;grid-template-columns:150px minmax(0,1fr) 80px;gap:12px;align-items:center;font:500 14px var(--display)}
+@media (max-width:560px){.bar-row{grid-template-columns:100px minmax(0,1fr) 64px;font-size:13px}}
+.track{height:18px;background:var(--soft);border-radius:4px;overflow:hidden}
+.fill{height:100%;border-radius:4px}
+.bar-row .v{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+
+table{border-collapse:collapse;width:100%;font-size:15px}
+.table{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 12px var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--soft)}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;font:600 12px/1.6 var(--display);padding:0 9px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.no{background:var(--bad-soft);color:var(--bad)}
+.pill.amb{background:var(--amber-soft);color:var(--amber)}
+.pill.acc{background:var(--accent-soft);color:var(--accent)}
+
+.meter{display:grid;gap:10px}
+.meter-bar{position:relative;height:34px;background:var(--soft);border-radius:8px;overflow:visible}
+.meter-seg{position:absolute;top:0;bottom:0;border-radius:8px 0 0 8px;background:linear-gradient(90deg,var(--accent),var(--accent));opacity:.85}
+.meter-line{position:absolute;top:-6px;bottom:-6px;width:2px;background:var(--amber)}
+.meter-labels{position:relative;height:20px;font:500 12px var(--display);color:var(--muted)}
+.meter-labels span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.pictures{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:700px){.pictures{grid-template-columns:minmax(0,1fr)}}
+.pic{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:4px;min-width:0}
+.pic .big{font:800 30px/1 var(--display);font-variant-numeric:tabular-nums}
+.pic .big small{font-size:14px;font-weight:600;color:var(--muted)}
+.pic p{font-size:14px;color:var(--muted)}
+
+.decide{display:grid;gap:10px}
+.dq{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px}
+.dq p{font-size:16px}
+.dq .ans{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:560px){.dq{grid-template-columns:minmax(0,1fr)}.dq .ans{justify-content:flex-start}}
+
+.paths{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media (max-width:760px){.paths{grid-template-columns:minmax(0,1fr)}}
+.paths .door h3{display:flex;gap:10px;align-items:center}
+
+.seq svg{min-width:640px}
+svg .lane-head{fill:var(--accent-soft);stroke:var(--accent)}
+svg .lane-head text{fill:var(--ink)}
+svg .lifeline{stroke:var(--line);stroke-dasharray:3 4}
+svg .msg{stroke:var(--accent);stroke-width:1.5;fill:none}
+svg .msg.back{stroke:var(--muted);stroke-dasharray:5 4}
+svg .msg-text{font-size:12.5px;font-weight:500}
+svg .note-box{fill:var(--amber-soft);stroke:var(--amber)}
+svg .self{stroke:var(--accent);stroke-width:1.5;fill:none}
+
+.cmds{display:grid;gap:10px}
+.cmd{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px 10px 16px}
+.cmd .what{font:600 13px var(--display);color:var(--muted)}
+.cmd pre{margin:2px 0 0;font:13.5px/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.cmd button{font:600 13px var(--display);color:var(--accent);background:var(--accent-soft);border:0;border-radius:8px;padding:8px 12px;cursor:pointer}
+.note{background:var(--amber-soft);border-radius:12px;padding:14px 18px;font-size:16px;max-width:none}
+.note strong{font-family:var(--display)}
+.back{font:600 14px var(--display);text-decoration:none;justify-self:start}
+footer{padding-top:64px;font-size:14px;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.fill,.meter-seg{transition:width .6s ease}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <b>Contents</b>
+    <a href="#map">The big picture</a>
+    <a href="#doors">Three ways in</a>
+    <a href="#run">A briefing run</a>
+    <a href="#models">Models</a>
+    <a href="#pictures">Free pictures</a>
+    <a href="#gateway">AI Gateway</a>
+    <a href="#mcp">MCP sign-in</a>
+    <a href="#apps">MCP Apps</a>
+    <a href="#config">Secrets and variables</a>
+    <a href="#deploy">Deploy</a>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <a class="back" href="/admin/#guide">← Back to the admin app</a>
+      <span class="eyebrow">Tweet Explorer · Agent Cortex</span>
+      <h1>How the whole thing runs</h1>
+      <p class="lede">One Cloudflare Worker reads X, RSS, YouTube and Hacker News, writes briefings with language models, publishes a public site, and answers Claude through an MCP server. This page shows how the pieces connect and what each one needs.</p>
+      <div class="facts">
+        <span class="fact"><strong>1</strong> Worker</span>
+        <span class="fact"><strong>5</strong> Durable Objects</span>
+        <span class="fact"><strong>3</strong> ways in</span>
+        <span class="fact"><strong>14</strong> MCP tools</span>
+        <span class="fact"><strong>2</strong> interactive views</span>
+      </div>
+    </header>
+
+    <section id="map">
+      <span class="eyebrow">Architecture</span>
+      <h2>The big picture</h2>
+      <p>Everything lives on Cloudflare: the Worker routes every request, the Durable Objects hold all state in SQLite and run the schedules, and R2 keeps the audio and pictures. Outside services do the paid work.</p>
+      <div class="figure">
+        <svg viewBox="0 0 980 500" role="img" aria-labelledby="map-t">
+          <title id="map-t">Architecture: visitors, you and Claude reach the Worker, which uses five Durable Objects, R2, Workers AI and AI Gateway, and calls twitterapi.io, OpenRouter and Replicate.</title>
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow accent" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow amber" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+          <!-- who -->
+          <text class="zone-label" x="20" y="30">WHO COMES IN</text>
+          <rect class="node ext" x="20" y="48" width="150" height="58" rx="10"/><text x="36" y="73" font-size="15" font-weight="700">Readers</text><text class="sub" x="36" y="93">public site, no login</text>
+          <rect class="node ext" x="20" y="176" width="150" height="58" rx="10"/><text x="36" y="201" font-size="15" font-weight="700">You</text><text class="sub" x="36" y="221">/admin · Access login</text>
+          <rect class="node ext" x="20" y="304" width="150" height="58" rx="10"/><text x="36" y="329" font-size="15" font-weight="700">Claude</text><text class="sub" x="36" y="349">/mcp · OAuth or token</text>
+          <!-- cloudflare zone -->
+          <rect class="zone" x="230" y="16" width="470" height="468" rx="16"/>
+          <text class="zone-label" x="250" y="40">CLOUDFLARE</text>
+          <rect class="node" x="250" y="56" width="430" height="34" rx="8"/><text x="266" y="78" font-size="13" font-weight="700">Access</text><text class="sub" x="330" y="78">checks the login for /admin and /mcp; the Worker verifies its signed token again</text>
+          <rect class="node key" x="250" y="110" width="180" height="78" rx="10"/><text x="266" y="140" font-size="16" font-weight="800">Worker</text><text class="sub" x="266" y="160">routing · public pages</text><text class="sub" x="266" y="176">admin API · MCP server</text>
+          <!-- DOs -->
+          <rect class="node" x="250" y="214" width="430" height="150" rx="10"/>
+          <text x="266" y="238" font-size="13" font-weight="700">Durable Objects</text><text class="sub" x="390" y="238">SQLite state · alarms run the schedules</text>
+          <g font-size="13" font-weight="600">
+            <rect class="node" x="266" y="252" width="126" height="44" rx="8"/><text x="278" y="272">PublishDO</text><text class="sub" x="278" y="287">briefings</text>
+            <rect class="node" x="402" y="252" width="126" height="44" rx="8"/><text x="414" y="272">MonitorDO</text><text class="sub" x="414" y="287">watches · Signal</text>
+            <rect class="node" x="538" y="252" width="126" height="44" rx="8"/><text x="550" y="272">HistoryDO</text><text class="sub" x="550" y="287">archives</text>
+            <rect class="node" x="266" y="306" width="126" height="44" rx="8"/><text x="278" y="326">ListsDO</text><text class="sub" x="278" y="341">lists · X Lists</text>
+            <rect class="node" x="402" y="306" width="126" height="44" rx="8"/><text x="414" y="326">CostDO</text><text class="sub" x="414" y="341">spend ledger</text>
+          </g>
+          <rect class="node" x="460" y="110" width="220" height="78" rx="10"/><text x="476" y="140" font-size="14" font-weight="700">R2 bucket</text><text class="sub" x="476" y="160">MP3 audio and pictures</text>
+          <rect class="node amber" x="250" y="386" width="200" height="78" rx="10"/><text x="266" y="414" font-size="14" font-weight="700">Workers AI</text><text class="sub" x="266" y="434">FLUX.2 · Phoenix pictures</text><text class="sub" x="266" y="450">free 10,000 Neurons a day</text>
+          <rect class="node key" x="480" y="386" width="200" height="78" rx="10"/><text x="496" y="414" font-size="14" font-weight="700">AI Gateway</text><text class="sub" x="496" y="434">logs · analytics · limits</text><text class="sub" x="496" y="450">AI_GATEWAY = default</text>
+          <!-- outside -->
+          <text class="zone-label" x="760" y="30">OUTSIDE SERVICES</text>
+          <rect class="node ext" x="760" y="110" width="200" height="66" rx="10"/><text x="776" y="137" font-size="14" font-weight="700">twitterapi.io</text><text class="sub" x="776" y="157">X data, paid per tweet</text>
+          <rect class="node ext" x="760" y="250" width="200" height="66" rx="10"/><text x="776" y="277" font-size="14" font-weight="700">Replicate</text><text class="sub" x="776" y="297">audio · picture fallback</text>
+          <rect class="node ext" x="760" y="398" width="200" height="66" rx="10"/><text x="776" y="425" font-size="14" font-weight="700">OpenRouter</text><text class="sub" x="776" y="445">writing · screening models</text>
+          <!-- edges -->
+          <path class="edge" d="M170,77 C210,77 215,140 248,140" marker-end="url(#ah)"/>
+          <path class="edge accent" d="M170,205 C205,205 215,73 248,73" marker-end="url(#aha)"/>
+          <path class="edge accent" d="M170,333 C210,333 210,80 248,80" marker-end="url(#aha)"/>
+          <path class="edge" d="M340,188 L340,212" marker-end="url(#ah)"/>
+          <path class="edge" d="M430,150 L458,150" marker-end="url(#ah)"/>
+          <path class="edge" d="M680,140 C720,140 720,143 758,143" marker-end="url(#ah)"/>
+          <path class="edge amber" d="M330,364 L330,384" marker-end="url(#ahb)"/>
+          <path class="edge amber" d="M450,412 C470,412 470,300 600,300 C700,300 720,283 758,283" marker-end="url(#ahb)"/>
+          <path class="edge accent" d="M560,364 L560,384" marker-end="url(#aha)"/>
+          <path class="edge accent" d="M680,431 L758,431" marker-end="url(#aha)"/>
+          <text class="tag" x="690" y="424">chat + decide</text>
+          <text class="tag" x="560" y="296">fallback</text>
+        </svg>
+      </div>
+      <p class="cap">Teal lines carry logins and model calls through the gateway. Amber dashed lines are the picture path: Workers AI first, Replicate when the free Neurons run out.</p>
+    </section>
+
+    <section id="doors">
+      <span class="eyebrow">Access</span>
+      <h2>Three ways in</h2>
+      <p>The Worker is only reachable on the custom domain. Everything that is not <code>/admin</code> or <code>/mcp</code> is public, and each private door has its own Access application, so a credential for one opens nothing else.</p>
+      <div class="doors">
+        <div class="door">
+          <span class="path">/</span><h3>Public site</h3>
+          <dl><dt>Who</dt><dd>Anyone</dd><dt>Login</dt><dd>None</dd><dt>Shows</dt><dd>Today, briefings, Signal, Topics, feed pages, reports</dd></dl>
+        </div>
+        <div class="door">
+          <span class="path">/admin</span><h3>Admin app</h3>
+          <dl><dt>Who</dt><dd>You</dd><dt>Login</dt><dd>Access, policy Allow for your email</dd><dt>Checks</dt><dd><code>TEAM_DOMAIN</code>, <code>POLICY_AUD</code></dd></dl>
+        </div>
+        <div class="door">
+          <span class="path">/mcp</span><h3>MCP server</h3>
+          <dl><dt>Who</dt><dd>Claude, read only</dd><dt>Login</dt><dd>Managed OAuth or a service token</dd><dt>Checks</dt><dd><code>TEAM_DOMAIN</code>, <code>MCP_POLICY_AUD</code></dd></dl>
+        </div>
+      </div>
+    </section>
+
+    <section id="run">
+      <span class="eyebrow">Briefings</span>
+      <h2>A briefing run</h2>
+      <p>Each topic runs on its schedule from a PublishDO alarm, one topic per alarm. Every step makes outgoing requests, and Cloudflare caps how many one alarm may make.</p>
+      <div class="steps">
+        <div class="step"><span class="n">STEP 1</span><h3>Fetch</h3><p>Every X list in the topic's groups, page by page.</p><span class="req">1 per list page</span></div>
+        <div class="step"><span class="n">STEP 2</span><h3>Keep</h3><p>The 150 most engaged posts in the window.</p><span class="req">0</span></div>
+        <div class="step"><span class="n">STEP 3</span><h3>Screen</h3><p>A decision model drops off-topic and spam, from 25 posts up.</p><span class="req">1 per post</span></div>
+        <div class="step"><span class="n">STEP 4</span><h3>Write</h3><p>The writing model turns it into themes and a TL;DR.</p><span class="req">1–8 turns</span></div>
+        <div class="step"><span class="n">STEP 5</span><h3>Publish</h3><p>Draft or live, then picture and audio if switched on.</p><span class="req">a few</span></div>
+      </div>
+      <h3 style="margin-top:12px">Outgoing requests per run, against the plan's limit</h3>
+      <div class="bars" role="img" aria-label="Requests per run: AI Orgs and Events about 25, AI Security about 45, AI News about 200. Free plan limit 50, Paid plan 10,000.">
+        <div class="bar-row"><span>AI Orgs and Events</span><div class="track"><div class="fill" style="width:12.5%;background:var(--ok)"></div></div><span class="v">≈ 25</span></div>
+        <div class="bar-row"><span>AI Security</span><div class="track"><div class="fill" style="width:22.5%;background:var(--ok)"></div></div><span class="v">≈ 45</span></div>
+        <div class="bar-row"><span>AI News</span><div class="track"><div class="fill" style="width:100%;background:var(--bad)"></div></div><span class="v">≈ 200</span></div>
+        <div class="bar-row"><span>Free plan limit</span><div class="track"><div class="fill" style="width:25%;background:var(--amber)"></div></div><span class="v">50</span></div>
+        <div class="bar-row"><span>Paid plan limit</span><div class="track"><div class="fill" style="width:100%;background:var(--accent)"></div></div><span class="v">10,000</span></div>
+      </div>
+      <p class="cap">Bars to the same scale up to 200; the Paid limit runs far off the end. AI News reads 19 X lists and screens 150 posts, so it fails on the Free plan with "Too many subrequests". A failed run lists its requests by host in the error.</p>
+    </section>
+
+    <section id="models">
+      <span class="eyebrow">Models</span>
+      <h2>Which model does what, and where it runs</h2>
+      <div class="table">
+        <table>
+          <thead><tr><th>Job</th><th>Model</th><th>Runs on</th><th>Through AI Gateway</th></tr></thead>
+          <tbody>
+            <tr><td>Writing briefings and summaries</td><td>Claude Haiku 5.5 (<code>SUMMARY_MODEL</code>)</td><td>OpenRouter</td><td><span class="pill ok">yes</span></td></tr>
+            <tr><td>Screening posts</td><td>Perplexity Decider Flash</td><td>OpenRouter</td><td><span class="pill ok">yes</span></td></tr>
+            <tr><td>Archive analysis, Signal topics, transcripts</td><td>chosen per feature</td><td>OpenRouter</td><td><span class="pill ok">yes</span></td></tr>
+            <tr><td>Pictures (Phoenix)</td><td>Leonardo Phoenix 1.0</td><td>Workers AI</td><td><span class="pill ok">yes</span></td></tr>
+            <tr><td>Pictures (FLUX.2 klein)</td><td>FLUX.2 klein 4B and 9B</td><td>Workers AI</td><td><span class="pill no">no</span> form data can't pass the gateway yet</td></tr>
+            <tr><td>Picture fallback, other picture models</td><td>FLUX.1 schnell, Imagen 4 Fast, Nano Banana Pro</td><td>Replicate</td><td><span class="pill no">no</span></td></tr>
+            <tr><td>Audio versions</td><td>Gemini 3.8 Flash TTS</td><td>Replicate</td><td><span class="pill no">no</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="pictures">
+      <span class="eyebrow">Pictures</span>
+      <h2>Free pictures inside the daily Neurons</h2>
+      <p>Every Cloudflare account gets 10,000 Workers AI Neurons a day, reset at 00:00 UTC. The app counts what its pictures use and switches to the template's Replicate fallback before a picture would go past 9,500. The last 500 are room for other Workers AI use on the account.</p>
+      <div class="meter" role="img" aria-label="Daily Neuron budget: 10,000 free, switch to fallback at 9,500.">
+        <div class="meter-bar"><div class="meter-seg" style="width:95%"></div><div class="meter-line" style="left:95%"></div></div>
+        <div class="meter-labels"><span style="left:2%">0</span><span style="left:50%">5,000</span><span style="left:90%">9,500 · fallback</span></div>
+      </div>
+      <div class="pictures">
+        <div class="pic"><h3>FLUX.2 klein 4B</h3><span class="big">104 <small>Neurons a picture</small></span><p>About 90 free a day, then FLUX.1 schnell on Replicate ($0.003).</p></div>
+        <div class="pic"><h3>FLUX.2 klein 9B</h3><span class="big">1,364 <small>Neurons a picture</small></span><p>About 6 free a day, then Imagen 4 Fast ($0.02).</p></div>
+        <div class="pic"><h3>Leonardo Phoenix</h3><span class="big">2,370 <small>Neurons a picture</small></span><p>About 4 free a day, then Imagen 4 Fast ($0.02).</p></div>
+      </div>
+      <h3 style="margin-top:8px">How each picture decides</h3>
+      <div class="decide">
+        <div class="dq"><p>Is the <code>AI</code> binding there?</p><div class="ans"><span class="pill ok">yes · go on</span><span class="pill amb">no · Replicate</span></div></div>
+        <div class="dq"><p>Would this picture take today past 9,500 Neurons?</p><div class="ans"><span class="pill ok">no · go on</span><span class="pill amb">yes · Replicate</span></div></div>
+        <div class="dq"><p>Did Workers AI answer with a picture?</p><div class="ans"><span class="pill ok">yes · free picture, Neurons counted</span><span class="pill amb">no · Replicate</span></div></div>
+        <div class="dq"><p>Did it say the allowance is used up (error 4006)?</p><div class="ans"><span class="pill amb">yes · no more tries today</span></div></div>
+      </div>
+      <p class="cap">A fallback is noted on the sample picture and in the Costs ledger. Free pictures are listed there at $0 with the model that made them.</p>
+    </section>
+
+    <section id="gateway">
+      <span class="eyebrow">AI Gateway</span>
+      <h2>Model calls through AI Gateway</h2>
+      <p>With <code>AI_GATEWAY</code> set to <code>default</code>, OpenRouter calls go to the gateway's OpenRouter endpoint, and the gateway logs each one with its model, tokens, cost and latency. The OpenRouter key still travels with each call; the gateway only checks its own token.</p>
+      <div class="paths">
+        <div class="door">
+          <h3><span class="pill ok">with token</span> Logged</h3>
+          <p>The secret <code>AI_GATEWAY_TOKEN</code> holds a Cloudflare API token with <strong>AI Gateway → Run</strong>. The gateway accepts the call and passes it on to OpenRouter.</p>
+        </div>
+        <div class="door">
+          <h3><span class="pill amb">refused</span> Sent direct</h3>
+          <p>No token, or one without that permission: the gateway answers 2009 Unauthorized. That call goes straight to OpenRouter, and so do later calls from the same Worker instance. Nothing fails; the calls just aren't logged.</p>
+        </div>
+      </div>
+      <p class="note"><strong>Worth setting:</strong> a rate limit on the gateway and a credit limit on the OpenRouter key. Together they cap what a leaked token could spend. The gateway does not lower the request count of a run.</p>
+    </section>
+
+    <section id="mcp">
+      <span class="eyebrow">MCP server</span>
+      <h2>Signing in to the MCP server</h2>
+      <p><code>/mcp</code> has its own Access application. Access lets a request through only with a login or a service token, then adds a signed token that the Worker verifies again against <code>MCP_POLICY_AUD</code>. Requests from web pages (with an <code>Origin</code> header) are refused.</p>
+      <div class="paths">
+        <div class="door">
+          <h3><span class="pill acc">Managed OAuth</span> The Claude app</h3>
+          <dl><dt>For</dt><dd>Claude app, claude.ai custom connector</dd><dt>Policy</dt><dd>Allow, your email</dd><dt>Setup</dt><dd>Application → Advanced settings → Managed OAuth on</dd><dt>Add</dt><dd>Settings → Connectors → Add custom connector → <code>https://tweets.example.com/mcp</code></dd></dl>
+        </div>
+        <div class="door">
+          <h3><span class="pill acc">Service token</span> Claude Code</h3>
+          <dl><dt>For</dt><dd>Claude Code, scripts, CI</dd><dt>Policy</dt><dd>Service Auth, the token</dd><dt>Setup</dt><dd>Service credentials → Create service token</dd><dt>Add</dt><dd><code>claude mcp add</code> with the <code>CF-Access-Client-Id</code> and <code>-Secret</code> headers</dd></dl>
+        </div>
+      </div>
+      <h3 style="margin-top:8px">The OAuth sign-in, step by step</h3>
+      <div class="figure seq" id="seq-oauth"></div>
+      <p class="cap">The token Claude holds is opaque: only Access can read it. The Worker never sees it, only the signed JWT that Access adds after checking the policy.</p>
+    </section>
+
+    <section id="apps">
+      <span class="eyebrow">MCP Apps</span>
+      <h2>Interactive views in the Claude app</h2>
+      <p>Two tools come with a small web page. The Claude app draws it inline and talks to it over <code>postMessage</code>; other clients get the same JSON as text. A view can only call this server's read-only tools, through the host, which uses the connector's own login.</p>
+      <div class="paths">
+        <div class="door"><span class="path">get_signal → signal-v2.html</span><h3>Signal dashboard</h3><p>Pick the window and the published Signal, switch strength and spread, open a topic to see the items behind it.</p></div>
+        <div class="door"><span class="path">get_costs → costs-v6.html</span><h3>Costs dashboard</h3><p>Totals and a per-day chart, switchable between 7, 30 and 90 days.</p></div>
+      </div>
+      <h3 style="margin-top:8px">What happens when a view opens</h3>
+      <div class="figure seq" id="seq-apps"></div>
+      <p class="cap">After changing a view: bump its <code>ui://</code> address, deploy, disconnect and reconnect the connector, and start a new chat. The Claude app caches the old one otherwise.</p>
+    </section>
+
+    <section id="config">
+      <span class="eyebrow">Configuration</span>
+      <h2>Secrets and variables</h2>
+      <div class="table">
+        <table>
+          <thead><tr><th>Name</th><th>Kind</th><th>Needed for</th></tr></thead>
+          <tbody>
+            <tr><td><code>TWITTERAPI_IO_KEY</code></td><td><span class="pill acc">secret</span></td><td>All X data. Required.</td></tr>
+            <tr><td><code>TEAM_DOMAIN</code>, <code>POLICY_AUD</code></td><td><span class="pill acc">secret</span></td><td>The admin Access application. Without them every private request is refused.</td></tr>
+            <tr><td><code>MCP_POLICY_AUD</code></td><td><span class="pill acc">secret</span></td><td>The <code>/mcp</code> Access application. Without it <code>/mcp</code> refuses everything.</td></tr>
+            <tr><td><code>OPENROUTER_API_KEY</code></td><td><span class="pill acc">secret</span></td><td>Writing, screening, analysis, Signal topics.</td></tr>
+            <tr><td><code>REPLICATE_API_TOKEN</code></td><td><span class="pill acc">secret</span></td><td>Audio, Replicate pictures, the picture fallback.</td></tr>
+            <tr><td><code>AI_GATEWAY_TOKEN</code></td><td><span class="pill acc">secret</span></td><td>OpenRouter calls through the gateway (AI Gateway → Run). Optional.</td></tr>
+            <tr><td><code>AI_GATEWAY</code></td><td><span class="pill amb">variable</span></td><td>Which gateway; <code>default</code>. Remove to call everything directly.</td></tr>
+            <tr><td><code>SUMMARY_PROVIDER</code>, <code>SUMMARY_MODEL</code></td><td><span class="pill amb">variable</span></td><td><code>openrouter</code>, <code>anthropic/claude-haiku-5.5</code>.</td></tr>
+            <tr><td><code>AI</code></td><td><span class="pill ok">binding</span></td><td>Workers AI pictures and the gateway id.</td></tr>
+            <tr><td><code>AUDIO</code></td><td><span class="pill ok">binding</span></td><td>The R2 bucket for audio and pictures.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="deploy">
+      <span class="eyebrow">Deploy</span>
+      <h2>Deploy and connect</h2>
+      <div class="cmds">
+        <div class="cmd"><div><span class="what">Check, deploy, smoke-test</span><pre>DEPLOY_DOMAIN=tweets.example.com npm run release</pre></div><button type="button" data-copy>Copy</button></div>
+        <div class="cmd"><div><span class="what">Let model calls through AI Gateway</span><pre>npx wrangler secret put AI_GATEWAY_TOKEN --env=""</pre></div><button type="button" data-copy>Copy</button></div>
+        <div class="cmd"><div><span class="what">Store the /mcp application's AUD tag</span><pre>npx wrangler secret put MCP_POLICY_AUD --env=""</pre></div><button type="button" data-copy>Copy</button></div>
+        <div class="cmd"><div><span class="what">Add the server to Claude Code</span><pre>claude mcp add --transport http tweet-explorer https://tweets.example.com/mcp --header "CF-Access-Client-Id: &lt;id&gt;" --header "CF-Access-Client-Secret: &lt;secret&gt;"</pre></div><button type="button" data-copy>Copy</button></div>
+        <div class="cmd"><div><span class="what">Check that Managed OAuth answers (expect 401 with www-authenticate)</span><pre>curl -si -X POST https://tweets.example.com/mcp</pre></div><button type="button" data-copy>Copy</button></div>
+      </div>
+      <p class="cap">Secrets take effect at once, without a new deploy. Full details are in the repository's <code>docs/</code> folder: deployment, configuration and mcp. This page is <code>public/admin/setup.html</code>, served at <code>/admin/setup</code> behind the admin login.</p>
+    </section>
+
+    <footer>Tweet Explorer · setup overview · November 2026</footer>
+  </main>
+</div>
+
+<script>
+// Draws a sequence diagram as SVG from lanes and steps. Colors come from the page's CSS tokens through classes.
+function sequence(el, lanes, steps, title) {
+  var W = 760, top = 64, row = 40, pad = 70;
+  var gap = (W - pad * 2) / (lanes.length - 1);
+  var x = function (i) { return pad + i * gap; };
+  var H = top + steps.length * row + 30;
+  var ns = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', title);
+  var mk = function (tag, attrs, text) { var n = document.createElementNS(ns, tag); for (var k in attrs) n.setAttribute(k, attrs[k]); if (text) n.textContent = text; svg.appendChild(n); return n; };
+  var id = el.id + '-ah';
+  svg.innerHTML = '<defs><marker id="' + id + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow accent" d="M0,0 L10,5 L0,10 z"/></marker><marker id="' + id + 'b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow" d="M0,0 L10,5 L0,10 z"/></marker></defs>';
+  lanes.forEach(function (name, i) {
+    mk('line', { x1: x(i), y1: top - 10, x2: x(i), y2: H - 10, 'class': 'lifeline' });
+    var w = Math.max(96, name.length * 8 + 24);
+    mk('rect', { x: x(i) - w / 2, y: 12, width: w, height: 34, rx: 8, 'class': 'lane-head' });
+    mk('text', { x: x(i), y: 34, 'text-anchor': 'middle', 'font-size': 13, 'font-weight': 700 }, name);
+  });
+  steps.forEach(function (s, k) {
+    var y = top + k * row + 14;
+    if (s.note) {
+      var a = x(s.note[0]), b = x(s.note[1]);
+      mk('rect', { x: a - 50, y: y - 16, width: b - a + 100, height: 26, rx: 6, 'class': 'note-box' });
+      mk('text', { x: (a + b) / 2, y: y + 2, 'text-anchor': 'middle', 'class': 'msg-text' }, s.text);
+      return;
+    }
+    if (s.from === s.to) {
+      var sx = x(s.from);
+      mk('path', { d: 'M' + sx + ',' + (y - 6) + ' h28 v14 h-26', 'class': 'self', 'marker-end': 'url(#' + id + ')' });
+      mk('text', { x: sx + 36, y: y + 5, 'class': 'msg-text' }, s.text);
+      return;
+    }
+    var x1 = x(s.from), x2 = x(s.to), dir = x2 > x1 ? 1 : -1;
+    mk('line', { x1: x1, y1: y, x2: x2 - dir * 2, y2: y, 'class': s.back ? 'msg back' : 'msg', 'marker-end': 'url(#' + id + (s.back ? 'b' : '') + ')' });
+    mk('text', { x: (x1 + x2) / 2, y: y - 7, 'text-anchor': 'middle', 'class': 'msg-text' }, s.text);
+  });
+  el.appendChild(svg);
+}
+
+sequence(document.getElementById('seq-oauth'), ['Claude app', 'Cloudflare Access', 'Worker /mcp'], [
+  { from: 0, to: 1, text: 'POST /mcp, no token' },
+  { from: 1, to: 0, back: true, text: '401 + where to sign in' },
+  { from: 0, to: 1, text: 'discover the OAuth server, register' },
+  { from: 0, to: 1, text: 'open the browser: Access login' },
+  { note: [0, 1], text: 'you sign in with your Access login' },
+  { from: 1, to: 0, back: true, text: 'code → access token' },
+  { from: 0, to: 1, text: 'POST /mcp, Bearer token' },
+  { from: 1, to: 2, text: 'request + signed JWT' },
+  { from: 2, to: 2, text: 'verify JWT, audience MCP_POLICY_AUD' },
+  { from: 2, to: 0, back: true, text: 'tool result' }
+], 'OAuth sign-in: the Claude app gets a 401, signs in through Access in the browser, receives a token, and Access forwards later requests to the Worker with a signed JWT.');
+
+sequence(document.getElementById('seq-apps'), ['Claude app', 'View (iframe)', 'MCP server'], [
+  { from: 0, to: 2, text: 'tools/call get_signal' },
+  { from: 2, to: 0, back: true, text: 'JSON result' },
+  { from: 0, to: 1, text: 'load ui://…/signal-v2.html' },
+  { from: 1, to: 0, text: 'ui/initialize' },
+  { from: 0, to: 1, back: true, text: 'host context: theme' },
+  { from: 1, to: 0, text: 'ui/notifications/initialized' },
+  { from: 0, to: 1, text: 'ui/notifications/tool-result' },
+  { note: [1, 1], text: 'you open a topic' },
+  { from: 1, to: 0, text: 'tools/call get_signal_items' },
+  { from: 0, to: 2, text: 'tools/call, with the connector login' },
+  { from: 2, to: 1, back: true, text: 'the items, drawn in the view' }
+], 'MCP Apps: the host runs the tool, loads the view, hands it the result, and relays the view\'s own tool calls to the server.');
+
+document.querySelectorAll('[data-copy]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var text = btn.parentElement.querySelector('pre').textContent;
+    var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+    var select = function () { var r = document.createRange(); r.selectNodeContents(btn.parentElement.querySelector('pre')); var s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = 'Selected'; };
+    try { navigator.clipboard.writeText(text).then(done, select); } catch (e) { select(); }
+  });
+});
+</script>
+
+</body>
+</html>

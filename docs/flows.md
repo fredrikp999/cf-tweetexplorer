@@ -93,7 +93,7 @@ flowchart TD
   IS -->|yes| PB[Published at /&lt;topic&gt;]
   DR -->|approve| PB
   WR -.->|optional| AU[Audio · Gemini TTS · Replicate → R2]
-  WR -.->|optional| IM[Picture · image model · Replicate → R2]
+  WR -.->|optional| IM[Picture · Workers AI or Replicate → R2]
   WR --> LED[(Cost ledger)]
 ```
 

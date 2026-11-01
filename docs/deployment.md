@@ -171,28 +171,40 @@ gpt-oss models are not offered here: on batch labelling they spend their whole t
 - It keeps running on the server if you close the page (and carries on after a deploy). Resuming a collection marks the analysis out of
   date; run it again and only the new tweets are labelled. Deleting a job deletes its analysis.
 
-## Pictures for briefings (Replicate)
-Each briefing can have a picture, drawn by an image model on Replicate from the briefing text and shown at the top of the public post
-(and of each day under "Previous days"), labelled "AI-generated illustration", and used as the page's `og:image`. It needs the same
-`REPLICATE_API_TOKEN` secret and the same R2 bucket as the audio (the pictures are stored under `image/`); nothing else to set up.
+## Pictures for briefings
+Each briefing can have a picture, drawn by an image model from the briefing text and shown at the top of the public post
+(and of each day under "Previous days"), labelled "AI-generated illustration", and used as the page's `og:image`. The pictures are stored in the
+same R2 bucket as the audio (under `image/`). The models run on Replicate (the `REPLICATE_API_TOKEN` secret) or on Cloudflare Workers AI (the
+`AI` binding in `wrangler.jsonc`, nothing to set up).
 
 **Image templates** (`/admin` → Briefings → *Image templates*): shared by all topics, editable, restorable like the audio templates. A
-template is an **image model**, a **shape** (16:9, 4:3 or 1:1) and a **prompt**. Three models are offered:
-| Tier | Model | Price per picture |
+template is an **image model**, a **shape** (16:9, 4:3 or 1:1) and a **prompt**. The models:
+| Model | Where | Price per picture |
 | --- | --- | --- |
-| Best | `google/nano-banana-pro` (2K) | $0.15 |
-| Cheaper | `google/imagen-4-fast` | $0.02 |
-| Very cheap | `black-forest-labs/flux-schnell` | $0.003 |
+| `google/nano-banana-pro` (2K) | Replicate | $0.15 |
+| `google/imagen-4-fast` | Replicate | $0.02 |
+| `black-forest-labs/flux-schnell` | Replicate | $0.003 |
+| FLUX.2 klein 4B (`@cf/black-forest-labs/flux-2-klein-4b`) | Workers AI | free, about 90 a day; then flux-schnell |
+| FLUX.2 klein 9B (`@cf/black-forest-labs/flux-2-klein-9b`) | Workers AI | free, about 6 a day; then imagen-4-fast |
+| Leonardo Phoenix (`@cf/leonardo/phoenix-1.0`) | Workers AI | free, about 4 a day; then imagen-4-fast |
 
-These are the prices Replicate shows for real runs (flux-schnell shows "less than $0.01"; its published price is $3 per 1,000
+The Replicate prices are what Replicate shows for real runs (flux-schnell shows "less than $0.01"; its published price is $3 per 1,000
 images). Change `IMAGE_MODELS` in `src/media/replicate.ts` if they change.
+
+**The Workers AI models and their fallback.** Every account gets 10,000 Neurons a day free on Workers AI (reset at 00:00 UTC). The app keeps
+its own tally of the Neurons its pictures use, from Cloudflare's published prices (`neuronsFor` in `src/media/workersai.ts`), and switches to
+the model's Replicate fallback before a picture would take the day past 9,500 (the rest is room for other Workers AI use on the account,
+which the app cannot see). It also falls back when Workers AI answers that the allowance is used up (error 4006: then it stops trying for the
+rest of the day) or fails in any other way. The fallback is noted on the sample picture and in the Costs ledger. So these pictures cost
+nothing, and at worst cost what the fallback costs. **Image templates** shows the Neurons used today.
 - **Prompt**: combined with the briefing. `{title}`, `{date}`, `{tldr}` (the headline summary) and `{briefing}` (the first ~800
   characters of the text, plain) are filled in; a prompt that uses neither `{tldr}` nor `{briefing}` gets the briefing excerpt added
   after it, so the picture always follows the text. The starters ask for no text in the picture and no real people. The prompt that was
   used is kept on the issue and shown in the issue editor.
 - Image models describe what to draw better than what to avoid: flux-schnell's safety filter once flagged an innocent "no faces" prompt as NSFW
   (a failed picture is retried up to three times). Prefer positive wording on the cheap model.
-- **Make a sample picture** draws one picture with the unsaved edits (it costs a picture, and is listed in the Costs tab).
+- **Make a sample picture** draws one picture with the unsaved edits (it costs a picture, or a picture's Neurons on Workers AI, and is listed
+  in the Costs tab). If a Workers AI model fell back to Replicate, the sample says so above the picture.
 
 **Per topic**: choose an image template and either tick "Create the picture automatically when a briefing is written" or make it by
 hand: **Make picture for <newest briefing>** next to *Run now*, or **Make picture** / *Remake* / *Delete picture* on each issue. Like audio, a
@@ -200,7 +212,24 @@ picture is public only while its issue is published, and is flagged *out of date
 `AUDIO_MOCK=1` makes placeholder pictures that cost nothing.
 
 **Cost**: a flat price per picture, shown on the template, the topic form and the issue, and listed separately from text and audio
-models on the Costs tab ("Image models").
+models on the Costs tab ("Image models"). Workers AI pictures are listed at $0, with the model that made each one.
+
+## AI Gateway
+[Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) logs model calls with their model, tokens, cost and latency (dashboard:
+AI → AI Gateway). The `AI_GATEWAY` variable in `wrangler.jsonc` names the gateway (`default`, which Cloudflare creates on first use).
+- **OpenRouter calls** (writing, screening, History analysis, Signal topics, transcripts) go to the gateway's OpenRouter endpoint
+  (`src/llm/gateway.ts`). The `default` gateway has authentication on, so the Worker needs a Cloudflare API token with the permission
+  **AI Gateway → Run**: `npx wrangler secret put AI_GATEWAY_TOKEN --env=""`. The OpenRouter key is still sent with each call and passed on;
+  it does not need to be stored on the gateway.
+- **Workers AI pictures** pass the gateway id to the binding, which needs no token. FLUX.2 pictures are the exception: they are sent as
+  multipart form data, which AI Gateway cannot pass on yet, so they go to Workers AI directly and are not in the gateway's log.
+- **If the gateway refuses a call** (no token, or a token without the permission), that one call is sent straight to OpenRouter, and every
+  later call from the same Worker instance goes direct too, with a warning in the logs. Nothing fails; the calls are just not logged.
+- The gateway does not reduce the number of outgoing requests: a call through it counts like any other.
+- To stop using it, remove `AI_GATEWAY` from `wrangler.jsonc`. Staging does not use it.
+
+Worth setting while you are there: a **rate limit** on the gateway (a daily briefing run needs far less than 100 requests a minute), and a
+**credit limit** on the OpenRouter key in OpenRouter's settings. Together they cap what a leaked token could spend.
 
 ## Costs
 Everything that spends money reports to one ledger (`src/durable-objects/cost.ts`): explorer calls (Search, Users, Lists, Trends), History,
@@ -249,13 +278,16 @@ The Worker runs a Strands agent against **OpenRouter** (`SUMMARY_PROVIDER` is `"
 `OPENROUTER_API_KEY`). The default model is `anthropic/claude-haiku-5.5` (`SUMMARY_MODEL`); the Summarize tab and each topic have a
 model picker (models, prices and notes live in `src/summarize/openrouter.ts`; the gpt-oss models are deliberately not listed).
 
-**Cloudflare Workers AI is no longer used**: its binding was removed from `wrangler.jsonc` and the picker no longer lists its models.
-The adapter code (`src/summarize/workers-ai.ts`) is still in the repository and still used by the local Node server if `.env` has
-`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`; to use Workers AI on Cloudflare again, add `"ai": { "binding": "AI" }` back and set
-`SUMMARY_PROVIDER` to `"workers-ai"`.
+**Workers AI** (the `AI` binding, there for the picture models) does not write briefings unless you set `SUMMARY_PROVIDER` to
+`"workers-ai"`, but its models are offered in the Summarize model picker. The adapter is `src/summarize/workers-ai.ts`; the local Node server
+uses it if `.env` has `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
 
 Notes
-- Running a long agent request on the Workers **Free** plan may hit its 10 ms CPU limit per request; the Paid plan allows far more.
+- **The Workers Free plan is too small for large briefings.** One run happens in one Durable Object alarm, and the Free plan allows 50
+  outgoing requests per invocation. A run makes one request per X list page, one screening call per tweet (screening starts at 25 tweets),
+  and the writer's calls, so a topic over many X lists with 150 tweets needs about 200 and fails with "Too many subrequests". The error then
+  lists the requests by host. The Workers Paid plan ($5 a month) allows 10,000. The Free plan's 10 ms CPU limit per request can also cut
+  long agent requests short.
 - Anthropic directly is also possible: `SUMMARY_PROVIDER=anthropic` and `wrangler secret put ANTHROPIC_API_KEY`.
 - The agent code in `src/summarize/` runs unchanged under Node (type-stripped, so Node 22.18+) and in the Worker.
   `SUMMARY_MOCK=1` (dev only, never honoured behind Cloudflare's edge) swaps in a scripted model for tests.
@@ -265,22 +297,10 @@ Notes
   needed now that OpenRouter is the main provider (`SUMMARY_FALLBACK_MODEL` was removed).
 
 ## MCP server (read-only)
-`https://tweets.example.com/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server (Streamable HTTP, stateless) over the
-app's data. It only reads: History jobs, tweets and analyses; Briefing topics and issues (drafts included); your lists and X Lists; Monitor
-watches and feed; Costs. Nothing that starts a job or spends money is exposed.
-
-It has its own Access application, separate from `/admin*`, so its credentials open nothing else. MCP clients cannot sign in through a
-browser, so they use a **service token**:
-1. Zero Trust → Access → Applications → Add → Self-hosted: destination `tweets.example.com/mcp`, one policy with action **Service Auth**
-   that includes your service token. Copy this application's **AUD tag**.
-2. Zero Trust → Access → Service credentials → Create service token. Copy the Client ID and Secret (shown once).
-3. Store the AUD tag as a secret and deploy: `npx wrangler secret put MCP_POLICY_AUD` (`TEAM_DOMAIN` is shared). Without it `/mcp` refuses everything.
-4. Add it to Claude Code:
-   ```sh
-   claude mcp add --transport http tweet-explorer https://tweets.example.com/mcp \
-     --header "CF-Access-Client-Id: <id>" --header "CF-Access-Client-Secret: <secret>"
-   ```
-   Locally (`npm run dev`) there is no token to send: `http://localhost:8787/mcp`.
+`https://tweets.example.com/mcp` is a read-only [Model Context Protocol](https://modelcontextprotocol.io) server for Claude, behind its own
+Access application. The Claude app signs in with your Access login through **Managed OAuth**; Claude Code and scripts use a **service
+token**. `get_signal` and `get_costs` open as interactive views (MCP Apps) in the Claude app. Setup, the tools and how the views work:
+[mcp.md](mcp.md).
 
 ## Security model
 - Every request, including static files, must carry a valid Cloudflare Access JWT (checked in the Worker).
