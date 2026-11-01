@@ -361,7 +361,14 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 .srclist details { margin-top: 8px; } .srclist summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }
 .srcrows { display: grid; gap: 2px; margin-top: 6px; } .srcrow { display: grid; grid-template-columns: 10px minmax(160px, 1.3fr) minmax(0, 2fr) auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
 .srcrow .nm { display: flex; flex-direction: column; min-width: 0; } .srcrow .nm small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .srcrow .err { grid-column: 2 / 4; font-size: 12.5px; }
-.srcrow .btns { display: flex; gap: 6px; } .srcrow .btns button { font-size: 12.5px; } .srcrow .st { width: 8px; height: 8px; border-radius: 50%; background: var(--ok, #2f9e6b); } .srcrow.paused .st { background: var(--muted); } .srcrow.error .st { background: var(--err); }
+.srclist > .btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; } .srcrow .btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+#monWatches .btns button { font: inherit; font-size: 13px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 3px 13px; cursor: pointer; white-space: nowrap; }
+#monWatches .srcrow .btns button { font-size: 12.5px; padding: 2px 11px; }
+#monWatches .btns button:hover { border-color: var(--accent); color: var(--accent); }
+#monWatches .btns button.pri { border-color: var(--accent); color: var(--accent); font-weight: 600; } #monWatches .btns button.pri:hover { background: var(--accent); color: var(--accent-text); }
+#monWatches .btns button.del { color: var(--muted); } #monWatches .btns button.del:hover { border-color: var(--err); color: var(--err); }
+#monWatches .btns button:disabled { opacity: .5; cursor: default; }
+.srclist .meta2 .go.ghost { padding: 2px 12px; font-size: 13px; border-radius: 999px; } .srclist .meta2 input, .srclist .meta2 select { vertical-align: middle; }
 .srcrow[data-idle] { grid-template-columns: minmax(160px, 1.3fr) minmax(0, 2fr) auto; }
 @media (max-width: 760px) { .srcrow { grid-template-columns: 10px minmax(0, 1fr); } .srcrow > :nth-child(n+3) { grid-column: 2; } }
 .ovlist { list-style: none; margin: 0; padding: 0; } .ovlist li { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; padding: 8px 0 8px 12px; border-top: 1px solid var(--line); border-left: 3px solid var(--line); }
@@ -1654,7 +1661,7 @@ function watchCard(w) {
   return `<div class="srcrow ${status}" data-watch="${esc(w.id)}"><span class="st" title="${status}"></span><span class="nm"><b>${esc(w.label)}</b><small>${esc(flags)}</small></span>
     <span class="note">${w.briefing ? `${fmt(w.found)} posts handed over` : `every <select data-wint style="padding:1px 4px;font-size:12px">${IVLS.map((v) => `<option value="${v}" ${v === w.intervalSec ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select> · checked <span data-ago="${w.lastRun}">${ago(w.lastRun)}</span> · ${fmt(w.found)} ${src === 'x' ? 'tweets' : 'items'}${src === 'x' ? ` · ${money(w.cost)}` : ''}`}${w.group ? ` · group ${esc(w.group)}` : ''}${w.noSignal ? ' · not in Signal' : ''}</span>
     ${w.lastError ? `<span class="err" title="${esc(w.lastError)}">${esc(w.lastError.slice(0, 90))}</span>` : ''}
-    <span class="btns">${w.briefing ? '' : `<button data-mact="check" title="Check this source now (retries it if it failed)">${w.lastError ? 'Retry' : 'Check now'}</button><button data-mact="toggle">${w.enabled ? 'Pause' : 'Resume'}</button>`}<button data-mact="delete">Remove</button></span></div>`;
+    <span class="btns">${w.briefing ? '' : `<button data-mact="check" class="${w.lastError ? 'pri' : ''}" title="Check this source now (retries it if it failed)">${w.lastError ? 'Retry' : 'Check now'}</button><button data-mact="toggle">${w.enabled ? 'Pause' : 'Resume'}</button>`}<button data-mact="delete" class="del">Remove</button></span></div>`;
 }
 function renderWatches() {
   const ws = mon.watches, box = $('#monWatches');
@@ -1675,7 +1682,7 @@ function renderWatches() {
         <div class="meta2">Signal group <input data-lgroup list="sigNames" value="${groups.length === 1 ? esc(groups[0]) : ''}" placeholder="${groups.length > 1 ? 'mixed' : 'default'}" maxlength="40" style="width:150px"><button class="go ghost" data-lact2="group">Set</button>
           <button class="link" data-lact2="signal">${allOut ? 'Count in Signal' : 'Leave out of Signal'}</button></div>
         ${sync ? `<div class="meta2"><span class="note">${esc(sync.text)}.</span> <button class="link" data-lact2="sync">${esc(sync.action)}</button></div>` : ''}
-        <div class="btns">${checked ? `<button data-lact2="check">${bad ? 'Retry the failing' : 'Check all now'}</button><button data-lact2="toggle">${paused === g.length ? 'Resume all' : 'Pause all'}</button>` : ''}<button data-lact2="delete">Stop watching</button></div>
+        <div class="btns">${checked ? `<button data-lact2="check" class="${bad ? 'pri' : ''}">${bad ? 'Retry the failing' : 'Check all now'}</button><button data-lact2="toggle">${paused === g.length ? 'Resume all' : 'Pause all'}</button>` : ''}<button data-lact2="delete" class="del">Stop watching</button></div>
         <details data-lkey="${esc(k)}"${srcOpen.has(k) || (bad && !srcOpen.size) ? ' open' : ''}><summary>The ${g.length} source${g.length === 1 ? '' : 's'}</summary><div class="srcrows">${g.map(watchCard).join('')}</div></details>
       </div>`;
     });
@@ -1686,7 +1693,7 @@ function renderWatches() {
       ...xlists.filter((l) => !watched.has('x:' + l.id)).map((l) => ['x:' + l.id, l.name, 'X List', 'one watch'])];
     box.innerHTML = (cards.length ? `<div class="srclists">${cards.join('')}</div>` : '<div class="empty">Nothing is watched yet. Add a list or a single source above.</div>')
       + (idle.length ? `<details class="card" style="margin-top:14px"><summary><b>Lists not watched</b> <span class="note">${idle.length}</span></summary><div class="srcrows">${idle.map(([k, n, kind, note]) => `<div class="srcrow" data-idle="${esc(k)}"><span class="nm"><b>${esc(n)}</b><small>${kind} · ${note}</small></span>
-          <span class="note">every <select data-iint style="padding:1px 4px;font-size:12px">${IVLS.map((v) => `<option value="${v}" ${v === (k.startsWith('f:') ? 900 : 300) ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select></span><span class="btns"><button data-iwatch>Watch</button></span></div>`).join('')}</div></details>` : '');
+          <span class="note">every <select data-iint style="padding:1px 4px;font-size:12px">${IVLS.map((v) => `<option value="${v}" ${v === (k.startsWith('f:') ? 900 : 300) ? 'selected' : ''}>${ivl(v)}</option>`).join('')}</select></span><span class="btns"><button data-iwatch class="pri">Watch</button></span></div>`).join('')}</div></details>` : '');
   }
   const sel = $('#monFilter'), cur = sel.value;
   const lsel = $('#monListFilter'), curL = lsel.value, withList = flists.filter((l) => ws.some((w) => w.list === l.id));
