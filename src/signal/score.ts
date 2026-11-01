@@ -19,11 +19,15 @@ export interface ScoredTerm {
   breadth: number; active: number;
   /** The share of the weighted signal that comes from the strongest group. */
   exclusivity: number; topGroup: string;
+  /** Mentioned on nearly every day of the kept history: always there, so it says nothing about what is being discussed now. */
+  evergreen: boolean;
   /** shared: in most groups; single: nearly all in one; mixed: in between. */
   kind: 'shared' | 'single' | 'mixed';
   groups: TermGroup[];
 }
 
+/** An always-present term only counts when it is at least this many times as strong as before. */
+export const SPIKE = 2;
 export const SMOOTH = 5;        // added to a group's item count, so three items cannot make a 100% share
 const EPS = 0.002;              // a share this small counts as nothing when comparing windows
 const MIN_BASELINE_ITEMS = 10;  // fewer items than this in the earlier window and a change means nothing
@@ -39,6 +43,8 @@ export interface ScoreInput {
   minDocs?: number;
   /** term -> how many different sources mention it; with `minVoices`, terms that fewer sources mention are left out (one source repeating itself is not a signal). */
   voices?: Map<string, number>; minVoices?: number;
+  /** Terms mentioned on most days of the kept history (see `findEvergreen`). */
+  evergreen?: Set<string>;
 }
 
 /** "game" and "games" are one term: the plural is folded into the singular (or the other way round when only the plural is common). Per group the larger count is kept, since an item may mention both. */
@@ -83,13 +89,23 @@ export function scoreTerms(inp: ScoreInput): { terms: ScoredTerm[]; baselineOk: 
     const kind = active.length < 2 ? 'single' : breadth >= sharedAt && top.part < 0.6 ? 'shared' : top.part >= 0.75 || breadth <= 1 ? 'single' : 'mixed';
     const prevDocs = Object.values(prevC.get(term) ?? {}).reduce((n, v) => n + v, 0);
     terms.push({ term, docs, signal, prev, change: baselineOk ? (signal + EPS) / (prev + EPS) : null, isNew: baselineOk && prevDocs === 0,
-      breadth, active: active.length, exclusivity: top.part, topGroup: top.key, kind, groups });
+      breadth, active: active.length, exclusivity: top.part, topGroup: top.key, evergreen: inp.evergreen?.has(term) ?? false, kind, groups });
   }
   terms.sort((a, b) => b.signal - a.signal || b.docs - a.docs || a.term.localeCompare(b.term));
   return { terms: dropParts(terms), baselineOk, active };
 }
 
 /** "interest" next to "interest rates" with almost the same count is one topic: keep the phrase, drop the word. */
+export const EVERGREEN_SHARE = 0.7;   // present on this part of the days with data or more: always there
+export const EVERGREEN_MIN_DAYS = 5;  // with fewer days of history nothing can be called always there
+/** Terms present on most days there is data for: "claude" in a feed about AI. `daysPresent` is per term; `daysWithData` the days the sources delivered anything. */
+export function findEvergreen(daysPresent: Map<string, number>, daysWithData: number): Set<string> {
+  const out = new Set<string>();
+  if (daysWithData < EVERGREEN_MIN_DAYS) return out;
+  for (const [t, d] of daysPresent) if (d / daysWithData >= EVERGREEN_SHARE) out.add(t);
+  return out;
+}
+
 export function dropParts(sorted: ScoredTerm[]): ScoredTerm[] {
   const phrases = sorted.filter((t) => t.term.includes(' '));
   const covered = new Set<string>();
@@ -104,7 +120,7 @@ export function dropParts(sorted: ScoredTerm[]): ScoredTerm[] {
 
 /** Terms that are rising: more signal than before, weighted by how much signal there is. */
 export const rising = (terms: ScoredTerm[], n: number): ScoredTerm[] =>
-  terms.filter((t) => t.change !== null && t.change >= 1.5).sort((a, b) => b.signal * Math.log(b.change!) - a.signal * Math.log(a.change!)).slice(0, n);
+  terms.filter((t) => t.change !== null && t.change >= 1.5 && (!t.evergreen || t.change >= SPIKE)).sort((a, b) => b.signal * Math.log(b.change!) - a.signal * Math.log(a.change!)).slice(0, n);
 
 /** What one group talks about that the others do not: its share against the average share elsewhere. */
 export function distinctive(terms: ScoredTerm[], key: string, n: number, minDocs = 3): Array<ScoredTerm & { own: number; others: number; lift: number }> {
@@ -120,4 +136,4 @@ export function distinctive(terms: ScoredTerm[], key: string, n: number, minDocs
 }
 
 /** Not just always there: more than before, new, or too little history to tell. A topic at the same level as in the period before is background ("ai" on a feed about AI). */
-export const notSteady = (t: ScoredTerm): boolean => t.change === null || t.isNew || t.change >= 1.15;
+export const notSteady = (t: ScoredTerm): boolean => (t.evergreen ? t.change !== null && t.change >= SPIKE : t.change === null || t.isNew || t.change >= 1.15);

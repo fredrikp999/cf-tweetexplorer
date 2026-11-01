@@ -60,6 +60,7 @@ export interface Topic {
   slug: string; title: string; description: string; instruction: string; length: Length; model: string;
   imageTemplate?: string; imageAuto?: boolean;   // the same for the briefing's picture
   audioTemplate?: string; audioAuto?: boolean;   // the delivery template for this topic's audio ('' = the first one), and whether to make audio when a briefing is written
+  toSignal?: boolean; signalGroup?: string;    // hand the posts this briefing fetches to Signal (free: already paid for), as a group of this name
   maxCost?: number;                            // data budget per run in USD; 0 or unset = no limit. The run stops fetching when it is spent.
   fallback?: string;                           // OpenRouter model to use if `model` cannot start; '' = none; unset (older topics) = the site default
   sources: TopicSource[];
@@ -160,6 +161,7 @@ function cleanTopic(b: Record<string, unknown>, prev: Topic | undefined, env: En
   const t: Topic = {
     slug, title, description: str(b.description, 300), instruction: str(b.instruction, INSTRUCTION_MAX),
     length: b.length === 'brief' || b.length === 'detailed' ? b.length : 'standard', model, ...(fallback === undefined ? {} : { fallback }),
+    toSignal: typeof b.toSignal === 'boolean' ? b.toSignal : prev?.toSignal === true, signalGroup: typeof b.signalGroup === 'string' ? str(b.signalGroup, 40) : prev?.signalGroup ?? '',
     audioTemplate: str(b.audioTemplate, 40), audioAuto: b.audioAuto === true, imageTemplate: str(b.imageTemplate, 40), imageAuto: b.imageAuto === true,
     sources: cleanSources(b.sources), intervalHours, hourUtc, maxCost: Math.min(5, Math.max(0, Math.round((Number(b.maxCost) || 0) * 1000) / 1000)),
     enabled: b.enabled !== false, autoPublish: b.autoPublish === true, listed: b.listed !== false,
@@ -441,7 +443,7 @@ export class PublishDO extends DurableObject<Env> {
     if (!built) throw new Error('no AI provider is configured');
     const windowHours = t.intervalHours, since = Date.now() - windowHours * HOUR;
 
-    const got: RawTweet[] = [], notes: string[] = [], infos: SourceInfo[] = [];
+    const got: RawTweet[] = [], paid: RawTweet[] = [], notes: string[] = [], infos: SourceInfo[] = [];
     // With a data budget, give every X list the same share of it (pages per list), so the first lists cannot use it all up.
     const xl = (await sources.xlists?.().catch(() => [])) ?? [];
     const idsOf = (s: TopicSource) => (s.type === 'xgroup' ? xl.filter((l) => l.groups.includes(s.group)).map((l) => l.id) : s.type === 'xlist' ? [s.listId] : []);
@@ -465,6 +467,7 @@ export class PublishDO extends DurableObject<Env> {
           : { type: 'feed', limit: 200, ...(s.watch ? { watch: s.watch } : {}), ...(s.source ? { source: s.source } : {}) };
         const r = await fetchSource(sources, spec), parts = r.parts ?? [];
         got.push(...r.tweets);
+        if (s.type !== 'feed') paid.push(...r.tweets);   // the Monitor feed is Signal's own data already
         const how = spec.type === 'xlist' ? { mode: spec.mode, minFaves: spec.minFaves } : {};
         if (s.type === 'xgroup') infos.push({ kind: 'xgroup', label: s.group, count: parts.reduce((n, p) => n + p.count, 0), ...how, lists: parts.map((p) => ({ id: p.id, label: p.label, count: p.count })) });
         else for (const p of parts) infos.push({ kind: p.kind, label: p.label, id: p.id, count: p.count, accounts: p.accounts, handles: p.handles, ...how });
@@ -472,6 +475,13 @@ export class PublishDO extends DurableObject<Env> {
     }
     const recent = dedupeSort(got).filter((x) => !x.createdAt || Date.parse(x.createdAt) >= since);
     if (!recent.length) throw new Error(spend.meter.capped ? 'the data budget was reached before any tweets were collected; raise it' : notes.length ? `no tweets: ${notes.join('; ')}` : 'no tweets matched in this period');
+    // The posts are paid for: Signal can count them too, so it does not have to fetch them again. Never fails the briefing.
+    if (t.toSignal) {
+      try {
+        await this.env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/signal-ingest', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ slug: t.slug, title: t.title, group: t.signalGroup || t.title, posts: dedupeSort(paid) }) }));
+      } catch (err) { console.error('signal hand-over failed', t.slug, err instanceof Error ? err.message : String(err)); }
+    }
     // Too many: keep the ones people reacted to most, then restore chronological order.
     const used = recent.length <= MAX_TWEETS ? recent : dedupeSort([...recent].sort((a, b) => engagement(b) - engagement(a)).slice(0, MAX_TWEETS));
 

@@ -3088,13 +3088,13 @@ async function showSigTerm(term, scroll) {
     ${t?.members?.length || t?.related?.length ? `<div class="note" style="margin-bottom:6px">${t.members.length ? `Counted together: <b>${esc([t.term, ...t.members].join(', '))}</b>. ` : ''}${t.related.length ? `Goes with: ${esc(t.related.join(', '))}.` : ''}</div>` : ''}
     ${t ? `<div class="optrow" style="margin-bottom:8px">${sigChips(t)}<span class="note">${t.groups.filter((g) => g.docs).map((g) => `<span class="sigdot" style="--gc:${sigCol(g.key)}"></span>${esc(sigName(g.key))} ${fmt(g.docs)} (${sigPct(g.share)})`).join(' · ')}</span></div>` : ''}
     <div style="height:210px"><canvas id="sigChart"></canvas></div>
-    <div class="note" style="margin-top:6px">Share of each group's items that mention it, per day (UTC).</div>
+    <div class="note" style="margin-top:6px">Share of each group's items that mention it, per day (UTC), averaged over three days so one busy day does not spike the line.</div>
     <h3 style="font-size:14px;margin:16px 0 6px">Proof <span class="note" style="font-weight:400">the items behind it</span></h3>
     <div id="sigProof"><div class="note">Loading…</div></div></div>`;
   sigProof = { terms: [term, ...(t?.members ?? [])], group: '', watch: '', offset: 0, items: [], data: null };
   loadProof(true);
-  chart($('#sigChart'), { type: 'line', legend: true, data: { labels: d.days.map((x) => x.slice(5)), datasets: live.map((g) => ({ label: g.name, borderColor: sigCol(g.key), backgroundColor: sigCol(g.key), tension: 0.25, pointRadius: 2,
-    data: g.docs.map((n, i) => (g.items[i] ? +((n / g.items[i]) * 100).toFixed(2) : 0)) })) },
+  chart($('#sigChart'), { type: 'line', legend: true, data: { labels: d.days.map((x) => x.slice(5)), datasets: live.map((g) => ({ label: g.name, borderColor: sigCol(g.key), backgroundColor: sigCol(g.key), tension: 0, pointRadius: 2,
+    data: g.docs.map((_, i) => { const w = [i - 1, i, i + 1].filter((j) => j >= 0 && j < g.docs.length), n = w.reduce((s, j) => s + g.docs[j], 0), m = w.reduce((s, j) => s + g.items[j], 0); return m ? +((n / m) * 100).toFixed(2) : 0; }) })) },
     options: { scales: { y: { beginAtZero: true, ticks: { precision: 1, callback: (v) => v + '%' } } }, plugins: { legend: { display: true }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y}% of items` } } } } });
   if (scroll) $('#sigDetail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
@@ -3369,6 +3369,11 @@ function renderDetail(resetForm) {
     <label class="check"><input type="checkbox" name="enabled" ${t.enabled ? 'checked' : ''}> Run on schedule</label>
     <label class="check"><input type="checkbox" name="autoPublish" ${t.autoPublish ? 'checked' : ''}> Publish automatically (otherwise each run waits as a draft for you to approve)</label>
     <label class="check"><input type="checkbox" name="listed" ${t.listed ? 'checked' : ''}> Show on the landing page (off: only people with the link find it)</label></div></details>
+    <details class="fold" data-fold="topic:signal"><summary>Signal<span class="hint">${t.toSignal ? 'feeds Signal' : 'off'}</span></summary><div class="foldbody">
+      <label class="check"><input type="checkbox" name="toSignal" ${t.toSignal ? 'checked' : ''}> Also count the posts this briefing fetches in Signal (free: they are already paid for, so Signal does not fetch them again)</label>
+      <label>Signal group <input name="signalGroup" maxlength="40" value="${esc(t.signalGroup || '')}" placeholder="${esc(t.title || 'the briefing title')}"></label>
+      <p class="muted" style="margin:0">The group starts with weight ×2 in Signal (these posts were already combined from many sources); change it on the Signal tab. Posts the briefing reads from the Monitor feed are not counted twice. A briefing that keeps only the best posts of a list (the default) gives Signal those posts, not the whole list.</p>
+    </div></details>
     <div class="actions"><button class="primary" type="submit">Save</button>
       ${isNew ? '' : `<button type="button" class="sec" id="pubRun" ${busy(t) ? 'disabled' : ''}>${busy(t) ? 'Running…' : 'Run now'}</button>
       <button type="button" class="sec" id="pubImageLatest" title="Draws a picture for the newest briefing from the text already written: no new tweets, no new summary."></button>
@@ -3422,7 +3427,7 @@ function readForm(f) {
   const v = Object.fromEntries(new FormData(f));
   const sources = [...f.querySelectorAll('.src')].map((row) => Object.fromEntries([...row.querySelectorAll('[data-f]')].map((x) => [x.dataset.f, x.value])));
   const el = f.elements, fallback = el.fallback && !el.fallback.disabled ? (v.fallbackOn ? v.fallback : '') : el.fallback ? '' : undefined;   // no OpenRouter key: leave it unset
-  return { ...v, fallback, sources, intervalHours: +v.intervalHours, hourUtc: +v.hourUtc, enabled: !!v.enabled, autoPublish: !!v.autoPublish, listed: !!v.listed, audioAuto: !!v.audioAuto, imageAuto: !!v.imageAuto, isNew: sel === '+new', slug: sel === '+new' ? v.slug : sel };
+  return { ...v, fallback, sources, intervalHours: +v.intervalHours, hourUtc: +v.hourUtc, enabled: !!v.enabled, autoPublish: !!v.autoPublish, listed: !!v.listed, toSignal: !!v.toSignal, audioAuto: !!v.audioAuto, imageAuto: !!v.imageAuto, isNew: sel === '+new', slug: sel === '+new' ? v.slug : sel };
 }
 
 $('#pubDetail').addEventListener('change', (e) => {

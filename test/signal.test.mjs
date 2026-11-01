@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractTerms } from '../src/signal/terms.ts';
-import { distinctive, dropParts, foldPlurals, notSteady, rising, scoreTerms } from '../src/signal/score.ts';
+import { distinctive, dropParts, findEvergreen, foldPlurals, notSteady, rising, scoreTerms } from '../src/signal/score.ts';
 
 describe('extractTerms', () => {
   test('hashtags, words, phrases and acronyms; no links, mentions or stop words', () => {
@@ -127,7 +127,7 @@ describe('dropParts and distinctive', () => {
   });
 });
 
-import { indexItems, mergeTopics, relatedTerms, topicItems } from '../src/signal/topics.ts';
+import { boostByEngagement, indexItems, mergeTopics, relatedTerms, topicEngagement, topicItems } from '../src/signal/topics.ts';
 describe('topics', () => {
   const T = (term, signal) => ({ term, signal, docs: 5, prev: 0, change: null, isNew: false, breadth: 1, active: 1, exclusivity: 1, topGroup: 'x', kind: 'single', groups: [] });
   const item = (ts, ...terms) => ({ ts, terms: new Set(terms) });
@@ -179,9 +179,9 @@ describe('AI topics', () => {
     assert.equal(normTopic('Ångström'), 'ångström');
   });
   test('parses the answer, wrapped or not, and keeps only what is valid', () => {
-    const m = parseTopics('Sure:\n```json\n{"items":[{"i":1,"t":["Kimi K2","moonshot","kimi k2","video","a b c","d"]},{"i":3,"t":["openai"]},{"i":9,"t":["out of range"]},{"i":1,"t":["dup"]}]}\n```', 3);
+    const m = parseTopics('Sure:\n```json\n{"items":[{"i":1,"t":["Kimi K2","moonshot","kimi k2","video","a b c","d"]},{"i":3,"t":["bbrouter","openai"]},{"i":9,"t":["out of range"]},{"i":1,"t":["dup"]}]}\n```', 3);
     assert.deepEqual(m.get(0), ['kimi k2', 'moonshot', 'a b c']);
-    assert.deepEqual(m.get(2), ['openai']);
+    assert.deepEqual(m.get(2), ["bbrouter"]);
     assert.equal(m.has(1), false, 'an item the model skipped is absent, not empty');
     assert.equal(m.size, 2);
     assert.equal(parseTopics('not json at all', 3).size, 0);
@@ -225,5 +225,41 @@ describe('plurals and thin baselines', () => {
     const r = scoreTerms({ groups: [G('x')], items: { x: 200 }, prevItems: { x: 20 }, cur: counts({ t: { x: 30 } }), prev: counts({}) });
     assert.equal(r.baselineOk, false);
     assert.equal(r.terms[0].isNew, false);
+  });
+});
+
+describe('reactions', () => {
+  const T = (term, signal) => ({ lead: { term, signal } });
+  test('a topic people reacted to climbs; with no reactions the order stays', () => {
+    const a = T('quiet', 1.0), b = T('loud', 0.8);
+    assert.deepEqual(boostByEngagement([a, b], [0, 5000]).map((x) => x.lead.term), ['loud', 'quiet']);
+    assert.deepEqual(boostByEngagement([a, b], [0, 0]).map((x) => x.lead.term), ['quiet', 'loud']);
+  });
+  test("engagement sums over a topic's items; the headline shown is the one with most reactions", () => {
+    const items = [{ terms: new Set(['k']), ts: 1, eng: 5 }, { terms: new Set(['k']), ts: 2, eng: 300 }, { terms: new Set(['k']), ts: 3 }];
+    const post = indexItems(items);
+    assert.equal(topicEngagement(['k'], items, post), 305);
+    assert.equal(topicItems(['k'], items, post, 1)[0], 1);
+  });
+});
+
+describe('always-there terms', () => {
+  test('a term on most days is evergreen, but not with too little history', () => {
+    const d = new Map([['claude', 12], ['kimi k2', 2]]);
+    assert.deepEqual([...findEvergreen(d, 14)], ['claude']);
+    assert.equal(findEvergreen(d, 4).size, 0);
+  });
+  test('an evergreen term is background unless it spikes', () => {
+    const base = { term: 't', signal: 0.1, prev: 0.1, docs: 9, isNew: false, breadth: 2, active: 2, exclusivity: 0.5, topGroup: 'x', kind: 'mixed', groups: [], evergreen: true };
+    assert.equal(notSteady({ ...base, change: 1.4 }), false);
+    assert.equal(notSteady({ ...base, change: 2.5 }), true);
+    assert.equal(notSteady({ ...base, evergreen: false, change: 1.4 }), true);
+    assert.deepEqual(rising([{ ...base, change: 1.8 }], 5), []);
+  });
+  test('model plurals are folded, big names alone are not topics', () => {
+    assert.equal(normTopic('LLMs'), null);
+    assert.equal(normTopic('openai'), null);
+    assert.equal(normTopic('Chip exports'), 'chip export');
+    assert.equal(normTopic('Mozilla ethics'), 'mozilla ethics');
   });
 });

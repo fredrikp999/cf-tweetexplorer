@@ -10,8 +10,8 @@ import { checkFeedUrl, fetchRss } from '../sources/rss';
 import { isYoutubeFeed, resolveYoutubeFeed } from '../sources/youtube';
 import { isSource, toFeedShape, type FetchResult, type SourceKind } from '../sources/types';
 import { extractTerms } from '../signal/terms';
-import { distinctive, notSteady, rising, scoreTerms, type Counts, type GroupInfo, type ScoredTerm } from '../signal/score';
-import { indexItems, mergeTopics, relatedTerms, topicItems, type TopicItem } from '../signal/topics';
+import { distinctive, findEvergreen, notSteady, rising, scoreTerms, type Counts, type GroupInfo, type ScoredTerm } from '../signal/score';
+import { boostByEngagement, indexItems, mergeTopics, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
 import { AI_BATCH, VAGUE, estimatePer1000, parseTopics, topicSystem, topicUser } from '../signal/ai';
 import { DEFAULT_FILTER, cleanFilter, makeBlocker, type FilterWord } from '../signal/filter';
 import { GENERIC } from '../signal/terms';
@@ -28,6 +28,8 @@ const MIN_INTERVAL = 15, MAX_INTERVAL = 86_400;
 const MAX_INFLIGHT = 3;
 const SIGNAL_KEEP_DAYS = 30;   // Signal keeps daily term counts this long: two windows of at most SIGNAL_MAX_DAYS, with room to spare
 const SIGNAL_MAX_DAYS = 14;
+const BRIEF_WEIGHT = 2;    // the starting weight of a group that only holds briefing posts
+const BRIEF_KEEP = 3000;   // posts from briefings kept for Signal's headlines, apart from the live feed so they never push its items out
 const AI_QUEUE_MAX = 3000, AI_BACKLOG_DAYS = 14, AI_RETRY_MS = 10 * 60_000;
 interface SignalAi { enabled: boolean; model: string; dailyCap: number }
 const SOURCE_NAME: Record<SourceKind, string> = { x: 'X', rss: 'RSS and blogs', hn: 'Hacker News', youtube: 'YouTube' };
@@ -44,6 +46,7 @@ interface Watch {
   list?: string;                               // the feed list this watch was made from, so the feed can be shown per list
   group?: string;                              // Signal: a name you gave, so watches with the same name vote together
   noSignal?: boolean;                          // Signal: keep watching, but leave this watch out of Signal
+  briefing?: string;                           // fed by the briefing with this slug (never polled): its posts were already paid for there
 }
 const sourceOf = (w: Watch): SourceKind => w.source ?? 'x';
 // What one check found, whatever the source: the id (for de-duplication), its time and the JSON the feed stores.
@@ -120,7 +123,7 @@ export class MonitorDO extends DurableObject<Env> {
 
   // ---- scheduling
   private async reschedule(): Promise<void> {
-    const active = this.watches().filter((w) => w.enabled), wake = this.aiWake();
+    const active = this.watches().filter((w) => w.enabled && !w.briefing), wake = this.aiWake();
     if (!active.length) { if (wake) await this.ctx.storage.setAlarm(wake); else await this.ctx.storage.deleteAlarm(); return; }
     let next = Math.min(...active.map((w) => w.nextRun));
     // Capped: X watches wait, free sources carry on. If only X watches are left, look again in 10 min.
@@ -190,7 +193,7 @@ export class MonitorDO extends DurableObject<Env> {
 
   private async check(id: string): Promise<void> {
     const w0 = this.watch(id);
-    if (!w0) return;
+    if (!w0 || w0.briefing) return;
     this.running.add(id);
     const sql = this.ctx.storage.sql;
     const source = sourceOf(w0);
@@ -232,12 +235,43 @@ export class MonitorDO extends DurableObject<Env> {
         this.countTerms(id, found);
         if (this.aiConfig().enabled) this.enqueueAi(id, found);
         // Each source keeps its own FEED_KEEP items, so a busy one cannot push the others out.
-        sql.exec('DELETE FROM feed WHERE source = ?1 AND seq <= (SELECT MAX(seq) FROM feed WHERE source = ?1) - ?2', source, FEED_KEEP);
+        sql.exec("DELETE FROM feed WHERE source = ?1 AND watch NOT LIKE 'brief:%' AND seq <= (SELECT MAX(seq) FROM feed WHERE source = ?1 AND watch NOT LIKE 'brief:%') - ?2", source, FEED_KEEP);
         sql.exec('DELETE FROM seen WHERE watch = ?1 AND rowid NOT IN (SELECT rowid FROM seen WHERE watch = ?1 ORDER BY at DESC LIMIT ?2)', id, SEEN_KEEP);
         this.saveWatch(w);
       });
     }
     this.running.delete(id);
+  }
+
+  /**
+   * Posts a briefing already fetched (and paid for) go into Signal as one watch of their own, so Signal does not have to fetch them again.
+   * The watch is never polled. Posts it has seen are skipped, so a later briefing that reads the same posts does not count them twice.
+   */
+  private ingestBriefing(slug: string, title: string, group: string, posts: Array<Record<string, unknown>>): { added: number; total: number } {
+    const id = 'brief:' + slug, now = Date.now();
+    const found: Found[] = [];
+    for (const p of posts.slice(0, 2000)) {
+      const pid = String(p.id ?? ''); if (!pid || this.isSeen(id, pid)) continue;
+      const ts = Date.parse(String(p.createdAt ?? ''));
+      found.push({ id: pid, ts: Number.isFinite(ts) ? ts : now, json: p });
+    }
+    const label = ('Briefing: ' + title).slice(0, 60), w: Watch = this.watch(id) ?? {
+      id, label, query: '', originalsOnly: false, includeRetweets: false, intervalSec: 3600, enabled: false, created: now, lastCheckedTs: 0, nextRun: 0,
+      checks: 0, found: 0, cost: 0, lastRun: 0, lastError: '', errors: 0, briefing: slug };
+    w.label = label; w.enabled = false; w.group = cleanGroup(group) || title.slice(0, 40); w.lastRun = now; w.found += found.length; w.checks++;
+    found.sort((a, b) => a.ts - b.ts);
+    this.ctx.storage.transactionSync(() => {
+      for (const f of found) {
+        this.markSeen(id, f.id);
+        const j = f.json as { source?: string };
+        this.ctx.storage.sql.exec('INSERT INTO feed (watch, label, seen_at, json, source) VALUES (?, ?, ?, ?, ?)', id, label, now, JSON.stringify(f.json), j.source === 'rss' || j.source === 'hn' || j.source === 'youtube' ? j.source : 'x');
+      }
+      this.countTerms(id, found);
+      if (this.aiConfig().enabled) this.enqueueAi(id, found);
+      this.ctx.storage.sql.exec("DELETE FROM feed WHERE watch LIKE 'brief:%' AND seq <= (SELECT MAX(seq) FROM feed WHERE watch LIKE 'brief:%') - ?", BRIEF_KEEP);
+      this.saveWatch(w);
+    });
+    return { added: found.length, total: posts.length };
   }
 
   // ---- Signal: counting
@@ -335,6 +369,8 @@ export class MonitorDO extends DurableObject<Env> {
       const cur = groups.get(g.key) ?? groups.set(g.key, { key: g.key, name: g.name, weight: weights[g.key] ?? 1, watches: [] }).get(g.key)!;
       cur.watches.push({ id: w.id, label: w.label, source: sourceOf(w), enabled: w.enabled, group: w.group });
     }
+    // A group made only of briefing posts has a head start: those posts were already picked and combined from many sources. A weight you set wins.
+    for (const g of groups.values()) if (!(g.key in weights) && g.watches.length && g.watches.every((x) => this.watch(x.id)?.briefing)) g.weight = BRIEF_WEIGHT;
     return { of, groups: [...groups.values()], excluded };
   }
   /** Items per group over the days from..to (UTC, inclusive). */
@@ -378,6 +414,16 @@ export class MonitorDO extends DurableObject<Env> {
     const heard = (w: Set<string>) => (w.size === 1 && (perGroup.get(of.get([...w][0]) ?? '') ?? 0) <= 1 ? 2 : w.size);
     return { counts, voices: new Map([...seen].map(([t, w]) => [t, heard(w)] as const)) };
   }
+  /** Terms mentioned on most of the days there is data for, over the whole kept history. */
+  private evergreen(candFrom: string, candTo: string): Set<string> {
+    const sql = this.ctx.storage.sql, T = this.tables(), keepFrom = dayOf(Date.now() - SIGNAL_KEEP_DAYS * 86_400_000);
+    const withData = sql.exec<{ n: number }>(`SELECT COUNT(DISTINCT day) AS n FROM ${T.items} WHERE day >= ?`, keepFrom).one().n;
+    const present = new Map<string, number>();
+    for (const r of sql.exec<{ term: string; d: number }>(
+      `SELECT term, COUNT(DISTINCT day) AS d FROM ${T.terms} WHERE day >= ?1 AND term IN
+         (SELECT term FROM ${T.terms} WHERE day >= ?2 AND day <= ?3 GROUP BY term HAVING SUM(n) >= 3 ORDER BY SUM(n) DESC LIMIT 3000) GROUP BY term`, keepFrom, candFrom, candTo)) present.set(r.term, r.d);
+    return findEvergreen(present, withData);
+  }
   private async compute(daysIn: number, only?: Set<string>) {
     const days = Math.min(SIGNAL_MAX_DAYS, Math.max(1, Math.floor(daysIn) || 7)), now = Date.now(), DAY = 86_400_000;
     const to = dayOf(now), from = dayOf(now - (days - 1) * DAY), prevTo = dayOf(now - days * DAY), prevFrom = dayOf(now - (2 * days - 1) * DAY);
@@ -393,7 +439,7 @@ export class MonitorDO extends DurableObject<Env> {
     }
     const cur = this.countsIn(of, allow, boiler, blocked, perGroup, from, to, from, to), prev = this.countsIn(of, allow, boiler, blocked, perGroup, prevFrom, prevTo, from, to);
     // With more than one source to hear from, a topic needs two of them: one source repeating itself is not a signal.
-    const scored = scoreTerms({ groups, items, prevItems, cur: cur.counts, prev: prev.counts, voices: cur.voices, minVoices: sources.size >= 2 ? 2 : 1 });
+    const scored = scoreTerms({ groups, items, prevItems, cur: cur.counts, prev: prev.counts, voices: cur.voices, evergreen: this.evergreen(from, to), minVoices: sources.size >= 2 ? 2 : 1 });
     return { days, from, to, of, groups, excluded, everyGroup: all.groups.map((g) => ({ key: g.key, name: g.name })), items, prevItems, ...scored };
   }
   /** Items per day for the last SIGNAL_MAX_DAYS days, per group (oldest first). */
@@ -537,11 +583,12 @@ export class MonitorDO extends DurableObject<Env> {
     for (const r of this.ctx.storage.sql.exec<{ watch: string; label: string; seen_at: number; json: string; source: string }>('SELECT watch, label, seen_at, json, source FROM feed ORDER BY seq DESC LIMIT 2500')) {
       const g = of.get(r.watch);
       if (!g || !allow.has(g)) continue;
-      const j = JSON.parse(r.json) as { text?: string; title?: string; url?: string; id?: string; createdAt?: string; feed?: string; author?: { userName?: string } };
+      const j = JSON.parse(r.json) as { text?: string; title?: string; url?: string; id?: string; createdAt?: string; feed?: string; author?: { userName?: string }; likeCount?: number; replyCount?: number; retweetCount?: number; quoteCount?: number };
       const ts = Date.parse(j.createdAt ?? '') || r.seen_at;
       if (ts < fromMs || ts >= toMs) continue;
       const text = String(j.text ?? ''), x = r.source === 'x';
-      items.push({ ts, terms: new Set((ai ? ai.get(`${r.watch}\n${j.id}`) ?? [] : extractTerms(r.source === 'youtube' && j.title ? j.title : text)).filter((t) => !blocked(t))) });
+      const eng = Math.max(0, (Number(j.likeCount) || 0) + 2 * (Number(j.replyCount) || 0) + 2 * (Number(j.retweetCount) || 0) + 2 * (Number(j.quoteCount) || 0));
+      items.push({ ts, eng, terms: new Set((ai ? ai.get(`${r.watch}\n${j.id}`) ?? [] : extractTerms(r.source === 'youtube' && j.title ? j.title : text)).filter((t) => !blocked(t))) });
       const url = /^https:\/\//.test(j.url ?? '') ? j.url! : x && /^\d+$/.test(j.id ?? '') ? `https://x.com/${j.author?.userName ?? 'i'}/status/${j.id}` : '';
       meta.push({ title: (x ? text : j.title || text.split('\n')[0]).replace(/\s+/g, ' ').slice(0, 160), url, by: x ? '@' + (j.author?.userName ?? '') : j.feed || r.label, group: g, ts });
     }
@@ -552,7 +599,9 @@ export class MonitorDO extends DurableObject<Env> {
     const { items, meta } = this.windowItems(c.of, new Set(c.groups.filter((g) => g.weight > 0).map((g) => g.key)), c.from, c.to), post = indexItems(items);
     const describe = (t: ScoredTerm, label?: string, members: string[] = [t.term]) => ({ ...t, label: label ?? t.term, members: members.filter((m) => m !== t.term),
       related: relatedTerms(members, items, post), headlines: topicItems(members, items, post, 2).map((i) => meta[i]) });
-    return { top: mergeTopics(pool.slice(0, 60), post, nTop).map((cl) => describe(cl.lead, cl.label, cl.members.map((m) => m.term))), describe };
+    const clusters = mergeTopics(pool.slice(0, 60), post, nTop);
+    const ordered = boostByEngagement(clusters, clusters.map((cl) => topicEngagement(cl.members.map((m) => m.term), items, post)));
+    return { top: ordered.map((cl) => describe(cl.lead, cl.label, cl.members.map((m) => m.term))), describe };
   }
   private async signalOverview(daysIn: number, boardRef = '', hideSteady = true) {
     const board = boardRef ? this.findBoard(boardRef) : undefined;
@@ -726,7 +775,7 @@ export class MonitorDO extends DurableObject<Env> {
           const list = url.searchParams.get('list') ?? '';     // only the watches made from one feed list
           const ofList = JSON.stringify(this.watches().filter((w) => w.list === list).map((w) => w.id));
           const rows = this.ctx.storage.sql.exec<{ watch: string; label: string; seen_at: number; json: string; source: string }>(
-            "SELECT watch, label, seen_at, json, source FROM feed WHERE (?1 = '' OR source = ?1) AND (?3 = '' OR watch IN (SELECT value FROM json_each(?4))) ORDER BY seq DESC LIMIT ?2", source, limit, list, ofList).toArray();
+            "SELECT watch, label, seen_at, json, source FROM feed WHERE watch NOT LIKE 'brief:%' AND (?1 = '' OR source = ?1) AND (?3 = '' OR watch IN (SELECT value FROM json_each(?4))) ORDER BY seq DESC LIMIT ?2", source, limit, list, ofList).toArray();
           // Items saved before they carried the name of their feed get it from the watch they came from.
           const queries = new Map(this.watches().map((w) => [w.id, w] as const));
           return json(rows.map((r) => {
@@ -818,6 +867,12 @@ export class MonitorDO extends DurableObject<Env> {
       if (name === 'signal-filter-set') {   // the whole list of words to leave out
         this.setMeta('signalFilter', cleanFilter(b.words));
         return json(this.filterInfo());
+      }
+      if (name === 'signal-ingest') {   // a briefing hands over the posts it fetched
+        const posts = (Array.isArray(b.posts) ? b.posts : []).filter((p): p is Record<string, unknown> => !!p && typeof p === 'object');
+        const slug = String(b.slug ?? '').slice(0, 40);
+        if (!slug) throw new Error('slug required');
+        return json(this.ingestBriefing(slug, String(b.title ?? slug).slice(0, 50), String(b.group ?? ''), posts));
       }
       if (name === 'signal-ai-set') {   // topics written by a model: on or off, which model, and the most it may spend in a day
         const prev = this.aiConfig(), models = modelOptions(this.env).filter((m) => !m.decider);

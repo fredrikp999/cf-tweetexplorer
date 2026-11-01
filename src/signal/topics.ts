@@ -3,7 +3,8 @@
 import type { ScoredTerm } from './score.ts';
 
 /** One item in the window, as the terms it was counted under. */
-export interface TopicItem { terms: Set<string>; ts: number }
+/** `eng`: how much people reacted to it (likes, replies, points); absent when the source has no such number. */
+export interface TopicItem { terms: Set<string>; ts: number; eng?: number }
 /** term -> positions of the items that mention it. */
 export type Postings = Map<string, number[]>;
 
@@ -56,9 +57,28 @@ export function relatedTerms(own: string[], items: TopicItem[], post: Postings, 
     .slice(0, n).map(([t]) => t);
 }
 
-/** The items a topic comes from, best first: the ones that carry most of its terms, then the newest. Positions in `items`. */
+/** How much people reacted to the items of a topic, summed over its items. */
+export function topicEngagement(own: string[], items: TopicItem[], post: Postings): number {
+  const idx = new Set<number>();
+  for (const t of own) for (const i of post.get(t) ?? []) idx.add(i);
+  let n = 0;
+  for (const i of idx) n += items[i].eng ?? 0;
+  return n;
+}
+
+/**
+ * Topics ordered by signal, lifted by reactions: a topic whose items got the most reactions in the window gains up to half again on its signal
+ * (on a log scale, so one viral item does not bury everything else). With no reaction data nothing changes.
+ */
+export function boostByEngagement<T extends { lead: { signal: number } }>(topics: T[], eng: number[]): T[] {
+  const top = Math.log1p(Math.max(0, ...eng));
+  if (!top) return topics;
+  return topics.map((t, i) => [t, t.lead.signal * (1 + 0.5 * Math.log1p(eng[i]) / top)] as const).sort((a, b) => b[1] - a[1]).map(([t]) => t);
+}
+
+/** The items a topic comes from, best first: the ones that carry most of its terms, then the ones people reacted to most, then the newest. Positions in `items`. */
 export function topicItems(own: string[], items: TopicItem[], post: Postings, n = 3): number[] {
   const score = new Map<number, number>();
   for (const t of own) for (const i of post.get(t) ?? []) score.set(i, (score.get(i) ?? 0) + 1);
-  return [...score].sort((a, b) => b[1] - a[1] || items[b[0]].ts - items[a[0]].ts).slice(0, n).map(([i]) => i);
+  return [...score].sort((a, b) => b[1] - a[1] || (items[b[0]].eng ?? 0) - (items[a[0]].eng ?? 0) || items[b[0]].ts - items[a[0]].ts).slice(0, n).map(([i]) => i);
 }
