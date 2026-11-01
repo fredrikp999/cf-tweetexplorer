@@ -312,3 +312,21 @@ describe('merging reordered names', () => {
     assert.equal(topicEngagement(['k'], items, indexItems(items), 1000), 1010);
   });
 });
+
+import { fetchYoutubeApi, setYoutubeKey } from '../src/sources/youtube.ts';
+describe('YouTube API fallback', () => {
+  test('a channel feed is read as its uploads playlist, with the same ids as the feed', async () => {
+    setYoutubeKey('k');
+    const real = globalThis.fetch; let asked = '';
+    globalThis.fetch = async (u) => { asked = String(u); return new Response(JSON.stringify({ items: [
+      { snippet: { title: 'Kimi K2 explained', description: 'd', channelTitle: 'AI Explained', resourceId: { videoId: 'abcdefghijk' } }, contentDetails: { videoId: 'abcdefghijk', videoPublishedAt: '2026-10-31T10:00:00Z' } },
+      { snippet: { title: 'Private video' }, contentDetails: { videoId: 'zzzzzzzzzzz' } }] }), { status: 200 }); };
+    try {
+      const r = await fetchYoutubeApi('https://www.youtube.com/feeds/videos.xml?channel_id=UCNJ1Ymd5yFuUPtn21xtRbbw');
+      assert.match(asked, /playlistId=UUNJ1Ymd5yFuUPtn21xtRbbw/);
+      assert.equal(r.items.length, 1);
+      assert.equal(r.items[0].id, 'yt:abcdefghijk');
+      assert.equal(r.title, 'AI Explained');
+    } finally { globalThis.fetch = real; }
+  });
+});

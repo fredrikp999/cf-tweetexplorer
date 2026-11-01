@@ -23,6 +23,7 @@ import { openrouterModelInfo } from '../summarize/openrouter.ts';
 import { modelFor, workerSources } from '../summarize/worker';
 import { screenTweets } from '../summarize/screen.ts';
 import { sectionsOf, themesOf } from '../site/brief.ts';
+import { setYoutubeKey } from '../sources/youtube';
 
 export type TopicSource =
   | { type: 'search'; query: string; sort: 'Latest' | 'Top' }
@@ -69,6 +70,7 @@ export interface Topic {
   enabled: boolean; autoPublish: boolean; listed: boolean;
   nextRun: number; lastRun: number; lastError: string;
   pending: boolean; running: number;           // pending: "run now" was requested; running: start time of a run in flight
+  replaceId?: string;                          // the requested run writes over this issue (same address) instead of adding one; cleared when it ends
   created: number; updated: number;
 }
 export type IssueStatus = 'draft' | 'published' | 'hidden';
@@ -88,7 +90,7 @@ export interface Issue {
   links?: string[];
 }
 
-export const RESERVED = new Set(['admin', 'custom', 'lists', 'signal', 'audio', 'image', 'history', 'api', 'static', 'assets', 'feed', 'rss', 'sitemap', 'robots', 'favicon', 'health', 'ai-plugin']);
+export const RESERVED = new Set(['admin', 'custom', 'lists', 'signal', 'report', 'audio', 'image', 'history', 'api', 'static', 'assets', 'feed', 'rss', 'sitemap', 'robots', 'favicon', 'health', 'ai-plugin']);
 export const SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const INTERVALS = [6, 12, 24, 48, 168];
 const MAX_TOPICS = 40, MAX_SOURCES = 8, MAX_TWEETS = 150, STALE_RUN_MS = 20 * 60_000;
@@ -238,6 +240,7 @@ const dateLabel = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { tim
 export class PublishDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API
     const sql = ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS topics (slug TEXT PRIMARY KEY, data TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS issues (topic TEXT NOT NULL, id TEXT NOT NULL, status TEXT NOT NULL, created INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (topic, id))');
@@ -246,6 +249,8 @@ export class PublishDO extends DurableObject<Env> {
     sql.exec('CREATE TABLE IF NOT EXISTS audio_jobs (topic TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (topic, id))');
     sql.exec('CREATE TABLE IF NOT EXISTS image_templates (id TEXT PRIMARY KEY, ord INTEGER NOT NULL, data TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS image_jobs (topic TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (topic, id))');
+    // Errors readers reported on a briefing (one theme of it, or all of it). `who` is a hash of the address and the day, only to limit how many one reader can send.
+    sql.exec("CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, created INTEGER NOT NULL, topic TEXT NOT NULL, issue TEXT NOT NULL, theme TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', who TEXT NOT NULL)");
     if (sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM audio_templates').one().n === 0) this.restoreBuiltins();
     if (sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM image_templates').one().n === 0) this.restoreImageBuiltins();
   }
@@ -433,7 +438,7 @@ export class PublishDO extends DurableObject<Env> {
     if (!error && issueId && t.imageAuto) await this.makeImage(slug, issueId);   // likewise
     if (!error && issueId && t.audioAuto) await this.makeAudio(slug, issueId);   // its outcome is recorded on the issue, it cannot fail the briefing
     const cur = this.topic(slug) ?? t;   // the admin may have edited it meanwhile
-    this.saveTopic({ ...cur, running: 0, lastRun: Date.now(), lastError: error, ...(scheduled || cur.nextRun <= Date.now() ? { nextRun: nextSlot(cur, Date.now()) } : {}) });
+    this.saveTopic({ ...cur, running: 0, replaceId: undefined, lastRun: Date.now(), lastError: error, ...(scheduled || cur.nextRun <= Date.now() ? { nextRun: nextSlot(cur, Date.now()) } : {}) });
   }
 
   private async generate(t: Topic, spend: Spend): Promise<string> {
@@ -513,10 +518,12 @@ export class PublishDO extends DurableObject<Env> {
     markdown = markdown.trim();
     if (!markdown) throw new Error('the model returned no text');
 
-    const day = new Date().toISOString().slice(0, 10);
+    const day = new Date().toISOString().slice(0, 10), old = t.replaceId ? this.issue(t.slug, t.replaceId) : undefined;
     let id = day;
-    for (let n = 2; this.issue(t.slug, id); n++) id = `${day}-${n}`;
-    const now = Date.now(), live = t.autoPublish;
+    if (old) id = old.id;   // a re-run that replaces an issue keeps its address, so links to it still work
+    else for (let n = 2; this.issue(t.slug, id); n++) id = `${day}-${n}`;
+    // A replaced issue that was published stays published: replacing it was asked for by hand.
+    const now = Date.now(), live = t.autoPublish || old?.status === 'published';
     const byAccount = new Map<string, { handle: string; count: number }>();
     const byFeed = new Map<string, { source: 'rss' | 'hn' | 'youtube'; label: string; url?: string; count: number }>();
     for (const x of used) {
@@ -581,6 +588,17 @@ export class PublishDO extends DurableObject<Env> {
         }
         return json(out.sort((a, b) => b.publishedAt - a.publishedAt).slice(0, 6));
       }
+      if (path === '/pub/report' && request.method === 'POST') {   // from the public report form (the Worker checked the form and hashed the address)
+        const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        const slug = str(b.slug, 40), id = str(b.id, 20), theme = str(b.theme, 120), message = str(b.message, 1000), who = str(b.who, 64);
+        const t = this.topic(slug), issue = t ? this.issues(slug, 'published', 90).find((i) => i.id === id) : undefined;
+        if (!t || !issue || message.length < 5) return json({ error: 'not found' }, 404);
+        const sql = this.ctx.storage.sql;
+        if (sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM reports WHERE who = ?', who).one().n >= 5) return json({ error: 'too many' }, 429);
+        if (sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM reports WHERE status = 'new'").one().n >= 500) return json({ error: 'too many' }, 429);
+        sql.exec('INSERT INTO reports (created, topic, issue, theme, message, who) VALUES (?, ?, ?, ?, ?, ?)', Date.now(), slug, id, theme, message, who);
+        return json({ ok: true });
+      }
       if (path === '/pub/feed') {   // the newest published issues in full, for the topic's RSS feed
         const t = this.topic(q.get('slug') ?? '');
         if (!t || !t.listed) return json({ error: 'not found' }, 404);
@@ -613,6 +631,16 @@ export class PublishDO extends DurableObject<Env> {
       if (path === '/adm/audio-templates') {
         const key = this.ttsKey();
         return json({ templates: this.templates(), configured: !!key, mock: key === 'mock', voices: VOICES, models: Object.entries(TTS_MODELS).map(([id, m]) => ({ id, label: m.label, perChar: usdPerChar(id as TtsModel) })) });
+      }
+      if (path === '/adm/reports') {   // what readers reported: new first, then the last ones handled
+        const rows = this.ctx.storage.sql.exec<{ id: number; created: number; topic: string; issue: string; theme: string; message: string; status: string }>(
+          "SELECT id, created, topic, issue, theme, message, status FROM reports ORDER BY status = 'new' DESC, created DESC LIMIT 60").toArray();
+        return json(rows.map((r) => ({ ...r, title: this.topic(r.topic)?.title ?? r.topic })));
+      }
+      if (path === '/adm/report-done') {
+        const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+        this.ctx.storage.sql.exec("UPDATE reports SET status = 'done' WHERE id = ?", Number(b.id) || 0);
+        return json({ ok: true });
       }
       if (path === '/adm/topics') {
         const stats = await this.env.COST.getByName('main').topicStats().catch(() => ({}) as Record<string, never>);
@@ -731,7 +759,9 @@ export class PublishDO extends DurableObject<Env> {
         const t = this.topic(slug);
         if (!t) throw new Error('unknown topic');
         if (t.running && Date.now() - t.running < STALE_RUN_MS) throw new Error('a run is already in progress');
-        this.saveTopic({ ...t, pending: true });
+        // `replace`: write over that issue (a re-run after a change in the settings, or after a bad result) instead of adding a new one.
+        const replaceId = typeof b.replace === 'string' && this.issue(slug, b.replace) ? b.replace : undefined;
+        this.saveTopic({ ...t, pending: true, replaceId });
         await this.arm();
         return json({ ok: true });
       }

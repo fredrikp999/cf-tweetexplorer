@@ -12,4 +12,8 @@ interface Env {
   DEV_BYPASS_ACCESS: string;
   SUMMARY_MOCK: string;
   SUMMARY_FALLBACK_MODEL: string;
+  /** YouTube Data API key: read channels through the API when their public feed fails. Optional secret. */
+  YOUTUBE_API_KEY: string;
+  /** Cloudflare Web Analytics token for the public pages (no cookies). Optional secret. */
+  CF_ANALYTICS_TOKEN: string;
 }

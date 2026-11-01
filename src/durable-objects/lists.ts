@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { json } from '../lib/twitterapi';
 import { HN_TAGS, type HnTag } from '../sources/hn';
 import { checkFeedUrl } from '../sources/rss';
+import { setYoutubeKey } from '../sources/youtube';
 import { MAX_MEMBERS as MAX_FEED_MEMBERS, memberKey, readMembers, resolveLines, type FeedMember } from '../sources/feedlist';
 
 const HANDLE = /^[A-Za-z0-9_]{1,15}$/;
@@ -86,6 +87,7 @@ function cleanX(raw: unknown): XList | null {
 export class ListsDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS lists (id TEXT PRIMARY KEY, updated INTEGER NOT NULL, data TEXT NOT NULL)');
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS xlists (id TEXT PRIMARY KEY, ord INTEGER NOT NULL, data TEXT NOT NULL)');
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS flists (id TEXT PRIMARY KEY, updated INTEGER NOT NULL, data TEXT NOT NULL)');

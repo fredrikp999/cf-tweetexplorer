@@ -144,6 +144,7 @@ figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-templa
 .sglist{list-style:none;margin:0;padding:0}.sglist li{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line);font-size:14.5px}.sglist small{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .act.stack>div i{min-height:0}
 .sgitems{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}.sgitems li{border-left:3px solid var(--line);padding-left:12px}.sgitems .by{font-size:13px;color:var(--muted)}.sgitems a{color:var(--text)}.sgitems a:hover{color:var(--accent)}.sgrow .t a{color:inherit;text-decoration:none}.sgrow .t a:hover{color:var(--accent);text-decoration:underline}.sglist a{color:inherit;text-decoration:none}.sglist a:hover{text-decoration:underline}
+form.report{display:grid;gap:12px;max-width:640px}form.report textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text)}form.report button{justify-self:start;padding:8px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;cursor:pointer}.hp{position:absolute;left:-9999px}.cites .rep{color:var(--muted)}
 .mnav{display:none}.views a.rss{margin-left:auto;font-size:13px}
 .inbrief{border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:14px 0 20px;background:var(--card)}.inbrief h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}.inbrief ol{margin:0;padding-left:20px}.inbrief li{margin:3px 0}.inbrief small.up,.today small .up{color:var(--accent,#c9265f)}
 article h3[id]{scroll-margin-top:16px}.thm{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 8px}.chip.sig{text-decoration:none;color:var(--text)}.cites{font-size:13px;color:var(--muted);margin:-4px 0 18px}
@@ -185,6 +186,9 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal', 
 <div class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.${listTotal(ctx) ? ` <a href="/lists">The ${listTotal(ctx)} lists behind them</a>.` : ''}</div></aside>`;
 }
 
+/** Cloudflare Web Analytics for the public pages, from the CF_ANALYTICS_TOKEN secret: page views without cookies. Empty: no script at all. */
+let analyticsToken = '';
+
 function shell(title: string, railHtml: string, body: string, opts: { description?: string; canonical?: string; image?: string; lang?: string; feed?: string; feedTitle?: string } = {}): string {
   return `<!doctype html><html lang="${opts.lang === 'sv' ? 'sv' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>${opts.description ? `<meta name="description" content="${esc(opts.description.slice(0, 200))}">` : ''}
@@ -192,7 +196,7 @@ function shell(title: string, railHtml: string, body: string, opts: { descriptio
 ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}${opts.feed ? `<link rel="alternate" type="application/rss+xml" title="${esc(opts.feedTitle ?? title)}" href="${esc(opts.feed)}">` : ''}${opts.image ? `<meta property="og:image" content="${esc(opts.image)}"><meta name="twitter:card" content="summary_large_image">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Newsreader:opsz,wght@6..72,400..600&display=swap" rel="stylesheet">
-<style>${CSS}</style></head><body>
+<style>${CSS}</style>${analyticsToken ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${esc(analyticsToken)}"}'></script>` : ''}</head><body>
 <div class="app">${railHtml}<main class="page">${body}</main></div></body></html>`;
 }
 
@@ -480,9 +484,9 @@ const stamp = (ms: number) => `<time datetime="${new Date(ms).toISOString()}">${
 // Words on a briefing's page, in the briefing's language (a Swedish briefing gets Swedish labels around it).
 const LABELS = {
   en: { latest: 'Latest briefing', earlier: 'Previous days', inbrief: 'In brief', read: 'min read', based: 'based on', from: 'from the last', seeLatest: 'see the latest',
-    isNew: 'new', cont: 'continuing', sources: 'Sources', older: 'Earlier', newer: 'Later', others: 'Other briefings today', signal: 'In Signal', updated: 'Updated', rss: 'RSS', themes: 'Themes', listAll: 'The lists behind the briefings' },
+    isNew: 'new', cont: 'continuing', sources: 'Sources', older: 'Earlier', newer: 'Later', others: 'Other briefings today', signal: 'In Signal', updated: 'Updated', rss: 'RSS', themes: 'Themes', listAll: 'The lists behind the briefings', report: 'Report an error' },
   sv: { latest: 'Senaste', earlier: 'Tidigare dagar', inbrief: 'I korthet', read: 'min läsning', based: 'utifrån', from: 'från de senaste', seeLatest: 'se den senaste',
-    isNew: 'ny', cont: 'fortsätter', sources: 'Källor', older: 'Tidigare', newer: 'Senare', others: 'Andra sammanfattningar i dag', signal: 'I Signal', updated: 'Uppdateras', rss: 'RSS', themes: 'Teman', listAll: 'Listorna bakom sammanfattningarna' },
+    isNew: 'ny', cont: 'fortsätter', sources: 'Källor', older: 'Tidigare', newer: 'Senare', others: 'Andra sammanfattningar i dag', signal: 'I Signal', updated: 'Uppdateras', rss: 'RSS', themes: 'Teman', listAll: 'Listorna bakom sammanfattningarna', report: 'Rapportera ett fel' },
 };
 type Lang = keyof typeof LABELS;
 
@@ -533,7 +537,8 @@ export function issueHtml(p: PubPage, origin: string, ctx: Ctx, strip?: SigStrip
     topics.forEach((t) => used.add(t.term));
     const handles = [...new Set([...sec.body.matchAll(/\[@?([A-Za-z0-9_]{1,15})\]\(https:\/\/(?:x|twitter)\.com\//g)].map((x) => '@' + x[1]))];
     const tags = (m ? `<span class="chip ${m === 'new' ? 'up' : ''}">${m === 'new' ? L.isNew : L.cont}</span>` : '') + (strip ? topics.map((t) => sigChip(strip, t)).join('') : '');
-    return `${head}${tags ? `<div class="thm">${tags}</div>` : ''}${rest}${handles.length ? `<p class="cites">${L.sources}: ${handles.map(esc).join(' &middot; ')}</p>` : ''}`;
+    const report = `<a class="rep" href="/report/${esc(topic.slug)}/${esc(issue.id)}?theme=${encodeURIComponent(sec.title)}" rel="nofollow">${L.report}</a>`;
+    return `${head}${tags ? `<div class="thm">${tags}</div>` : ''}${rest}<p class="cites">${handles.length ? `${L.sources}: ${handles.map(esc).join(' &middot; ')} &middot; ` : ''}${report}</p>`;
   });
   // "In brief" goes right after the TL;DR (the first paragraph), when the briefing has themes.
   const brief = themes.length ? `<nav class="inbrief" aria-label="${L.inbrief}"><h2>${L.inbrief}</h2><ol>${themes.map((x) => `<li><a href="#${esc(x.anchor)}">${esc(x.title)}</a>${mark.get(x.anchor) === 'new' ? ` <small class="up">${L.isNew}</small>` : ''}</li>`).join('')}</ol></nav>` : '';
@@ -546,7 +551,7 @@ export function issueHtml(p: PubPage, origin: string, ctx: Ctx, strip?: SigStrip
 ${listenHtml(topic.slug, issue)}${imageHtml(topic.slug, issue)}<article lang="${lang}">${body}</article>${strip && rest.length ? `<p class="thm">${L.signal}: ${rest.map((t) => sigChip(strip, t)).join('')}</p>` : ''}${sourcesHtml(issue)}
 <nav class="daynav" aria-label="Days">${day(older, L.older, 'prev')}${day(newer, L.newer, 'next')}</nav>
 ${others.length ? `<h2 class="sect">${L.others}</h2><ul class="others">${others.map((t) => `<li><a href="/${esc(t.slug)}">${esc(t.title)}</a>${t.latest.tldr ? `<span>${inline(t.latest.tldr)}</span>` : ''}</li>`).join('')}</ul>` : ''}
-${NOTE}${listTotal(ctx) ? `<p class="note"><a href="/lists">${L.listAll} &rarr;</a></p>` : ''}`,
+${NOTE}<p class="note"><a href="/report/${esc(topic.slug)}/${esc(issue.id)}" rel="nofollow">${L.report}</a>${listTotal(ctx) ? ` &middot; <a href="/lists">${L.listAll} &rarr;</a>` : ''}</p>`,
     { title: `${topic.title} · ${date(issue.publishedAt)}`, description: issue.tldr.replace(/\*\*/g, '') || topic.description, canonical: `${origin}/${topic.slug}/${issue.id}`, lang, ...(issue.image ? { image: `${origin}/image/${topic.slug}/${issue.id}.jpg?v=${issue.image.v}` } : {}) }, ctx);
 }
 
@@ -560,6 +565,18 @@ export function archiveHtml(p: { topic: TopicInfo; latest: Brief; issues: IssueF
   return topicPage(topic, 'archive', issues.length, `<h2 style="margin:0 0 14px;font-size:20px">${L.earlier}</h2>
 ${days ? `<ul class="daylist">${days}</ul>` : '<p class="lede">No earlier briefings yet.</p>'}${issues.length >= 30 ? '<p class="meta" style="margin-top:14px">Showing the last 30 days.</p>' : ''}${NOTE}`,
     { title: `${topic.title} · ${L.earlier.toLowerCase()}`, description: topic.description, canonical: `${origin}/${topic.slug}/archive`, lang }, ctx);
+}
+
+/** The form for reporting an error in a briefing, or in one theme of it. Plain HTML: a message, nothing about the reader. */
+export function errorReportHtml(topic: TopicInfo, issueId: string, theme: string, ctx: Ctx, sent?: 'ok' | 'error'): string {
+  const back = `/${esc(topic.slug)}/${esc(issueId)}${theme ? '#' + esc(anchorOfTheme(theme)) : ''}`;
+  return shell(`Report an error · ${topic.title} · Agent Cortex`, rail(ctx, { slug: topic.slug, title: topic.title, view: 'issue', earlier: 0 }), `<header class="pagehead"><div class="eyebrow"><a href="${back}">&larr; ${esc(topic.title)}, ${esc(issueId)}</a></div><h1>Report an error</h1>
+<p class="lede">${theme ? `In “${esc(theme)}”. ` : ''}Tell us what is wrong: a fact, a source, a missing side of the story. Reports are read by a person; the briefing is changed when they are right.</p></header>
+${sent === 'ok' ? `<p class="lede">Thank you, it has been sent. <a href="${back}">Back to the briefing</a>.</p>` : `${sent === 'error' ? '<p class="meta">That could not be sent. Too many reports from you today, or the message was empty.</p>' : ''}
+<form class="report" method="post" action="/report"><input type="hidden" name="slug" value="${esc(topic.slug)}"><input type="hidden" name="id" value="${esc(issueId)}"><input type="hidden" name="theme" value="${esc(theme)}">
+<label>What is wrong <textarea name="message" required minlength="5" maxlength="1000" rows="6"></textarea></label>
+<label class="hp" aria-hidden="true">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>
+<button type="submit">Send</button><p class="meta">Do not include personal details. Nothing about you is stored except a one-day count to stop floods.</p></form>`}`, { description: 'Report an error in a briefing.' });
 }
 
 /** A topic's newest briefings as an RSS 2.0 feed, each in full. */
@@ -606,11 +623,13 @@ export const notFoundHtml = (ctx: Ctx) => shell('Not found', rail(ctx), '<header
 
 // ---- routing
 const NO_STORE = { 'cache-control': 'no-store' };
-const PUBLIC_HEADERS = {
+// The only script a public page may load is Cloudflare Web Analytics (no cookies), and only when its token is set. Forms post only to this site (the error report).
+const PUBLIC_HEADERS_FOR = (analytics: boolean) => ({
   'content-type': 'text/html; charset=utf-8',
-  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${analytics ? '; script-src https://static.cloudflareinsights.com; connect-src https://cloudflareinsights.com' : ''}`,
   'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin',
-};
+});
+let PUBLIC_HEADERS = PUBLIC_HEADERS_FOR(false);
 
 const publish = (env: Env, path: string) => env.PUBLISH.getByName('main').fetch(new Request('https://internal' + path));
 
@@ -682,6 +701,12 @@ async function render(env: Env, url: URL): Promise<Response> {
     if (pageNo > tweets.pages) return missing();
     return html(reportHtml((await rep.json()) as PubReport, tweets, url.origin, ctx));
   }
+  if (parts[0] === 'report' && parts.length === 3 && SLUG.test(parts[1]) && ISSUE_ID.test(parts[2])) {   // /report/<topic>/<day>?theme=…
+    const r = await publish(env, `/pub/issue?slug=${parts[1]}&id=${parts[2]}`);
+    if (!r.ok) { await r.body?.cancel(); return missing(); }
+    const page = (await r.json()) as PubPage, sent = url.searchParams.get('sent');
+    return new Response(errorReportHtml(page.topic, page.issue.id, (url.searchParams.get('theme') ?? '').slice(0, 120), ctx, sent === 'ok' || sent === 'error' ? sent : undefined), { headers: { ...PUBLIC_HEADERS, ...NO_STORE } });
+  }
   if (parts.length > 2 || !SLUG.test(parts[0]) || (parts[1] && parts[1] !== 'archive' && parts[1] !== 'feed.xml' && !ISSUE_ID.test(parts[1]))) return missing();
   if (parts[1] === 'feed.xml') {
     const r = await publish(env, `/pub/feed?slug=${parts[0]}`);
@@ -699,7 +724,25 @@ async function render(env: Env, url: URL): Promise<Response> {
   return html(issueHtml(page, url.origin, ctx, await signalStrip(env, ctx, 8, page.issue.markdown)));
 }
 
+/** A report from the form: checked here, stored by the Publish object with only a one-day hash of the address. Always answers with a redirect. */
+async function reportPost(request: Request, env: Env): Promise<Response> {
+  const f = await request.formData().catch(() => null);
+  const get = (k: string) => String(f?.get(k) ?? '').trim();
+  const slug = get('slug'), id = get('id'), theme = get('theme').slice(0, 120), message = get('message').slice(0, 1000);
+  const back = (sent: string) => new Response(null, { status: 303, headers: { location: `/report/${SLUG.test(slug) ? slug : 'x'}/${ISSUE_ID.test(id) ? id : 'x'}?${new URLSearchParams({ theme, sent })}`, ...NO_STORE } });
+  if (!SLUG.test(slug) || !ISSUE_ID.test(id)) return new Response('Bad request', { status: 400, headers: NO_STORE });
+  if (get('website')) return back('ok');   // filled by a bot: thank it and drop it
+  if (message.length < 5) return back('error');
+  const day = new Date().toISOString().slice(0, 10), raw = `${request.headers.get('cf-connecting-ip') ?? ''}|${day}`;
+  const who = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw)))].slice(0, 12).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const r = await env.PUBLISH.getByName('main').fetch(new Request('https://internal/pub/report', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug, id, theme, message, who }) }));
+  return back(r.ok ? 'ok' : 'error');
+}
+
 export async function handlePublic(request: Request, env: Env, url: URL): Promise<Response> {
+  analyticsToken = /^[\w-]{8,64}$/.test(env.CF_ANALYTICS_TOKEN ?? '') ? env.CF_ANALYTICS_TOKEN : '';
+  PUBLIC_HEADERS = PUBLIC_HEADERS_FOR(!!analyticsToken);
+  if (url.pathname === '/report' && request.method === 'POST') return reportPost(request, env);
   if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD', ...NO_STORE } });
   if (url.pathname === '/robots.txt') {
     return new Response(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /custom\n`, { headers: { 'content-type': 'text/plain', 'cache-control': 'public, max-age=3600' } });
@@ -723,10 +766,13 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   }
   // Edge cache: public traffic must not all land on the one Durable Object. A minute of staleness is fine.
   const cache = (globalThis as unknown as { caches?: { default?: Cache } }).caches?.default;
-  const key = new Request(url.origin + url.pathname, { method: 'GET' });
-  const hit = await cache?.match(key).catch(() => undefined);
+  // The key is the path plus the query parameters a page reads (Signal's sort and group), so a sorted page is not served the default one.
+  // The report form is never cached: it shows whether a report was sent.
+  const q = new URLSearchParams([...['sort', 'group'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, 20)]] : []))] as [string, string][]).toString();
+  const key = new Request(url.origin + url.pathname + (q ? '?' + q : ''), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/');
+  const hit = cacheable ? await cache?.match(key).catch(() => undefined) : undefined;
   if (hit) return request.method === 'HEAD' ? new Response(null, hit) : hit;
   const res = await render(env, url);
-  if (res.status === 200) await cache?.put(key, res.clone()).catch(() => undefined);
+  if (res.status === 200 && cacheable) await cache?.put(key, res.clone()).catch(() => undefined);
   return request.method === 'HEAD' ? new Response(null, res) : res;
 }

@@ -2,6 +2,7 @@ import { verifyAccess } from './access';
 import { json } from './lib/twitterapi';
 import { handleSummarize, summarizerFeatures } from './summarize/worker';
 import { handlePublic } from './site/public';
+import { setYoutubeKey } from './sources/youtube';
 import { handleMcp } from './mcp';
 import { recordCost } from './lib/costs';
 import { serveAudio, serveImage } from './media/audio-serve';
@@ -55,6 +56,7 @@ const PRIVATE = /^\/(admin|custom)(\/|$)/;
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
+    setYoutubeKey(env.YOUTUBE_API_KEY);   // Summarize can read feed lists in this Worker
     const url = new URL(request.url);
     // The MCP server has its own Access application (and audience), so a service token for it reaches nothing else.
     if (url.pathname === '/mcp') {

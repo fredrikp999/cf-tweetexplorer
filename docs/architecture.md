@@ -38,7 +38,9 @@ flowchart LR
 | Path | Who | What |
 | --- | --- | --- |
 | `/admin*` | You, behind **Cloudflare Access** | The whole app. The Worker verifies the Access JWT (`TEAM_DOMAIN`, `POLICY_AUD`) on every request, including static files. If either variable is empty every request is refused. |
-| `/`, `/<topic>`, `/<topic>/<date>` | Anyone | Published briefings (server-rendered HTML, no client script). A topic with nothing published is a 404. |
+| `/`, `/<topic>`, `/<topic>/<date>`, `/<topic>/archive` | Anyone | Today (every briefing's headline and themes), and the published briefings: TL;DR, "In brief", one section per theme (new or continuing, its Signal topics, its sources), earlier and later days. Server-rendered HTML; the only script is Cloudflare Web Analytics, when `CF_ANALYTICS_TOKEN` is set. A topic with nothing published is a 404. |
+| `/<topic>/feed.xml` | Anyone | The topic's last 20 briefings as RSS. |
+| `/report/<topic>/<date>` | Anyone | "Report an error" in a briefing (one theme, or all of it); reports show on the admin Overview. |
 | `/signal`, `/signal/<address>` | Anyone | Published Signals: top-level sets of source groups, combined into one score per topic (group names, counts and topics only, never source names). Nothing is public until you publish a Signal in the admin. |
 | `/history`, `/history/<address>` | Anyone | Published History reports: statistics, then every tweet, 50 per page. |
 | `/custom*` | | The old address of the app; redirects to `/admin`. |

@@ -3,17 +3,59 @@
 How to deploy the Worker to Cloudflare (the examples use `tweets.example.com`; use a domain on your Cloudflare account), and the setup each feature needs.
 
 The site has three parts:
-- **Public** (no login): `/` lists the published topics, `/<slug>` shows a topic's latest briefing, `/<slug>/<date>` an older one.
-- **`/admin`** (Access): one private page with everything: **Briefings** (topics, schedules, what gets published) and the
-  explorer (Search, User, Trends, Lists, Monitor, History, Summarize, Costs, Guide). It opens on Briefings; `/admin/#costs`,
-  `/admin/#lists` and so on open a given tab. The old `/custom` addresses redirect to `/admin`.
-  Agent and Account only exist when you run the app locally (`npm start`, which serves it at `/`).
+- **Public** (no login): `/` is **Today** (each briefing's headline and themes, and what Signal says is talked about now); `/<topic>` a topic's
+  latest briefing, `/<topic>/<date>` an earlier one, `/<topic>/archive` the list of earlier days, `/<topic>/feed.xml` its RSS feed;
+  `/report/<topic>/<date>` the "Report an error" form; `/signal`, `/signal/<address>`, `/signal/<address>/t/<topic>` and `/signal/method` for Signal;
+  `/history` for reports and `/lists` for the lists behind the briefings.
+- **`/admin`** (Access): one private page, opening on **Overview** (what needs attention, with a button to fix or retry each thing). Its tabs are
+  grouped by what you do there:
+  - **Day to day** (viewing and acting): Signal, Live feed, Briefings (read, edit, publish, run), Archives, Costs.
+  - **Explore**: Find tweets, Look up account, Trending, Ask AI.
+  - **Setup** (configuration only): Sources (what is watched), Signal setup, Briefing setup, Lists & templates, Budgets (every spending limit), Post as X, Guide.
 
-Everything that is not `/admin*` (or `/mcp`, which has its own Access application) is public, so new private features must live under one of those. (`/custom*` still counts as private and only redirects.)
+  `/admin/#costs`, `/admin/#sources` and so on open a given tab. The old `/custom` addresses redirect to `/admin`.
+  Agent and Account only exist when you run the app locally (`npm start`, which serves it at `/`).
+- **`/mcp`** (its own Access application): the read-only MCP server, with the Costs and Signal dashboards for the Claude app.
+
+Everything that is not `/admin*` (or `/mcp`) is public, so new private features must live under one of those. (`/custom*` still counts as private and only redirects.)
+
+## How to deploy
+
+The domain is never stored in the repository, so every deploy names it. The usual way, after the one-time setup below:
+
+```sh
+DEPLOY_DOMAIN=tweets.example.com npm run release
+```
+
+`npm run release` does three things and stops at the first that fails:
+1. `npm run check`: the type check and the tests.
+2. Deploys production with the domain (`wrangler deploy --env="" --domain …`).
+3. Runs the smoke test against the live site (below). If it fails, the deploy has already happened: fix forward, or roll back
+   with `npx wrangler rollback --env=""` (it lists the earlier versions).
+
+After a deploy:
+- **Briefings and Signal pick the change up by themselves.** Nothing needs restarting. Settings live in the Durable Objects, not in the code.
+- **If you use the Claude app with the MCP connector** and the deploy changed the Signal or Costs dashboard: disconnect and reconnect the connector
+  (Settings → Connectors), then start a new chat. The app keeps the old view otherwise.
+- New secrets are read at once; a secret set after the deploy needs no new deploy.
+
+Other ways:
+- `npm run deploy -- --domain tweets.example.com`: deploy production without the check and the smoke test.
+- `npm run smoke -- https://tweets.example.com`: only the smoke test. It fetches every kind of public page (Today, each topic, a dated issue, the
+  archive, the RSS feed and the report form, Signal, a Signal topic, a sorted Signal, the method page, Lists, Reports, robots.txt, a missing page),
+  checks the status code and what each page must contain and its security header, and checks that `/admin` does not open without Access and that an
+  old Signal address redirects. It only reads, so it is safe against the live site, and exits 1 on any failure. Pages slower than 3 s are marked.
+- **Staging**: `npm run staging` deploys a second Worker, `tweet-explorer-staging`, on workers.dev, with its own Durable Objects (so its own,
+  empty data) and its own R2 bucket. Once: `npx wrangler r2 bucket create tweet-explorer-audio-staging`, and the secrets it needs with
+  `npx wrangler secret put NAME --env staging`. Then `npm run smoke -- https://tweet-explorer-staging.<your-subdomain>.workers.dev`.
+
+**Environments and secrets.** `wrangler.jsonc` defines production (the top level) and `staging`. Wrangler warns when a command does not say which:
+pass `--env=""` for production (`npx wrangler secret put NAME --env=""`, `npx wrangler secret list --env=""`) and `--env staging` for staging.
+`npm run deploy`, `npm run release` and `npm run staging` already do.
 
 ## One-time setup
 1. `npx wrangler login`
-2. `grep '^TWITTERAPI_IO_KEY=' .env | cut -d= -f2- | npx wrangler secret put TWITTERAPI_IO_KEY`
+2. `grep '^TWITTERAPI_IO_KEY=' .env | cut -d= -f2- | npx wrangler secret put TWITTERAPI_IO_KEY --env=""`
 3. `npm run deploy -- --domain tweets.example.com` (safe before step 4: with no Access config every request is refused with 503).
    The domain is passed on the command line, not stored in `wrangler.jsonc`, so the repository holds nothing about your account.
 4. Zero Trust dashboard → Access → Applications → Add → Self-hosted:
@@ -24,11 +66,12 @@ Everything that is not `/admin*` (or `/mcp`, which has its own Access applicatio
    Copy the **Application Audience (AUD) tag** and your **team domain** (`<team>.cloudflareaccess.com`).
 5. Store both as Worker secrets, so they stay out of the repository, then deploy again:
    ```sh
-   npx wrangler secret put TEAM_DOMAIN     # <team>.cloudflareaccess.com
-   npx wrangler secret put POLICY_AUD      # the Application Audience (AUD) tag
+   npx wrangler secret put TEAM_DOMAIN --env=""     # <team>.cloudflareaccess.com
+   npx wrangler secret put POLICY_AUD --env=""      # the Application Audience (AUD) tag
    npm run deploy -- --domain tweets.example.com
    ```
-   Every deploy needs the `--domain` flag. Deploying without any domain leaves the Worker unreachable (`workers_dev` is off).
+   Every deploy needs the domain (`--domain`, or `DEPLOY_DOMAIN` with `npm run release`). Deploying without any domain leaves the Worker
+   unreachable (`workers_dev` is off). From here on, deploy as described in [How to deploy](#how-to-deploy).
 
 ## Publishing (scheduled briefings)
 In `/admin` → **Briefings** create a topic: an address (`ai` → `/ai`), one or more sources (searches, Lists, Monitor feed), an
@@ -244,6 +287,76 @@ browser, so they use a **service token**:
 - `workers_dev` and preview URLs are off; the Worker is only reachable on the custom domain.
 - Writes need same-origin JSON, so other websites can't post to it with your Access cookie.
 - The twitterapi.io key is a Worker secret; the browser never sees it.
+
+## Retrying and re-running
+
+Everything that runs on its own can be run again by hand, where you would look for it:
+
+| What | When it failed | After you changed its settings |
+| --- | --- | --- |
+| A briefing | **Overview** shows the error with **Run again**; **Briefings** turns **Run now** into **Run again**. | **Briefing setup**: after **Save**, a bar offers **Run now** (a new issue) or **Re-run and replace** the latest. **Briefings** has **Re-run and replace** too. |
+| A briefing's audio or picture | **Overview**: **Make again**. **Briefings**: the buttons on the issue. | The same buttons; they reuse the text, so nothing is fetched or written again. |
+| A watch (Sources) | **Overview**: **Check again** for all failing ones; **Sources**: **Check now** on the card. | Applies at the next check; **Check now** runs it at once. |
+| Signal topics by AI | **Overview** and **Signal setup → Topic detection**: **Retry** the items the model could not read, or a waiting error. | **Signal setup → Topic detection**: **Re-read** reads the last two weeks again with the current model (shows how many items and about what it costs). Saving a new model points you there. |
+| An Archives collection | **Overview**: **Resume**. **Archives**: **Resume** on the job. | |
+
+**Re-run and replace** writes the issue again from fresh posts with the current settings, at the same address, so links to it keep working.
+A replaced issue that was published stays published. Its picture and audio are removed with it and can be made again.
+
+Some changes need no re-run because they apply when reading: Signal weights, groups, filtered words, merged and renamed topics, and which
+groups a Signal shows. They change Signal at once, also for what was counted before.
+
+## YouTube through the API (when YouTube's feeds fail)
+
+YouTube channels are watched through their public feeds (`youtube.com/feeds/videos.xml`), which cost nothing and need no key. YouTube sometimes
+answers 404 for every channel feed for days. With a YouTube Data API key, a channel or playlist whose feed fails is read through the API instead,
+with the same video ids, so nothing is counted twice when the feed comes back. Without a key, the failing channels show on **Overview**.
+
+Getting a key (free):
+1. Open the [Google Cloud console](https://console.cloud.google.com/) and sign in with a Google account.
+2. Create a project (the project picker at the top, **New project**), or pick one you have.
+3. **APIs & Services → Library**, search for **YouTube Data API v3**, open it and click **Enable**.
+4. **APIs & Services → Credentials → Create credentials → API key**. Copy the key.
+5. Restrict it (recommended): open the key, under **API restrictions** choose **Restrict key** and tick only **YouTube Data API v3**. Save.
+6. Store it as a secret of the production Worker:
+   ```
+   npx wrangler secret put YOUTUBE_API_KEY --env=""
+   ```
+   (`--env=""` means the production Worker; without it Wrangler warns because a staging environment is defined too.)
+
+Cost: none. Each check of a failing channel uses 1 unit of the free quota of 10,000 units a day; 20 channels checked every hour use about 480.
+No billing account is needed for this quota.
+
+## Visitor statistics (Cloudflare Web Analytics)
+
+The public pages can count visits with Cloudflare Web Analytics: page views, referrers, countries and load times, without cookies and without
+storing anything about a visitor. It is off until a token is set; without it the public pages load no script at all.
+
+Getting the token:
+1. In the [Cloudflare dashboard](https://dash.cloudflare.com/), open your **account** (not the domain).
+2. Open **Analytics & Logs → Web Analytics** (on some dashboards it is directly under **Web Analytics**).
+3. **Add a site** and enter the public domain, for example `tweets.example.com`.
+4. If Cloudflare offers **automatic setup** (it does for domains that run through Cloudflare), choose the **manual / JS snippet** option instead.
+   The site adds the script itself; both together would count every visit twice.
+5. The snippet looks like
+   `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "a1b2c3…"}'></script>`.
+   The token is the value after `"token":`. For a site you added before, **Manage site** shows the snippet again.
+6. Store it as a secret:
+   ```
+   npx wrangler secret put CF_ANALYTICS_TOKEN --env=""
+   ```
+7. Deploy. The statistics appear under **Web Analytics** in the dashboard after the first visits (allow a few minutes).
+
+The page's security policy allows exactly this one script (`static.cloudflareinsights.com`) and only when the token is set. The admin pages never load it.
+
+To check which secrets the production Worker has: `npx wrangler secret list --env=""`.
+
+## Reader reports ("Report an error")
+
+Every theme of a published briefing, and the briefing as a whole, has a **Report an error** link to a short form (a message, nothing else).
+Reports appear on the admin **Overview** under "What readers reported", with a link to the briefing and the theme, and a **Done** button.
+Nothing to set up. Limits against floods: a hidden field that only bots fill in, at most 5 reports per reader a day (counted with a hash of
+the address and the day, the address itself is not stored), and at most 500 unread reports.
 
 ## Local testing of the Worker
 `npm run dev` (uses `.dev.vars`, which bypasses Access locally only; the bypass is ignored whenever a

@@ -13,6 +13,7 @@ import { extractTerms } from '../signal/terms';
 import { distinctive, findEvergreen, notSteady, rising, scoreTerms, type Counts, type GroupInfo, type ScoredTerm } from '../signal/score';
 import { boostByEngagement, indexItems, mergeTopics, REACTION_CAP, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
 import { cleanTitle, isBait } from '../signal/clean';
+import { setYoutubeKey } from '../sources/youtube';
 import { AI_BATCH, VAGUE, estimatePer1000, parseTopics, topicSystem, topicUser } from '../signal/ai';
 import { DEFAULT_FILTER, cleanFilter, makeBlocker, type FilterWord } from '../signal/filter';
 import { GENERIC } from '../signal/terms';
@@ -78,6 +79,7 @@ export class MonitorDO extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API
     const sql = ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS watches (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS seen (watch TEXT NOT NULL, tweet TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (watch, tweet))');
@@ -131,7 +133,7 @@ export class MonitorDO extends DurableObject<Env> {
   }
   private snapshot() {
     const spend = this.spend(), dailyCap = this.cap();
-    return { watches: this.watches().map((w) => this.view(w)), settings: { dailyCap }, spend, capped: spend.cost >= dailyCap };
+    return { watches: this.watches().map((w) => this.view(w)), settings: { dailyCap }, spend, capped: spend.cost >= dailyCap, youtubeApi: !!this.env.YOUTUBE_API_KEY };
   }
 
   // ---- scheduling
@@ -512,7 +514,7 @@ export class MonitorDO extends DurableObject<Env> {
   /** What the model gave each item since `from`, as "watch\nitem" -> topics; null when Signal is counting words. */
   private aiTopics(from: string): Map<string, string[]> | null {
     if (!this.tables().ai) return null;
-    return new Map(this.ctx.storage.sql.exec<{ watch: string; item: string; topics: string }>('SELECT watch, item, topics FROM ai_item WHERE day >= ?', from).toArray().map((r) => [`${r.watch}\n${r.item}`, JSON.parse(r.topics) as string[]]));
+    return new Map(this.ctx.storage.sql.exec<{ watch: string; item: string; topics: string }>('SELECT watch, item, topics FROM ai_item WHERE day >= ?', from).toArray().map((r) => [`${r.watch}\n${r.item}`, (JSON.parse(r.topics) ?? []) as string[]]));   // 'null': the model failed on it (not read), counted as no topics
   }
   private aiQueued(): number { return this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM ai_queue').one().n; }
   /** When to wake up for items waiting for the model: now, after an error, or when the day's cap is fresh again. 0 when there is nothing to do. */
@@ -558,7 +560,7 @@ export class MonitorDO extends DurableObject<Env> {
       if (this.aiSpend().cost >= cfg.dailyCap) { this.setMeta('aiStatus', { error: 'The daily spending cap is reached; it continues tomorrow.', at: Date.now() }); return; }
       const rows = sql.exec<{ seq: number; watch: string; item: string; day: string; text: string }>('SELECT seq, watch, item, day, text FROM ai_queue ORDER BY seq LIMIT ?', AI_BATCH).toArray();
       if (!rows.length) { this.setMeta('aiStatus', {}); return; }
-      let topics = new Map<number, string[]>(), cost = 0, tin = 0, tout = 0, failed = '';
+      let topics = new Map<number, string[]>(), cost = 0, tin = 0, tout = 0, failed = '', gaveUp = false;
       try {
         const texts = rows.map((r) => r.text);
         const r = await complete(this.env, cfg.model, [topicSystem(this.knownTopics()), topicUser(texts)], { maxTokens: 1800,
@@ -572,12 +574,13 @@ export class MonitorDO extends DurableObject<Env> {
         const fails = this.getMeta<number>('aiFails', 0) + 1;
         this.setMeta('aiFails', fails);
         if (fails < 3) { this.setMeta('aiStatus', { error: failed.slice(0, 200), at: Date.now(), retryAt: Date.now() + AI_RETRY_MS }); return; }
-        this.setMeta('aiFails', 0); topics = new Map();
+        this.setMeta('aiFails', 0); topics = new Map(); gaveUp = true;
       } else this.setMeta('aiFails', 0);
       this.ctx.storage.transactionSync(() => {
         for (const [i, row] of rows.entries()) {
           const t = topics.get(i) ?? [];
-          sql.exec('INSERT OR REPLACE INTO ai_item (watch, item, day, topics) VALUES (?, ?, ?, ?)', row.watch, row.item, row.day, JSON.stringify(t));
+          // Items of a batch that failed three times are kept as 'null' (not read), so they can be retried; an empty list means read, nothing specific.
+          sql.exec('INSERT OR REPLACE INTO ai_item (watch, item, day, topics) VALUES (?, ?, ?, ?)', row.watch, row.item, row.day, gaveUp ? 'null' : JSON.stringify(t));
           sql.exec('INSERT INTO ai_items (day, watch, n) VALUES (?, ?, 1) ON CONFLICT (day, watch) DO UPDATE SET n = n + 1', row.day, row.watch);
           for (const x of t) sql.exec('INSERT INTO ai_terms (day, watch, term, n) VALUES (?, ?, ?, 1) ON CONFLICT (day, watch, term) DO UPDATE SET n = n + 1', row.day, row.watch, x);
           sql.exec('DELETE FROM ai_queue WHERE seq = ?', row.seq);
@@ -590,9 +593,11 @@ export class MonitorDO extends DurableObject<Env> {
   private aiStatus() {
     const c = this.aiConfig(), models = modelOptions(this.env).filter((m) => !m.decider), st = this.getMeta<{ error?: string; retryAt?: number }>('aiStatus', {});
     const read = this.ctx.storage.sql.exec<{ n: number }>('SELECT COALESCE(SUM(n), 0) AS n FROM ai_items WHERE day >= ?', dayOf(Date.now() - AI_BACKLOG_DAYS * 86_400_000)).one().n;
+    const failedItems = this.ctx.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM ai_item WHERE topics = 'null'").one().n;
+    const rereadable = Math.min(AI_QUEUE_MAX - 200, this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM item_log WHERE day >= ?', dayOf(Date.now() - (AI_BACKLOG_DAYS - 1) * 86_400_000)).one().n);
     return {
       available: models.length > 0, enabled: c.enabled, model: c.model || defaultTiers(this.env).cheap, dailyCap: c.dailyCap, spentToday: this.aiSpend().cost, using: this.tables().ai,
-      queued: this.aiQueued(), read, error: st.error ?? '',
+      queued: this.aiQueued(), read, failedItems, rereadable, error: st.error ?? '',
       models: models.map((m) => ({ id: m.id, label: m.label, per1000: estimatePer1000(m.inPrice, m.outPrice), note: m.note })),
     };
   }
@@ -954,6 +959,33 @@ export class MonitorDO extends DurableObject<Env> {
         const slug = String(b.slug ?? '').slice(0, 40);
         if (!slug) throw new Error('slug required');
         return json(this.ingestBriefing(slug, String(b.title ?? slug).slice(0, 50), String(b.group ?? ''), posts));
+      }
+      if (name === 'signal-ai-retry') {   // the items the model gave up on, and a waiting error: read them again now
+        const sql = this.ctx.storage.sql;
+        this.ctx.storage.transactionSync(() => {
+          for (const r of sql.exec<{ watch: string; item: string; day: string }>("SELECT watch, item, day FROM ai_item WHERE topics = 'null'").toArray()) {
+            sql.exec('UPDATE ai_items SET n = MAX(0, n - 1) WHERE day = ? AND watch = ?', r.day, r.watch);
+            sql.exec('DELETE FROM ai_item WHERE watch = ? AND item = ?', r.watch, r.item);
+            sql.exec('INSERT OR IGNORE INTO ai_queue (watch, item, day, text) SELECT watch, item, day, match FROM item_log WHERE watch = ? AND item = ?', r.watch, r.item);
+          }
+        });
+        this.setMeta('aiStatus', {}); this.setMeta('aiFails', 0);
+        await this.reschedule();
+        return json(this.aiStatus());
+      }
+      if (name === 'signal-ai-reread') {   // after a change of model or prompt: forget what the model gave the last two weeks and read it all again
+        // The queue keeps at most AI_QUEUE_MAX items, so only the newest that fit are read again, and only their days are forgotten.
+        const sql = this.ctx.storage.sql, floor = dayOf(Date.now() - (AI_BACKLOG_DAYS - 1) * 86_400_000), cap = AI_QUEUE_MAX - 200;
+        const oldest = sql.exec<{ day: string }>('SELECT MIN(day) AS day FROM (SELECT day FROM item_log WHERE day >= ? ORDER BY ts DESC LIMIT ?)', floor, cap).one().day;
+        if (!oldest) return json(this.aiStatus());
+        this.ctx.storage.transactionSync(() => {
+          for (const t of ['ai_item', 'ai_terms', 'ai_items']) sql.exec(`DELETE FROM ${t} WHERE day >= ?`, oldest);
+          sql.exec('DELETE FROM ai_queue WHERE day >= ?', oldest);
+          sql.exec('INSERT OR IGNORE INTO ai_queue (watch, item, day, text) SELECT watch, item, day, match FROM item_log WHERE day >= ? ORDER BY ts', oldest);
+        });
+        this.setMeta('aiStatus', {}); this.setMeta('aiFails', 0);
+        await this.reschedule();
+        return json(this.aiStatus());
       }
       if (name === 'signal-ai-set') {   // topics written by a model: on or off, which model, and the most it may spend in a day
         const prev = this.aiConfig(), models = modelOptions(this.env).filter((m) => !m.decider);

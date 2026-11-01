@@ -41,9 +41,9 @@ npm run dev
 
 ```sh
 npx wrangler login
-npx wrangler secret put TWITTERAPI_IO_KEY
-npx wrangler secret put OPENROUTER_API_KEY
-npm run deploy -- --domain tweets.example.com
+npx wrangler secret put TWITTERAPI_IO_KEY --env=""
+npx wrangler secret put OPENROUTER_API_KEY --env=""
+DEPLOY_DOMAIN=tweets.example.com npm run release     # check, deploy, smoke test
 ```
 
 Then protect `/admin*` with a Cloudflare Access application and store its team domain and audience tag as the secrets `TEAM_DOMAIN` and `POLICY_AUD`.
@@ -56,7 +56,7 @@ Until that is done every request is refused. Nothing about your account or domai
 | [Architecture](docs/architecture.md) | How it is deployed, the Durable Objects, the code map, which models are used |
 | [Flows](docs/flows.md) | What happens for History, AI analysis, Summarize, briefings and screening, step by step |
 | [Configuration](docs/configuration.md) | Secrets, variables, and every option in the app |
-| [Deployment](docs/deployment.md) | Setup, one feature at a time: Access, briefings, audio, pictures, History reports |
+| [Deployment](docs/deployment.md) | How to deploy (release, smoke test, staging), retrying and re-running, and setup one feature at a time: Access, briefings, audio, pictures, YouTube API, analytics |
 
 ## Project layout
 

@@ -43,5 +43,29 @@
     // Summarize tab and briefings: "openrouter" (needs the OPENROUTER_API_KEY secret), "workers-ai" (needs the AI binding) or "anthropic" (ANTHROPIC_API_KEY).
     "SUMMARY_PROVIDER": "openrouter",
     "SUMMARY_MODEL": "anthropic/claude-haiku-5.5"
+  },
+
+  // A second Worker to look at changes before they go live: `npm run staging`. It has its own Durable Objects (so its own, empty data) and its own
+  // R2 bucket, and runs on workers.dev. Create the bucket once (`npx wrangler r2 bucket create tweet-explorer-audio-staging`) and give it the secrets it
+  // needs with `--env staging`. Bindings and vars are not inherited by an environment, so they are repeated here.
+  "env": {
+    "staging": {
+      "name": "tweet-explorer-staging",
+      "workers_dev": true,
+      "durable_objects": {
+        "bindings": [
+          { "name": "MONITOR", "class_name": "MonitorDO" },
+          { "name": "HISTORY", "class_name": "HistoryDO" },
+          { "name": "LISTS", "class_name": "ListsDO" },
+          { "name": "PUBLISH", "class_name": "PublishDO" },
+          { "name": "COST", "class_name": "CostDO" }
+        ]
+      },
+      "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "tweet-explorer-audio-staging" }],
+      "vars": {
+        "SUMMARY_PROVIDER": "openrouter",
+        "SUMMARY_MODEL": "anthropic/claude-haiku-5.5"
+      }
+    }
   }
 }

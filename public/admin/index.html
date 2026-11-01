@@ -346,6 +346,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 #publish .src { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 #publish .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 #publish .spill { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.applybar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 12px; margin: -4px 0 14px; border: 1px solid var(--accent); border-radius: 10px; } .applybar span { flex: 1; min-width: 200px; }
 #publish .spill.published { color: var(--ok); border-color: var(--ok); } #publish .spill.draft { color: var(--accent); border-color: var(--accent); }
 #publish .perr { color: var(--err); } #publish .muted { color: var(--muted); }
 #publish table { width: 100%; border-collapse: collapse; }
@@ -357,7 +358,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 /* ----- signal ----- */
 
 .ovlist { list-style: none; margin: 0; padding: 0; } .ovlist li { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; padding: 8px 0 8px 12px; border-top: 1px solid var(--line); border-left: 3px solid var(--line); }
-.ovlist li:first-child { border-top: 0; } .ovlist li.bad { border-left-color: var(--err); } .ovlist li.warn { border-left-color: #e3a008; } .ovlist li a { white-space: nowrap; }
+.ovlist li:first-child { border-top: 0; } .ovfix { display: flex; gap: 8px; align-items: center; white-space: nowrap; } .ovlist li.bad { border-left-color: var(--err); } .ovlist li.warn { border-left-color: #e3a008; } .ovlist li a { white-space: nowrap; }
 .sigflow { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 18px; }
 .sigflow a { display: block; text-decoration: none; color: inherit; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--card); }
 .sigflow a b { display: block; font-size: 22px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; } .sigflow a span { display: block; color: var(--muted); font-size: 13px; } .sigflow a.warn { border-color: var(--err); }
@@ -447,6 +448,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   <section id="overview" hidden>
     <header class="page"><h1>Overview</h1><p>What needs your attention, and what is happening today.</p></header>
     <div class="card" style="margin-bottom:14px"><h3>Needs attention</h3><div id="ovStatus"><div class="note">Checking…</div></div></div>
+    <div class="card" id="ovReports" style="margin-bottom:14px" hidden><h3>What readers reported</h3><div id="ovReportList"></div></div>
     <div class="grid" id="ovToday"></div>
   </section>
   <section id="search">
@@ -644,7 +646,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     </div>
 
     <h2 class="ssh" id="ssGroups"><span>2</span> Groups <small>who votes, and how loudly</small></h2>
-    <div class="note" style="margin:-4px 0 10px">A group is a set of sources that vote together. Its <b>weight</b> sets how much it counts (0 mutes it, 3 triples it). Briefing groups start at ×2.</div>
+    <div class="note" style="margin:-4px 0 10px">A group is a set of sources that vote together. Its <b>weight</b> sets how much it counts (0 mutes it, 3 triples it). Briefing groups start at ×2. Changes here apply at once, also to what was counted before: nothing needs to run again.</div>
     <div id="sigGroups" class="grid" style="margin-bottom:14px"></div>
 
     <h2 class="ssh" id="ssTopics"><span>3</span> Topic rules <small>how topics are found</small></h2>
@@ -658,6 +660,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
         <span class="note">Daily cap: under <a href="#budgets" data-tabgo="budgets">Budgets</a></span>
         <button class="go" id="sigAiSave" type="button">Save</button></div>
       <div class="note" id="sigAiStatus" style="margin-top:8px"></div>
+      <div id="sigAiRuns" style="margin-top:10px"></div>
     </details>
     <details class="card" id="sigFilter" open style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Filtered words <span class="note" id="sigFilterNote" style="font-weight:400"></span></summary>
       <div class="note" style="margin:8px 0">Words and phrases you do not want as topics. They are left out everywhere (this tab, the public pages and the MCP view) and the change applies at once, also to what was counted before. You can also use <b>Hide this term</b> when you open a topic.</div>
@@ -2979,6 +2982,26 @@ async function loadBudgets() {
     window.budTopics = topics;
   }
 }
+$('#overview').addEventListener('click', async (e) => {
+  if (e.target.closest('[data-ovjump]')) { e.preventDefault(); $('#ovReports').scrollIntoView({ behavior: 'smooth' }); return; }
+  const a = e.target.closest('[data-ovact]');
+  if (a) {
+    const k = a.dataset.ovact, pub = (path, body) => fetch('/pub/' + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`); });
+    a.disabled = true;
+    try {
+      if (k === 'check') { for (const id of a.dataset.ids.split(',')) await post('/mon/check', { id }); toast('Checking them again…'); }
+      else if (k === 'airetry') { await post('/mon/signal-ai-retry', {}); toast('Reading them again…'); }
+      else if (k === 'run') { await pub('run', { slug: a.dataset.slug }); toast('Started. The new issue appears under Briefings when it is ready.'); }
+      else if (k === 'audio') { await pub('audio-create', { slug: a.dataset.slug, id: a.dataset.id }); toast('Making the audio again…'); }
+      else if (k === 'image') { await pub('image-create', { slug: a.dataset.slug, id: a.dataset.id }); toast('Drawing the picture again…'); }
+      else if (k === 'resume') { await post('/hist/resume', { id: a.dataset.id }); toast('Resumed'); }
+      setTimeout(loadOverview, 1500);
+    } catch (err) { toast(err.message); a.disabled = false; }
+    return;
+  }
+  const d = e.target.closest('[data-repdone]'); if (!d) return;
+  try { await fetch('/pub/report-done', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: +d.closest('[data-repid]').dataset.repid }) }); loadOverview(); } catch (err) { toast(err.message); }
+});
 $('#budAiSave').addEventListener('click', () => post('/mon/signal-ai-set', { dailyCap: +$('#budAiCap').value || 0 }).then(() => { toast('Daily cap saved'); loadBudgets(); }).catch((err) => toast(err.message)));
 $('#budTopics').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-bsave]'); if (!b) return;
@@ -2994,30 +3017,45 @@ $('#monCapSave').addEventListener('click', () => setTimeout(loadBudgets, 400));
 // Overview: one list of what is broken or waiting, gathered from the other tabs' own data, each linking to where it is fixed.
 async function loadOverview() {
   const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const [mon, ai, topics, costs, sigd] = await Promise.all([get('/mon/state'), features.signal ? get('/mon/signal-ai') : null, features.publish ? get('/pub/topics') : null,
-    features.costs ? get('/costs/summary?days=7') : null, features.signal ? get('/mon/signal?days=1') : null]);
+  const [mon, ai, topics, costs, sigd, reports, jobs] = await Promise.all([get('/mon/state'), features.signal ? get('/mon/signal-ai') : null, features.publish ? get('/pub/topics') : null,
+    features.costs ? get('/costs/summary?days=7') : null, features.signal ? get('/mon/signal?days=1') : null, features.publish ? get('/pub/reports') : null, get('/hist/jobs')]);
   const items = [], go = (tab, label) => `<a href="#${tab}" data-tabgo="${tab}">${label}</a>`;
-  const add = (level, text, link) => items.push({ level, html: `<li class="ov ${level}"><span>${text}</span>${link}</li>` });
+  // Each problem: what it is, a button that fixes or retries it here (when there is one), and a link to where it lives.
+  const act = (label, attrs) => `<button class="go ghost" ${attrs}>${label}</button>`;
+  const add = (level, text, link, fix = '') => items.push({ level, html: `<li class="ov ${level}"><span>${text}</span><span class="ovfix">${fix}${link}</span></li>` });
   if (mon) {
     const watches = mon.watches ?? [], out = watches.filter((w) => /^Out of credits/.test(w.lastError || '')), failing = watches.filter((w) => w.enabled && w.lastError && !out.includes(w));
     if (out.length) add('bad', `${out.length} watch${out.length === 1 ? ' was' : 'es were'} paused: out of credits`, go('monitor', 'Live feed'));
-    if (failing.length) add('warn', `${failing.length} source${failing.length === 1 ? '' : 's'} failing: ${esc(failing.slice(0, 4).map((w) => w.label).join(', '))}${failing.length > 4 ? '…' : ''} <span class="note">(${esc(failing[0].lastError.slice(0, 80))})</span>`, go('monitor', 'Live feed'));
+    if (failing.length) add('warn', `${failing.length} source${failing.length === 1 ? '' : 's'} failing: ${esc(failing.slice(0, 4).map((w) => w.label).join(', '))}${failing.length > 4 ? '…' : ''} <span class="note">(${esc(failing[0].lastError.slice(0, 80))})</span>`, go('sources', 'Sources'),
+      act('Check again', `data-ovact="check" data-ids="${esc(failing.map((w) => w.id).join(','))}"`));
+    const yt = failing.filter((w) => w.source === 'youtube');
+    if (yt.length && !mon.youtubeApi) add('info', `${yt.length} YouTube channel${yt.length === 1 ? '' : 's'} failing: YouTube's public feeds answer errors. Add a <code>YOUTUBE_API_KEY</code> secret to read them through the YouTube API instead (free quota)`, go('sources', 'Sources'));
     if (mon.capped) add('warn', `X data cap reached today ($${(+mon.spend.cost).toFixed(2)} of $${(+mon.settings.dailyCap).toFixed(2)}): X watches wait until tomorrow`, go('monitor', 'Raise the cap'));
   }
   if (ai && ai.enabled) {
-    if (ai.error) add('warn', `Signal topics: ${esc(ai.error)}`, go('signalsetup', 'Signal setup'));
+    if (ai.error && !/cap is reached/.test(ai.error)) add('warn', `Signal topics: ${esc(ai.error)}`, go('signalsetup', 'Signal setup'), act('Retry now', 'data-ovact="airetry"'));
     else if (ai.spentToday >= ai.dailyCap) add('warn', `Signal topics hit today's cap ($${(+ai.dailyCap).toFixed(2)}); ${fmt(ai.queued)} items wait`, go('signalsetup', 'Signal setup'));
     else if (ai.queued > 300) add('info', `${fmt(ai.queued)} items wait to be read for Signal topics`, go('signalsetup', 'Signal setup'));
+    if (ai.failedItems) add('warn', `${fmt(ai.failedItems)} item${ai.failedItems === 1 ? '' : 's'} the model could not read for Signal topics`, go('signalsetup', 'Signal setup'), act('Retry them', 'data-ovact="airetry"'));
   }
   if (topics) {
-    for (const t of topics.filter((x) => x.enabled && x.lastError)) add('bad', `Briefing <b>${esc(t.title)}</b> failed: ${esc(t.lastError.slice(0, 120))}`, go('publish', 'Briefings'));
+    for (const t of topics.filter((x) => x.lastError && !x.running)) add('bad', `Briefing <b>${esc(t.title)}</b> failed: ${esc(t.lastError.slice(0, 120))}`, go('publish', 'Briefings'), act('Run again', `data-ovact="run" data-slug="${esc(t.slug)}"`));
+    for (const t of topics) for (const i of (t.issues ?? []).slice(0, 3)) {
+      if (i.audio?.status === 'failed') add('warn', `Audio for <b>${esc(t.title)}</b> ${esc(i.id)} failed${i.audio.error ? `: ${esc(i.audio.error.slice(0, 80))}` : ''}`, go('publish', 'Briefings'), act('Make again', `data-ovact="audio" data-slug="${esc(t.slug)}" data-id="${esc(i.id)}"`));
+      if (i.image?.status === 'failed') add('warn', `Picture for <b>${esc(t.title)}</b> ${esc(i.id)} failed`, go('publish', 'Briefings'), act('Make again', `data-ovact="image" data-slug="${esc(t.slug)}" data-id="${esc(i.id)}"`));
+    }
     const drafts = topics.flatMap((t) => (t.issues ?? []).filter((i) => i.status === 'draft' && Date.now() - i.created < 3 * 86400000).map(() => t.title));
     if (drafts.length) add('info', `${drafts.length} draft${drafts.length === 1 ? '' : 's'} waiting for approval: ${esc([...new Set(drafts)].join(', '))}`, go('publish', 'Review'));
   }
+  for (const j of (jobs ?? []).filter((x) => x.status === 'error')) add('warn', `Archive collection <b>${esc((j.query || '').slice(0, 60))}</b> stopped: ${esc((j.error || '').slice(0, 100))}`, go('history', 'Archives'), act('Resume', `data-ovact="resume" data-id="${esc(j.id)}"`));
   if (costs) {
     const un = (costs.byKind ?? []).reduce((n, r) => n + (r.unpriced || 0), 0);
     if (un) add('info', `${un} cost entr${un === 1 ? 'y' : 'ies'} this week used a model with no price, so costs read low`, go('costs', 'Costs'));
   }
+  const fresh = (reports ?? []).filter((r) => r.status === 'new');
+  if (fresh.length) add('warn', `${fresh.length} new report${fresh.length === 1 ? '' : 's'} from readers about errors in briefings`, '<a href="#ovReports" data-ovjump>Read them</a>');
+  $('#ovReports').hidden = !(reports ?? []).length;
+  $('#ovReportList').innerHTML = (reports ?? []).slice(0, 20).map((r) => `<div class="sigwatch" data-repid="${r.id}"${r.status === 'new' ? '' : ' style="opacity:.6"'}><span class="grow" style="white-space:normal"><b>${esc(r.title)}</b>, <a href="/${esc(r.slug ?? r.topic)}/${esc(r.issue)}" target="_blank" rel="noopener">${esc(r.issue)}</a>${r.theme ? ` · ${esc(r.theme)}` : ''}<br>${esc(r.message)}</span><span class="note">${new Date(r.created).toLocaleString()}</span>${r.status === 'new' ? '<button class="go ghost" data-repdone>Done</button>' : '<span class="note">done</span>'}</div>`).join('');
   const order = { bad: 0, warn: 1, info: 2 };
   items.sort((a, b) => order[a.level] - order[b.level]);
   $('#ovStatus').innerHTML = items.length ? `<ul class="ovlist">${items.map((i) => i.html).join('')}</ul>` : '<div class="note">All good: every source, briefing and model is working.</div>';
@@ -3134,6 +3172,10 @@ function renderSigAi() {
   $('#sigAiStatus').innerHTML = !a.available ? 'Needs the OPENROUTER_API_KEY secret.' : a.enabled
     ? `${a.using ? `Showing topics written by AI: ${fmt(a.read)} items read in the last two weeks` : 'Nothing is read yet, so words are shown until the first batch is done'}, ${fmt(a.queued)} waiting. Spent $${a.spentToday.toFixed(3)} of $${(+a.dailyCap).toFixed(2)} today.${a.error ? ` <span class="err">${esc(a.error)}</span>` : ''}`
     : 'Off: Signal counts words.';
+  // Re-runs: items the model gave up on, and reading the last two weeks again after a change of model or of how topics are named.
+  const m = a.models.find((x) => x.id === a.model), est = (n) => (m ? ` About $${((n / 1000) * m.per1000).toFixed(2)}.` : '');
+  $('#sigAiRuns').innerHTML = !a.enabled ? '' : `<div class="optrow">${a.failedItems ? `<span class="note"><b>${fmt(a.failedItems)}</b> item${a.failedItems === 1 ? '' : 's'} could not be read.${est(a.failedItems)}</span><button class="go ghost" data-airetry type="button">Retry them</button>` : ''}
+    <span class="note">Read the last two weeks again with the current model (${fmt(a.rereadable)} items).${est(a.rereadable)} Use it after changing the model; the topics are rebuilt as it reads.</span><button class="go ghost" data-aireread type="button">Re-read</button></div>`;
   clearTimeout(sigTimer);
   if (a.enabled && a.queued && !a.error && (!$('#signal').hidden || !$('#signalsetup').hidden)) sigTimer = setTimeout(loadSignal, 15000);   // follow the reading until it has caught up
 }
@@ -3297,8 +3339,12 @@ $('#sigAi').addEventListener('input', () => { $('#sigAi').dataset.touched = '1';
 $('#sigAiSave').addEventListener('click', async () => {
   const b = $('#sigAiSave'); b.disabled = true;
   try {
+    const before = sig.ai ? `${sig.ai.enabled}|${sig.ai.model}` : '';
     await post('/mon/signal-ai-set', { enabled: document.querySelector('input[name=sigaimode]:checked').value === 'ai', model: $('#sigAiModel').value });
-    delete $('#sigAi').dataset.touched; await loadSignal(); toast('Saved');
+    delete $('#sigAi').dataset.touched; await loadSignal();
+    const changed = sig.ai && sig.ai.enabled && before !== `${sig.ai.enabled}|${sig.ai.model}`;
+    toast(changed ? 'Saved. New items use it now; use Re-read to apply it to the last two weeks.' : 'Saved');
+    if (changed) $('#sigAiRuns').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (err) { toast(err.message); } finally { b.disabled = false; }
 });
 const sigOn = (type, fn) => [$('#signal'), $('#signalsetup')].forEach((r) => r.addEventListener(type, fn));   // viewing and setup are two tabs sharing one set of handlers
@@ -3311,6 +3357,11 @@ sigOn('click', async (e) => {
     else if (e.target.closest('[data-pwatch]')) { sigProof.watch = e.target.closest('[data-pwatch]').dataset.pwatch; await loadProof(true); }
     else if (e.target.closest('[data-pmore]')) await loadProof(false);
     else if (e.target.closest('[data-fdel]')) await sigSetFilter(sig.filter.words.filter((w) => w.term !== e.target.closest('[data-fdel]').dataset.fdel));
+    else if (e.target.closest('[data-airetry]')) { sig.ai = await post('/mon/signal-ai-retry', {}); renderSigAi(); toast('Reading them again…'); }
+    else if (e.target.closest('[data-aireread]')) {
+      if (!confirm(`Read the last two weeks again (${fmt(sig.ai.rereadable)} items)? Topics from the model for those days are rebuilt as they are read, which takes a while and costs a little; the daily cap still applies.`)) return;
+      sig.ai = await post('/mon/signal-ai-reread', {}); renderSigAi(); toast('Re-reading. Signal fills in again as it goes.');
+    }
     else if (e.target.closest('[data-sigmanage]')) {
       e.preventDefault(); const term = e.target.closest('[data-sigmanage]').dataset.sigmanage;
       show('signalsetup'); const row = $('#sigTopicAct'); row.querySelector('[name=from]').value = term; row.querySelector('[name=to]').value = '';
@@ -3574,7 +3625,8 @@ function renderPubHead(t) {
   const el = $('#pubHead'); if (!el) return;
   el.innerHTML = `<h2 style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">${esc(t.title)} <a href="#pubsetup" data-tabgo="pubsetup" style="font-size:14px;font-weight:400">Settings &rarr;</a></h2>
     <p class="muted" style="margin:0 0 10px">${t.enabled ? `Runs ${t.intervalHours === 24 ? 'daily' : 'every ' + t.intervalHours + ' h'}, next ${when(t.nextRun)}` : 'Paused'} · last run ${when(t.lastRun)}${t.lastError ? ` · <span class="perr">${esc(t.lastError)}</span>` : ''}${t.autoPublish ? ' · publishes automatically' : ' · each run waits as a draft'}</p>
-    <div class="actions"><button type="button" class="sec" id="pubRun" ${busy(t) ? 'disabled' : ''}>${busy(t) ? 'Running…' : 'Run now'}</button>
+    <div class="actions"><button type="button" class="${t.lastError ? 'primary' : 'sec'}" id="pubRun" ${busy(t) ? 'disabled' : ''} title="Writes a new issue from fresh posts">${busy(t) ? 'Running…' : t.lastError ? 'Run again' : 'Run now'}</button>
+      ${t.issues[0] ? `<button type="button" class="sec" data-rerun="${esc(t.issues[0].id)}" ${busy(t) ? 'disabled' : ''} title="Writes ${esc(t.issues[0].id)} again from fresh posts with the current settings, at the same address">Re-run and replace ${esc(t.issues[0].id)}</button>` : ''}
       <button type="button" class="sec" id="pubImageLatest" title="Draws a picture for the newest briefing from the text already written: no new tweets, no new summary."></button>
       <button type="button" class="sec" id="pubAudioLatest" title="Reads the newest briefing aloud from the text already written: no new tweets, no new summary."></button>
       <a href="/${esc(t.slug)}" target="_blank">Public page</a></div>`;
@@ -3682,7 +3734,12 @@ $('#pubDetail').addEventListener('click', async (e) => {
     const t = topics.find((x) => x.slug === sel);
     if (e.target.id === 'pubAddSrc') { $('#pubSources').insertAdjacentHTML('beforeend', srcRow()); refreshEstimate(); }
     else if (e.target.matches('[data-rm]')) { e.target.closest('.src').remove(); refreshEstimate(); }
-    else if (e.target.id === 'pubRun') { await call('run', { slug: sel }); toast('Started. The issue appears below when it is ready.'); await load(); }
+    else if (e.target.id === 'pubRun' || e.target.dataset.run === 'new') { await call('run', { slug: sel }); toast('Started. The issue appears under Briefings when it is ready.'); await load(); }
+    else if (e.target.dataset.rerun) {
+      const id = e.target.dataset.rerun, i = t.issues.find((x) => x.id === id);
+      if (!confirm(`Write ${id} again with the current settings? It replaces that issue at the same address${i?.status === 'published' ? ' and stays published' : ''}; its picture and audio go and can be made again.`)) return;
+      await call('run', { slug: sel, replace: id }); toast(`Started. ${id} is replaced when the run is done.`); await load();
+    }
     else if (e.target.id === 'pubImageLatest') {
       const i = t.issues[0]; if (!i) return;
       const tpl = imgTemplates.find((x) => x.id === (t.imageTemplate || imgTemplates[0]?.id));
@@ -3715,7 +3772,13 @@ $('#pubDetail').addEventListener('click', async (e) => {
 });
 $('#pubDetail').addEventListener('submit', async (e) => {
   e.preventDefault();
-  try { const t = await call('save-topic', readForm(e.target)); sel = t.slug; toast('Saved'); await load(); renderDetail(true); }
+  try {
+    const wasNew = sel === '+new', t = await call('save-topic', readForm(e.target)); sel = t.slug; toast('Saved'); await load(); renderDetail(true);
+    // A change of settings applies from the next run: offer to run it now, as a new issue or over the latest one.
+    const cur = topics.find((x) => x.slug === sel), latest = cur?.issues?.[0], card = $('#pubDetail .card');
+    if (card && cur) card.insertAdjacentHTML('afterbegin', `<div class="applybar"><span>Saved. ${wasNew ? 'The first issue is written at the next run' : 'The change applies from the next run'} (${cur.enabled ? when(cur.nextRun) : 'paused'}).</span>
+      <button type="button" class="sec" data-run="new">Run now</button>${latest ? `<button type="button" class="sec" data-rerun="${esc(latest.id)}">Re-run and replace ${esc(latest.id)}</button>` : ''}</div>`);
+  }
   catch (err) { toast(err.message); }
 });
 

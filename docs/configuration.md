@@ -2,7 +2,9 @@
 
 Everything you can set: secrets, variables, and the options in the app. Step-by-step setup is in [deployment](deployment.md).
 
-## Secrets (`npx wrangler secret put NAME`)
+## Secrets (`npx wrangler secret put NAME --env=""`)
+
+`--env=""` means the production Worker; use `--env staging` for staging. See [deployment.md](deployment.md#how-to-deploy).
 
 | Secret | Needed for |
 | --- | --- |
@@ -12,6 +14,8 @@ Everything you can set: secrets, variables, and the options in the app. Step-by-
 | `OPENROUTER_API_KEY` | Summaries, briefings, History analysis, and screening. Without it these are switched off. |
 | `REPLICATE_API_TOKEN` | Audio versions and briefing pictures. Without it they are not offered. |
 | `ANTHROPIC_API_KEY` | Only if `SUMMARY_PROVIDER` is `anthropic`. |
+| `YOUTUBE_API_KEY` | A YouTube Data API key. When a channel's public feed fails (YouTube sometimes answers 404 for all of them for days), its videos are read through the API instead: 1 quota unit a check, 10,000 free a day. Optional. How to get one: [deployment.md](deployment.md#youtube-through-the-api-when-youtubes-feeds-fail). |
+| `CF_ANALYTICS_TOKEN` | The token of a Cloudflare Web Analytics site. The public pages then load its beacon (page views, no cookies). Without it they load no script at all. Optional. Where to find it: [deployment.md](deployment.md#visitor-statistics-cloudflare-web-analytics). |
 
 ## Variables (`wrangler.jsonc` → `vars`)
 
@@ -68,18 +72,31 @@ Bindings in `wrangler.jsonc`: the five Durable Objects, the R2 bucket `AUDIO` (c
 | Label at most | A stable sample beyond this many unique tweets (default 20,000). |
 | Show on the public report | Adds the analysis to the published report. |
 
-**Briefing topic** (`/admin` → Briefings)
+**Briefing topic** (`/admin` → Briefing setup; what it has written is under Briefings)
 
 | Setting | Meaning |
 | --- | --- |
-| Address | `/<address>` on the public site (reserved: `admin*`, `custom*`, `history`, `lists`, `audio`, `image`, `api`, `feed`, `rss`, `robots`, …). |
+| Address | `/<address>` on the public site (reserved: `admin*`, `custom*`, `history`, `lists`, `signal`, `report`, `audio`, `image`, `api`, `feed`, `rss`, `robots`, …). |
 | Sources | Searches, your Lists, X Lists, X List groups, or the Monitor feed. |
 | Instruction, Length | What to write about, and how long. |
 | Model | Overrides `SUMMARY_MODEL`. |
 | Schedule | Every 6, 12, 24 or 48 hours, or weekly, from a UTC hour. |
-| Data budget | A cap on twitterapi.io spend per run. |
+| Data budget | A cap on twitterapi.io spend per run. Also editable for every briefing at once under Budgets. |
 | Auto-publish, Listed | Publish at once or keep a draft; show on the landing page or only by link. |
 | Audio, Picture | A template (voice, style, model; image model, shape, prompt), made automatically or by hand. |
+| Signal | Also count the posts this briefing fetches in Signal (free), as a group of this name (starts at weight ×2). |
+
+**Sources** (`/admin` → Sources): every watch (X account or search, RSS, YouTube, Hacker News, or a whole list), how often it is checked, its Signal
+group, pause and delete, and desktop notifications. New items show in Live feed.
+
+**Signal setup** (`/admin` → Signal setup): sources and the group each votes in; group weights (0 mutes, 3 triples); topic rules (words or AI,
+the model, filtered words, and hide, merge or rename a topic, which applies everywhere and also to what was counted before); and the top-level
+Signals, each with its groups, its public address, and whether it is published and shows its sources.
+
+**Budgets** (`/admin` → Budgets): the daily cap for X data (watches), the daily cap for Signal topics by AI, and each briefing's data budget per
+run, each next to what has been spent.
+
+**Retrying and re-running**: see [deployment.md](deployment.md#retrying-and-re-running).
 
 ---
 

@@ -1,6 +1,7 @@
 // RSS 2.0 and Atom. Workers have no DOMParser, and feeds are regular enough that a small tolerant reader will do.
 import { isJsonFeed, parseJsonFeed, withDates } from './json.ts';
 import type { FetchResult, SourceItem } from './types';
+import { fetchYoutubeApi, hasYoutubeKey, isYoutubeFeed } from './youtube.ts';
 
 const MAX_BYTES = 3_000_000, MAX_JSON_BYTES = 12_000_000;
 const MAX_ITEMS = 50;
@@ -77,7 +78,16 @@ export function checkFeedUrl(raw: string): string {
   return u.href;
 }
 
+/** A feed, and for a YouTube channel or playlist whose public feed fails, the same videos from the YouTube Data API (when a key is set). */
 export async function fetchRss(opts: { url: string; etag?: string; lastModified?: string }): Promise<FetchResult & { title: string }> {
+  try { return await fetchFeedDirect(opts); }
+  catch (err) {
+    if (!isYoutubeFeed(opts.url) || !hasYoutubeKey()) throw err;
+    try { return { ...(await fetchYoutubeApi(opts.url)), viaApi: true }; }
+    catch (e2) { throw new Error(`${err instanceof Error ? err.message : String(err)}; the YouTube API also failed: ${e2 instanceof Error ? e2.message : String(e2)}`); }
+  }
+}
+async function fetchFeedDirect(opts: { url: string; etag?: string; lastModified?: string }): Promise<FetchResult & { title: string }> {
   const headers: Record<string, string> = { accept: 'application/rss+xml, application/json;q=0.9, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5', 'user-agent': 'TweetExplorer/1.0 (feed reader)' };
   if (opts.etag) headers['if-none-match'] = opts.etag;
   if (opts.lastModified) headers['if-modified-since'] = opts.lastModified;

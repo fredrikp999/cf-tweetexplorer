@@ -99,7 +99,12 @@ flowchart TD
 
 - A topic has an address, one or more **sources**, an **instruction**, a **length** (brief, standard, detailed), an optional **model**, a
   **schedule** (every 6, 12, 24 or 48 hours, or weekly, from a UTC hour) and an optional **data budget** that is shared out between the lists.
-- Failures (no tweets, a model out of credit) are shown under the topic as *Last run* and still record what the data cost.
+- Failures (no tweets, a model out of credit) are shown under the topic as *Last run*, and on Overview with **Run again**; they still record
+  what the data cost. **Re-run and replace** writes an issue again at the same address (for example after changing the settings).
+- The writer is asked for a bold TL;DR and one `## heading` per theme. The page builds "In brief" from the headings, gives each theme an anchor,
+  marks it new or continuing (against the themes of the issue before), and lists the Signal topics and the accounts it cites. Older issues, written
+  with a bold lead-in per theme instead of a heading, are shown the same way.
+- With **Signal** ticked, the posts a run fetched are also counted in Signal (free).
 - Screening never fails a briefing: if it cannot run, the tweets go on unscreened.
 
 ## 6. Screening (decision models)

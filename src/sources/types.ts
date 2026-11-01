@@ -24,7 +24,7 @@ export interface SourceItem {
   views?: number;
 }
 
-export interface FetchResult { items: SourceItem[]; /** True when the server said nothing changed (HTTP 304). */ unchanged?: boolean; cache?: { etag?: string; lastModified?: string } }
+export interface FetchResult { items: SourceItem[]; /** True when the server said nothing changed (HTTP 304). */ unchanged?: boolean; cache?: { etag?: string; lastModified?: string }; /** Read through the YouTube Data API because the feed failed. */ viaApi?: boolean }
 
 // The tweet-shaped JSON the feed stores and the admin app, the summarizer and MCP already understand,
 // so a combined feed needs no second code path. `source` and `title` are the additions.

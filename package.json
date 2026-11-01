@@ -12,7 +12,10 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy --env=\"\"",
+    "staging": "wrangler deploy --env staging",
+    "smoke": "node scripts/smoke.mjs",
+    "release": "test -n \"$DEPLOY_DOMAIN\" || { echo 'Set DEPLOY_DOMAIN (the site domain)'; exit 1; }; npm run check && wrangler deploy --env=\"\" --domain \"$DEPLOY_DOMAIN\" && node scripts/smoke.mjs \"https://$DEPLOY_DOMAIN\"",
     "types": "wrangler types",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/*.test.mjs\"",
