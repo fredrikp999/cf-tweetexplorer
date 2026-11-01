@@ -371,7 +371,7 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 .srclist .meta2 .go.ghost { padding: 2px 12px; font-size: 13px; border-radius: 999px; } .srclist .meta2 input, .srclist .meta2 select { vertical-align: middle; }
 .srcrow[data-idle] { grid-template-columns: minmax(160px, 1.3fr) minmax(0, 2fr) auto; }
 @media (max-width: 760px) { .srcrow { grid-template-columns: 10px minmax(0, 1fr); } .srcrow > :nth-child(n+3) { grid-column: 2; } }
-.vprev { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; } .vprev > div { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; } .vprev img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; }
+.vprev { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; } .vprev > div { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; } .vprev a { color: var(--text); text-decoration: none; display: flex; flex-direction: column; gap: 4px; } .vprev a:hover b { color: var(--accent); } .vprev img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; }
 .ovlist { list-style: none; margin: 0; padding: 0; } .ovlist li { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; padding: 8px 0 8px 12px; border-top: 1px solid var(--line); border-left: 3px solid var(--line); }
 .ovlist li:first-child { border-top: 0; } .ovfix { display: flex; gap: 8px; align-items: center; white-space: nowrap; } .ovlist li.bad { border-left-color: var(--err); } .ovlist li.warn { border-left-color: #e3a008; } .ovlist li a { white-space: nowrap; }
 .sigflow { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 18px; }
@@ -3106,7 +3106,8 @@ async function loadViews() {
   try { views = await (await fetch('/mon/views')).json(); } catch { views = []; }
   const name = (k) => viewSources().find(([v]) => v === k)?.[1] ?? k;
   $('#viewList').innerHTML = views.length ? views.map((v) => `<div class="sigwatch" data-vid="${esc(v.id)}"><span class="grow"><b>${esc(v.title)}</b> <span class="note">${esc(name(v.source))}${v.kind ? ' · only ' + esc(SRC_NAME[v.kind]) : ''} · ${v.show === 'top' ? 'most reacted' : 'newest'} ${v.count}${v.perSource ? ', one per source' : ''} · ${esc(v.layout)}</span></span>
-      ${v.public ? `<a class="badge active" href="/feeds/${esc(v.slug)}" target="_blank" rel="noopener">Published</a>` : '<span class="badge">Draft</span>'}<button class="go ghost" data-vprev>Preview</button><button class="go ghost" data-vedit>Edit</button></div>`).join('')
+      ${v.public ? `<a class="badge active" href="/feeds/${esc(v.slug)}" target="_blank" rel="noopener" title="Open the public page">Published: /feeds/${esc(v.slug)}</a>` : '<span class="badge" title="Only you can see it">Draft, not public</span>'}
+      <button class="go${v.public ? ' ghost' : ''}" data-vpub="${v.public ? '0' : '1'}">${v.public ? 'Unpublish' : 'Publish'}</button><button class="go ghost" data-vprev>Preview</button><button class="go ghost" data-vedit>Edit</button></div>`).join('')
     : '<div class="note">None yet. A page can show, for example, the latest video from each channel in your YouTube list.</div>';
 }
 function viewForm(v) {
@@ -3123,7 +3124,7 @@ function viewForm(v) {
       <label>from the last <input type="number" name="days" min="1" max="30" value="${v.days}" style="width:60px"> days</label>
       <label class="chk"><input type="checkbox" name="perSource"${v.perSource ? ' checked' : ''}> only the newest from each source (each channel, each feed)</label></div>
     <div class="optrow" style="margin-bottom:8px"><label>Layout <select name="layout">${o([['player', 'The first video playing, the rest as cards'], ['cards', 'Cards with pictures'], ['list', 'A plain list']], v.layout)}</select></label></div>
-    <label class="chk"><input type="checkbox" name="public"${v.public ? ' checked' : ''}> Published on the public site, at <code>/feeds/${esc(v.slug || 'address')}</code></label>
+    <label class="chk" style="font-weight:600"><input type="checkbox" name="public"${v.public ? ' checked' : ''}> Published on the public site, at <code>/feeds/${esc(v.slug || 'address')}</code> <span class="note" style="font-weight:400">(off: a draft only you can see)</span></label>
     <label class="chk" style="display:block;margin-top:4px"><input type="checkbox" name="listed"${v.listed ? ' checked' : ''}> Its newest item on Today, under "Watch and read"</label>
     <div class="optrow" style="margin-top:10px"><button class="go" data-vsave type="button">Save</button><button class="go ghost" data-vtry type="button">Preview</button><button class="go ghost" data-vcancel type="button">Cancel</button>${v.id ? '<button class="link" data-vdel type="button" style="color:var(--err)">Delete this page</button>' : ''}</div></div>`;
   $('#viewForm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -3134,20 +3135,30 @@ const viewFromForm = () => { const f = $('#viewForm'), q = (n) => f.querySelecto
 async function previewView(id) {
   let items; try { items = await (await fetch('/mon/view-items?id=' + encodeURIComponent(id))).json(); } catch { return; }
   if (items.error) return toast(items.error);
-  $('#viewPreview').innerHTML = `<div class="card"><h3>Preview <span class="note" style="font-weight:400">${items.length} item${items.length === 1 ? '' : 's'}</span></h3>${items.length ? `<div class="vprev">${items.map((i) => `<div>${i.video ? `<img src="https://i.ytimg.com/vi/${esc(i.video)}/mqdefault.jpg" alt="" loading="lazy">` : ''}<b>${esc(i.title)}</b><span class="note">${esc(i.source)} · ${new Date(i.ts).toLocaleString()}${i.reactions ? ` · ▲ ${fmt(i.reactions)}` : ''}</span></div>`).join('')}</div>`
+  $('#viewPreview').innerHTML = `<div class="card"><h3>Preview <span class="note" style="font-weight:400">${items.length} item${items.length === 1 ? '' : 's'}</span></h3>${items.length ? `<div class="vprev">${items.map((i) => `<div>${/^https:\/\//.test(i.url) ? `<a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer" title="Open the original">` : '<span>'}${i.video ? `<img src="https://i.ytimg.com/vi/${esc(i.video)}/mqdefault.jpg" alt="" loading="lazy">` : ''}<b>${esc(i.title)}</b>${/^https:\/\//.test(i.url) ? '</a>' : '</span>'}<span class="note">${esc(i.source)} · ${new Date(i.ts).toLocaleString()}${i.reactions ? ` · ▲ ${fmt(i.reactions)}` : ''}</span></div>`).join('')}</div>`
     : '<div class="note">Nothing matches yet. Is the list watched under Sources, and has it found anything in the period?</div>'}</div>`;
 }
 $('#views').addEventListener('click', async (e) => {
   const t = e.target, row = t.closest('[data-vid]');
   try {
-    if (t.closest('[data-vnew]')) viewForm();
+    if (t.closest('[data-vpub]')) {   // publish or unpublish straight from the list
+      const v = views.find((x) => x.id === row.dataset.vid), on = t.closest('[data-vpub]').dataset.vpub === '1';
+      const saved = await post('/mon/view-save', { ...v, public: on });
+      await loadViews(); toast(on ? `Published at /feeds/${saved.slug}${saved.listed ? ', and on Today' : ''}` : 'Unpublished: only you can see it');
+    }
+    else if (t.closest('[data-vnew]')) viewForm();
     else if (t.closest('[data-vedit]')) viewForm(views.find((v) => v.id === row.dataset.vid));
     else if (t.closest('[data-vprev]')) await previewView(row.dataset.vid);
     else if (t.closest('[data-vcancel]')) $('#viewForm').innerHTML = '';
+    else if (t.closest('[data-vpubnow]')) { $('#viewForm [name=public]').checked = true; $('#viewForm [data-vsave]').click(); }
     else if (t.closest('[data-vsave]') || t.closest('[data-vtry]')) {
       const saved = await post('/mon/view-save', viewFromForm());
       await loadViews(); viewForm(saved); await previewView(saved.id);
-      toast(t.closest('[data-vtry]') ? 'Saved, previewing' : saved.public ? `Published at /feeds/${saved.slug}` : 'Saved as a draft');
+      const card = $('#viewForm .card');
+      card.insertAdjacentHTML('afterbegin', saved.public
+        ? `<div class="applybar"><span>Published at <a href="/feeds/${esc(saved.slug)}" target="_blank" rel="noopener">/feeds/${esc(saved.slug)}</a>${saved.listed ? ' and on Today' : ''}. The public site shows it within two minutes.</span></div>`
+        : `<div class="applybar"><span>Saved as a <b>draft</b>: readers cannot see it yet.</span><button class="go" data-vpubnow type="button">Publish it</button></div>`);
+      toast(saved.public ? `Published at /feeds/${saved.slug}` : 'Saved as a draft');
     } else if (t.closest('[data-vdel]')) {
       if (!confirm('Delete this feed page? Its public address stops working. The sources are not touched.')) return;
       await post('/mon/view-delete', { id: $('#viewForm [data-vid]').dataset.vid }); $('#viewForm').innerHTML = ''; $('#viewPreview').innerHTML = ''; await loadViews(); toast('Deleted');

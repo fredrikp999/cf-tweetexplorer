@@ -149,7 +149,7 @@ figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-templa
 .act.stack>div i{min-height:0}
 .sgitems{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}.sgitems li{border-left:3px solid var(--line);padding-left:12px}.sgitems .by{font-size:13px;color:var(--muted)}.sgitems a{color:var(--text)}.sgitems a:hover{color:var(--accent)}.sgrow .t a{color:inherit;text-decoration:none}.sgrow .t a:hover{color:var(--accent);text-decoration:underline}.sglist a{color:inherit;text-decoration:none}.sglist a:hover{text-decoration:underline}
 form.report{display:grid;gap:12px;max-width:640px}form.report textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text)}form.report button{justify-self:start;padding:8px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;cursor:pointer}.hp{position:absolute;left:-9999px}.cites .rep{color:var(--muted)}
-.vlead{margin:0 0 24px}.vplayer{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#000}.vplayer iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.vlead h2{font-size:20px;margin:12px 0 4px}.vlead h2 a{color:var(--text);text-decoration:none}
+.vlead{margin:0 0 24px}.vplayer{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#000}.vplayer iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.vlead h2{font-size:20px;margin:12px 0 4px}.vlead h2 a{color:var(--text);text-decoration:none}.vlead small.out{margin-left:8px;color:var(--accent,#c9265f)}
 .vcards{list-style:none;padding:0;margin:0 0 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}.vcards li{display:flex;flex-direction:column;gap:4px}.vcards a{color:var(--text);text-decoration:none}.vcards img{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-radius:10px;display:block;margin-bottom:6px;background:var(--card)}.vcards b{font-weight:600;line-height:1.3}.vcards small,.vlead small,.vlist small{color:var(--muted);font-size:13px}.vcards small a{color:var(--muted)}
 .vlist{list-style:none;padding:0;margin:0;display:grid;gap:12px}.vlist li{display:flex;flex-direction:column;border-bottom:1px solid var(--line);padding-bottom:10px}.vlist a{color:var(--text);font-weight:600}
 .mnav{display:none}.views a.rss{margin-left:auto;font-size:13px}
@@ -221,7 +221,7 @@ ${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class
 <p class="lede">Short briefings on what is being said online, from X, news and blog feeds, YouTube and Hacker News, and <a href="/signal">Signal</a>: what is talked about across all of it.</p></header>
 ${today ? `<ul class="today">${today}</ul>` : ctx.reports.length ? '' : '<p class="lede">Nothing published yet.</p>'}
 ${strip?.topics.length ? stripHtml(strip, 'Talked about now') : ''}
-${ctx.views.some((v) => v.listed && v.first) ? `<h2 class="sect">Watch and read</h2><ul class="vcards">${ctx.views.filter((v) => v.listed && v.first).map((v) => `<li><a href="/feeds/${esc(v.slug)}">${thumb(v.first!)}<b>${esc(v.first!.title)}</b></a><small><a href="/feeds/${esc(v.slug)}">${esc(v.title)}</a> &middot; ${ago(v.first!.ts)}</small></li>`).join('')}</ul>` : ''}
+${ctx.views.some((v) => v.listed && v.first) ? `<h2 class="sect">Watch and read</h2><ul class="vcards">${ctx.views.filter((v) => v.listed && v.first).map((v) => `<li>${itemLink(v.first!, `${thumb(v.first!)}<b>${esc(v.first!.title)}</b>`)}<small><a href="/feeds/${esc(v.slug)}">${esc(v.title)} &rarr;</a> &middot; ${ago(v.first!.ts)}</small></li>`).join('')}</ul>` : ''}
 ${ctx.reports.length ? `<h2 class="sect">Reports</h2><ul class="topics">${reportCards(ctx.reports)}</ul>` : ''}`,
   { description: 'Short briefings on what is being said online, from X, feeds, YouTube and Hacker News, and Signal: what is talked about across all of it.' });
 }
@@ -598,7 +598,7 @@ export function feedPageHtml(d: PubViewPage, ctx: Ctx): string {
   const first = d.layout === 'player' ? d.items.find((i) => i.video) : undefined, rest = first ? d.items.filter((i) => i !== first) : d.items;
   const how = `${d.show === 'top' ? 'Most reacted' : 'Newest'}${d.perSource ? ', one from each source' : ''}, from the last ${d.days === 1 ? 'day' : d.days + ' days'}`;
   const body = !d.items.length ? '<p class="meta">Nothing in this period yet.</p>'
-    : (first ? `<section class="vlead">${player(first)}<h2>${itemLink(first, esc(first.title))}</h2>${itemMeta(first)}</section>` : '')
+    : (first ? `<section class="vlead">${player(first)}<h2>${itemLink(first, esc(first.title))}</h2>${itemMeta(first)} ${itemLink(first, '<small class="out">Watch on YouTube &#8599;</small>')}</section>` : '')
     + (d.layout === 'list' ? `<ul class="vlist">${rest.map((i) => `<li>${itemLink(i, esc(i.title))}${itemMeta(i)}</li>`).join('')}</ul>`
       : `<ul class="vcards">${rest.map((i) => `<li>${itemLink(i, `${thumb(i)}<b>${esc(i.title)}</b>`)}${itemMeta(i)}</li>`).join('')}</ul>`);
   return shell(`${d.title} · Agent Cortex`, rail(ctx, undefined, 'feeds', d.slug), `<header class="pagehead"><div class="eyebrow">${how}</div><h1>${esc(d.title)}</h1>${d.description ? `<p class="lede">${esc(d.description)}</p>` : ''}</header>
