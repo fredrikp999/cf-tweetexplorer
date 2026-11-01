@@ -424,12 +424,23 @@ export class PublishDO extends DurableObject<Env> {
     this.saveTopic(t);
     let error = '', issueId = '';
     const spend: Spend = { meter: newMeter(), tokensIn: 0, tokensOut: 0, model: '', screen: 0, text: 0, priced: true };
+    // Count the outgoing fetches by host, so a run that runs out of subrequests says where they went.
+    const hosts = new Map<string, number>(), realFetch = globalThis.fetch;
+    globalThis.fetch = (input, init) => {
+      const u = input instanceof Request ? input.url : String(input), h = /^https?:\/\/([^/]+)/.exec(u)?.[1] ?? '?';
+      hosts.set(h, (hosts.get(h) ?? 0) + 1);
+      return realFetch(input, init);
+    };
     try {
       issueId = await this.generate(t, spend);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+      if (/too many subrequests/i.test(error)) error += ` [fetches: ${[...hosts].sort((a, b) => b[1] - a[1]).map(([h, n]) => `${h} ${n}`).join(', ')}]`;
       console.error('topic run failed', slug, error);
+    } finally {
+      globalThis.fetch = realFetch;
     }
+    console.log('topic run fetches', slug, Object.fromEntries(hosts));
     // Money was spent even when the run failed (the tweets were fetched), so the ledger gets it either way.
     if (spend.meter.calls || spend.tokensIn) {
       await recordCost(this.env, { kind: 'publish', ref: slug, label: t.title, twitter: spend.meter.cost, tweets: spend.meter.tweets, calls: spend.meter.calls,
