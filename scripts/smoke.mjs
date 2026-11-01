@@ -54,6 +54,10 @@ if (board) {
 }
 await check('/signal/method', { has: ['How Signal works'] });
 
+// Feed pages: the first one listed in the menu.
+const feed = first(today, /href="\/feeds\/([a-z0-9-]+)"/);
+if (feed) await check(`/feeds/${feed}`, { has: ['<h1>', 'Titles, pictures and videos belong to their publishers'] });
+
 // The rest, and what must not be served.
 await check('/history', { status: [200, 404] });
 await check('/lists', { status: [200, 404] });

@@ -58,6 +58,16 @@ interface Spend { day: string; cost: number }
 const today = () => new Date().toISOString().slice(0, 10); // UTC day
 /** A top-level Signal: a named set of groups, with its own page when published (/signal/<slug>). */
 interface Board { id: string; slug: string; title: string; description: string; groups: string[]; public: boolean; /** Addresses it had before: they redirect to the current one. */ oldSlugs?: string[]; /** The public page may show the items behind each topic, with their sources. */ proof?: boolean }
+/**
+ * A feed page: a public page that shows items from what is watched, defined in the admin. `source` is a list ("f:<id>" feed list, "a:<id>" account list,
+ * "x:<id>" X List), a kind of source ("src:youtube"), or "all". It shows the newest, or the most reacted in the last `days`, at most `count`, and with
+ * `perSource` only the newest of each source (the latest video of each channel). `layout`: "player" (the first video playing, the rest below), "cards", "list".
+ */
+interface FeedView {
+  id: string; slug: string; title: string; description: string; source: string; kind: '' | SourceKind; show: 'latest' | 'top'; count: number; days: number;
+  perSource: boolean; layout: 'player' | 'cards' | 'list'; public: boolean; listed: boolean;
+}
+const VIEW_LAYOUTS = ['player', 'cards', 'list'] as const;
 const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/, BOARD_RESERVED = new Set(['admin', 'custom', 'method']);
 const slugify = (t: string) => t.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
 /** How much people reacted to an item: likes (HN points, stars and upvotes arrive as likes), plus replies, retweets and quotes counted double. */
@@ -651,6 +661,47 @@ export class MonitorDO extends DurableObject<Env> {
     };
   }
   // ---- Signal boards: top-level Signals, each a named set of groups that can be published on its own page
+  // ---- Feed pages
+  private views(): FeedView[] { return this.getMeta<FeedView[]>('feedViews', []); }
+  private cleanView(raw: Record<string, unknown>, prev?: FeedView): FeedView {
+    const title = String(raw.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    if (!title) throw new Error('give the page a name');
+    const slug = String(raw.slug ?? '').trim().toLowerCase() || prev?.slug || slugify(title);
+    if (!BOARD_SLUG.test(slug)) throw new Error('address: lowercase letters, digits and dashes, at most 40');
+    if (this.views().some((v) => v.slug === slug && v.id !== prev?.id)) throw new Error('another feed page already has that address');
+    const source = /^(all|src:(x|rss|hn|youtube)|[fax]:[A-Za-z0-9-]{1,40})$/.test(String(raw.source ?? '')) ? String(raw.source) : 'all';
+    const kind = isSource(String(raw.kind ?? '')) ? (String(raw.kind) as SourceKind) : '';
+    const int = (v: unknown, lo: number, hi: number, d: number) => Math.min(hi, Math.max(lo, Math.floor(Number(v)) || d));
+    return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), slug, title, description: String(raw.description ?? '').trim().slice(0, 300), source, kind,
+      show: raw.show === 'top' ? 'top' : 'latest', count: int(raw.count, 1, 50, 12), days: int(raw.days, 1, 30, 7), perSource: raw.perSource === true,
+      layout: (VIEW_LAYOUTS as readonly string[]).includes(String(raw.layout)) ? (raw.layout as FeedView['layout']) : 'cards', public: raw.public === true, listed: raw.listed !== false };
+  }
+  /** Which list a watch belongs to, in the keys a feed page uses (the same as the admin's Sources). */
+  private listKey(w: Watch): string {
+    if (w.list) return w.list.includes(':') ? w.list : 'f:' + w.list;
+    const x = /^list:(\d+)$/.exec(w.query); if (x) return 'x:' + x[1];
+    return 'src:' + sourceOf(w);
+  }
+  /** The items a feed page shows, from the item log (30 days): newest or most reacted, filtered by its source and kind. */
+  private viewItems(v: FeedView) {
+    const from = dayOf(Date.now() - (v.days - 1) * 86_400_000), watches = new Map(this.watches().filter((w) => !w.briefing).map((w) => [w.id, w] as const));
+    const fit = (w: Watch) => (v.source === 'all' || (v.source.startsWith('src:') ? sourceOf(w) === v.source.slice(4) : this.listKey(w) === v.source)) && (!v.kind || sourceOf(w) === v.kind);
+    const ids = [...watches.values()].filter(fit).map((w) => w.id);
+    if (!ids.length) return [];
+    const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; by: string; eng: number }>(
+      `SELECT watch, item, ts, title, url, by, eng FROM item_log WHERE day >= ? AND watch IN (SELECT value FROM json_each(?)) ORDER BY ${v.show === 'top' ? 'eng DESC, ts DESC' : 'ts DESC'} LIMIT 2000`,
+      from, JSON.stringify(ids)).toArray();
+    const out: Array<{ title: string; url: string; by: string; source: string; kind: SourceKind; ts: number; reactions: number; video?: string }> = [], seen = new Set<string>();
+    for (const r of rows) {
+      if (v.perSource && seen.has(r.watch)) continue;
+      const w = watches.get(r.watch)!, kind = sourceOf(w), video = kind === 'youtube' ? /[?&]v=([\w-]{11})/.exec(r.url)?.[1] : undefined;
+      if (!r.url && !r.title) continue;
+      seen.add(r.watch);
+      out.push({ title: cleanTitle(r.title, 200), url: r.url, by: r.by.replace(/^@$/, ''), source: w.label, kind, ts: r.ts, reactions: r.eng, ...(video ? { video } : {}) });
+      if (out.length >= v.count) break;
+    }
+    return out;
+  }
   private boards(): Board[] {
     if (!this.getMeta('signalBoardsMigrated', false)) {   // groups used to be published one by one: they become one board
       const old = this.getMeta<string[]>('signalPublic', []);
@@ -879,6 +930,21 @@ export class MonitorDO extends DurableObject<Env> {
           return out ? json(out) : json({ error: 'not shown' }, 404);
         }
         if (name === 'signal-public-boards') return json(await this.publicBoards());
+        if (name === 'views') return json(this.views());
+        if (name === 'view-items') { const v = this.views().find((x) => x.id === url.searchParams.get('id')); if (!v) throw new Error('unknown feed page'); return json(this.viewItems(v)); }
+        // Public: the published feed pages (for the menu and Today, with each one's newest item), and one page with its items.
+        if (name === 'views-public') {   // read by every public page (the menu): kept for two minutes like the Signal answers
+          const hit = this.pubCache.get('views');
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = this.views().filter((x) => x.public).map((x) => ({ slug: x.slug, title: x.title, description: x.description, listed: x.listed, layout: x.layout, first: this.viewItems({ ...x, count: 1 })[0] ?? null }));
+          this.pubCache.set('views', { at: Date.now(), v });
+          return json(v);
+        }
+        if (name === 'view-public') {
+          const v = this.views().find((x) => x.public && x.slug === url.searchParams.get('slug'));
+          if (!v) return json({ error: 'not found' }, 404);
+          return json({ slug: v.slug, title: v.title, description: v.description, layout: v.layout, show: v.show, days: v.days, perSource: v.perSource, items: this.viewItems(v) });
+        }
         if (name === 'signal-items') {
           const p = url.searchParams;
           return json(await this.signalItems({ terms: (p.get('terms') ?? p.get('term') ?? '').split('|').slice(0, 12), days: Number(p.get('days')), group: p.get('group') ?? '', watch: p.get('watch') ?? '', offset: Number(p.get('offset')), limit: Number(p.get('limit')) }));
@@ -1000,6 +1066,15 @@ export class MonitorDO extends DurableObject<Env> {
         await this.reschedule();
         return json(this.aiStatus());
       }
+      if (name === 'view-save') {   // create or change a feed page
+        const all = this.views(), prev = b.id ? all.find((x) => x.id === String(b.id)) : undefined;
+        if (b.id && !prev) throw new Error('unknown feed page');
+        if (!prev && all.length >= 30) throw new Error('at most 30 feed pages');
+        const v = this.cleanView(b, prev);
+        this.setMeta('feedViews', prev ? all.map((x) => (x.id === v.id ? v : x)) : [...all, v]);
+        return json(v);
+      }
+      if (name === 'view-delete') { this.setMeta('feedViews', this.views().filter((x) => x.id !== String(b.id ?? ''))); return json({ ok: true }); }
       if (name === 'signal-board-save') {   // create or change a top-level Signal
         const boards = this.boards(), prev = b.id ? boards.find((x) => x.id === String(b.id)) : undefined;
         if (b.id && !prev) throw new Error('unknown Signal');

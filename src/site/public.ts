@@ -26,7 +26,11 @@ interface PubTweets { total: number; pages: number; page: number; sort: 'new' | 
 interface PubAList { id: string; name: string; topic: string; handles: string[] }
 interface PubFList { id: string; name: string; topic: string; feeds: { source: 'rss' | 'youtube' | 'hn'; label: string; query: string; hnTag?: string; minPoints?: number }[] }
 // lists: X lists (live on x.com); alists: curated sets of X accounts; flists: curated sets of feeds (RSS, YouTube, Hacker News)
-interface Ctx { topics: PubTopic[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[] }
+/** One item on a feed page. `video`: a YouTube video id, for its picture and the player. */
+interface ViewItem { title: string; url: string; by: string; source: string; kind: string; ts: number; reactions: number; video?: string }
+interface PubView { slug: string; title: string; description: string; listed: boolean; layout: 'player' | 'cards' | 'list'; first: ViewItem | null }
+interface PubViewPage { slug: string; title: string; description: string; layout: 'player' | 'cards' | 'list'; show: 'latest' | 'top'; days: number; perSource: boolean; items: ViewItem[] }
+interface Ctx { topics: PubTopic[]; /** Published feed pages. */ views: PubView[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[] }
 interface PubBoard { slug: string; title: string; description: string; groups: string[]; proof?: boolean; /** Addresses it had before: they redirect here. */ aliases?: string[] }
 /** One topic of a published Signal, as its own page. Items, sources and `total` are present only when the Signal shows its sources. */
 interface PubTopicPage { slug: string; title: string; proof: boolean; days: number; from: string; to: string; baselineOk: boolean; term: string; label: string; members: string[]; signal: number; change: number | null; isNew: boolean;
@@ -145,6 +149,9 @@ figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-templa
 .act.stack>div i{min-height:0}
 .sgitems{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}.sgitems li{border-left:3px solid var(--line);padding-left:12px}.sgitems .by{font-size:13px;color:var(--muted)}.sgitems a{color:var(--text)}.sgitems a:hover{color:var(--accent)}.sgrow .t a{color:inherit;text-decoration:none}.sgrow .t a:hover{color:var(--accent);text-decoration:underline}.sglist a{color:inherit;text-decoration:none}.sglist a:hover{text-decoration:underline}
 form.report{display:grid;gap:12px;max-width:640px}form.report textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text)}form.report button{justify-self:start;padding:8px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;cursor:pointer}.hp{position:absolute;left:-9999px}.cites .rep{color:var(--muted)}
+.vlead{margin:0 0 24px}.vplayer{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#000}.vplayer iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.vlead h2{font-size:20px;margin:12px 0 4px}.vlead h2 a{color:var(--text);text-decoration:none}
+.vcards{list-style:none;padding:0;margin:0 0 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}.vcards li{display:flex;flex-direction:column;gap:4px}.vcards a{color:var(--text);text-decoration:none}.vcards img{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-radius:10px;display:block;margin-bottom:6px;background:var(--card)}.vcards b{font-weight:600;line-height:1.3}.vcards small,.vlead small,.vlist small{color:var(--muted);font-size:13px}.vcards small a{color:var(--muted)}
+.vlist{list-style:none;padding:0;margin:0;display:grid;gap:12px}.vlist li{display:flex;flex-direction:column;border-bottom:1px solid var(--line);padding-bottom:10px}.vlist a{color:var(--text);font-weight:600}
 .mnav{display:none}.views a.rss{margin-left:auto;font-size:13px}
 .inbrief{border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:14px 0 20px;background:var(--card)}.inbrief h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}.inbrief ol{margin:0;padding-left:20px}.inbrief li{margin:3px 0}.inbrief small.up,.today small .up{color:var(--accent,#c9265f)}
 article h3[id]{scroll-margin-top:16px}.thm{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 8px}.chip.sig{text-decoration:none;color:var(--text)}.cites{font-size:13px;color:var(--muted);margin:-4px 0 18px}
@@ -169,7 +176,7 @@ const MARK = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" heigh
 
 // The left rail on every public page: the brand, the topics (the one you are in opens its views), and a note.
 interface Active { slug: string; title: string; view: 'latest' | 'archive' | 'issue'; earlier: number }
-function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal', board?: string): string {
+function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds', board?: string): string {
   const list = [...ctx.topics].sort((a, b) => a.title.localeCompare(b.title));
   if (active && !list.some((t) => t.slug === active.slug)) list.push({ slug: active.slug, title: active.title } as PubTopic);   // an unlisted topic, reached by its link
   const items = list.map((t) => {
@@ -178,8 +185,8 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal', 
 <a href="/${esc(t.slug)}/archive"${active!.view === 'archive' ? ' aria-current="page"' : ''}>Previous days${active!.earlier ? ` <small>${active!.earlier}</small>` : ''}</a></div>` : '');
   }).join('');
   // Today, the briefings, Signal and Reports. The lists behind the briefings are linked from the foot and from each briefing's sources.
-  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Topics</div>${items}` : ''}${ctx.boards.length || ctx.reports.length || page === 'history' ? '<div class="grp">Across topics</div>' : ''}${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>${page === 'signal' && ctx.boards.length > 1 ? `<div class="sub">${ctx.boards.map((b) => `<a href="/signal/${esc(b.slug)}"${b.slug === board ? ' aria-current="page"' : ''}>${esc(b.title)}</a>`).join('')}</div>` : ''}` : ''}${listTotal(ctx) ? `<a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}`;
-  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : 'Today');
+  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Topics</div>${items}` : ''}${ctx.views.length ? `<div class="grp">Watch and read</div>${ctx.views.map((v) => `<a href="/feeds/${esc(v.slug)}"${page === 'feeds' && board === v.slug ? ' aria-current="page"' : ''}>${esc(v.title)}</a>`).join('')}` : ''}${ctx.boards.length || ctx.reports.length || page === 'history' ? '<div class="grp">Across topics</div>' : ''}${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>${page === 'signal' && ctx.boards.length > 1 ? `<div class="sub">${ctx.boards.map((b) => `<a href="/signal/${esc(b.slug)}"${b.slug === board ? ' aria-current="page"' : ''}>${esc(b.title)}</a>`).join('')}</div>` : ''}` : ''}${listTotal(ctx) ? `<a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}`;
+  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : page === 'feeds' ? ctx.views.find((v) => v.slug === board)?.title ?? 'Watch and read' : 'Today');
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Agent Cortex<small>Briefings and Signal</small></span></a>
 <nav class="full" aria-label="Site">${links}</nav>
 <details class="mnav"><summary><span>${esc(here)}</span> Menu</summary><nav aria-label="Site">${links}</nav></details>
@@ -214,6 +221,7 @@ ${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class
 <p class="lede">Short briefings on what is being said online, from X, news and blog feeds, YouTube and Hacker News, and <a href="/signal">Signal</a>: what is talked about across all of it.</p></header>
 ${today ? `<ul class="today">${today}</ul>` : ctx.reports.length ? '' : '<p class="lede">Nothing published yet.</p>'}
 ${strip?.topics.length ? stripHtml(strip, 'Talked about now') : ''}
+${ctx.views.some((v) => v.listed && v.first) ? `<h2 class="sect">Watch and read</h2><ul class="vcards">${ctx.views.filter((v) => v.listed && v.first).map((v) => `<li><a href="/feeds/${esc(v.slug)}">${thumb(v.first!)}<b>${esc(v.first!.title)}</b></a><small><a href="/feeds/${esc(v.slug)}">${esc(v.title)}</a> &middot; ${ago(v.first!.ts)}</small></li>`).join('')}</ul>` : ''}
 ${ctx.reports.length ? `<h2 class="sect">Reports</h2><ul class="topics">${reportCards(ctx.reports)}</ul>` : ''}`,
   { description: 'Short briefings on what is being said online, from X, feeds, YouTube and Hacker News, and Signal: what is talked about across all of it.' });
 }
@@ -579,6 +587,25 @@ ${sent === 'ok' ? `<p class="lede">Thank you, it has been sent. <a href="${back}
 <button type="submit">Send</button><p class="meta">Do not include personal details. Nothing about you is stored except a one-day count to stop floods.</p></form>`}`, { description: 'Report an error in a briefing.' });
 }
 
+const ago = (ts: number) => { const m = Math.round((Date.now() - ts) / 60_000); return m < 60 ? `${Math.max(1, m)} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : date(ts); };
+const thumb = (i: ViewItem) => (i.video ? `<img src="https://i.ytimg.com/vi/${esc(i.video)}/mqdefault.jpg" alt="" loading="lazy" width="320" height="180">` : '');
+const itemLink = (i: ViewItem, inner: string) => (/^https:\/\//.test(i.url) ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${inner}</a>` : inner);
+const itemMeta = (i: ViewItem) => `<small>${esc(i.source)}${i.by && i.by !== i.source ? ' &middot; ' + esc(i.by) : ''} &middot; ${ago(i.ts)}${i.reactions ? ` &middot; &#9650; ${kfmt(i.reactions)}` : ''}</small>`;
+const player = (i: ViewItem) => `<div class="vplayer"><iframe src="https://www.youtube-nocookie.com/embed/${esc(i.video!)}" title="${esc(i.title)}" loading="lazy" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
+
+/** A feed page: items from what is watched, as the admin defined it (newest or most reacted, one per source or all), as a player, cards or a list. */
+export function feedPageHtml(d: PubViewPage, ctx: Ctx): string {
+  const first = d.layout === 'player' ? d.items.find((i) => i.video) : undefined, rest = first ? d.items.filter((i) => i !== first) : d.items;
+  const how = `${d.show === 'top' ? 'Most reacted' : 'Newest'}${d.perSource ? ', one from each source' : ''}, from the last ${d.days === 1 ? 'day' : d.days + ' days'}`;
+  const body = !d.items.length ? '<p class="meta">Nothing in this period yet.</p>'
+    : (first ? `<section class="vlead">${player(first)}<h2>${itemLink(first, esc(first.title))}</h2>${itemMeta(first)}</section>` : '')
+    + (d.layout === 'list' ? `<ul class="vlist">${rest.map((i) => `<li>${itemLink(i, esc(i.title))}${itemMeta(i)}</li>`).join('')}</ul>`
+      : `<ul class="vcards">${rest.map((i) => `<li>${itemLink(i, `${thumb(i)}<b>${esc(i.title)}</b>`)}${itemMeta(i)}</li>`).join('')}</ul>`);
+  return shell(`${d.title} · Agent Cortex`, rail(ctx, undefined, 'feeds', d.slug), `<header class="pagehead"><div class="eyebrow">${how}</div><h1>${esc(d.title)}</h1>${d.description ? `<p class="lede">${esc(d.description)}</p>` : ''}</header>
+${body}<p class="note">Titles, pictures and videos belong to their publishers; each links to the original. Videos play from YouTube's privacy-enhanced player.</p>`,
+    { description: d.description || `${d.title}: ${how.toLowerCase()}.` });
+}
+
 /** A topic's newest briefings as an RSS 2.0 feed, each in full. */
 export function feedXml(d: { topic: TopicInfo; issues: IssueFull[] }, origin: string): string {
   const x = (v: string) => esc(v), cdata = (v: string) => `<![CDATA[${v.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`, url = `${origin}/${d.topic.slug}`;
@@ -626,7 +653,7 @@ const NO_STORE = { 'cache-control': 'no-store' };
 // The only script a public page may load is Cloudflare Web Analytics (no cookies), and only when its token is set. Forms post only to this site (the error report).
 const PUBLIC_HEADERS_FOR = (analytics: boolean) => ({
   'content-type': 'text/html; charset=utf-8',
-  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${analytics ? '; script-src https://static.cloudflareinsights.com; connect-src https://cloudflareinsights.com' : ''}`,
+  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self' https://i.ytimg.com; frame-src https://www.youtube-nocookie.com; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${analytics ? '; script-src https://static.cloudflareinsights.com; connect-src https://cloudflareinsights.com' : ''}`,
   'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin',
 });
 let PUBLIC_HEADERS = PUBLIC_HEADERS_FOR(false);
@@ -651,17 +678,25 @@ async function render(env: Env, url: URL): Promise<Response> {
   const html = (body: string, status = 200) => new Response(body, { status, headers: { ...PUBLIC_HEADERS, ...(status === 200 ? { 'cache-control': 'public, max-age=60' } : NO_STORE) } });
   // The rail on every page needs the topics and the public lists.
   const listsDo = (path: string) => env.LISTS.getByName('main').fetch(new Request('https://internal/lists/' + path)).then((r) => r.json()).catch(() => []);
-  const [topics, lists, alists, flists, reports, boards] = await Promise.all([
+  const [topics, lists, alists, flists, reports, boards, views] = await Promise.all([
     publish(env, '/pub/topics').then((r) => r.json() as Promise<PubTopic[]>),
     listsDo('x-public') as Promise<PubXList[]>, listsDo('a-public') as Promise<PubAList[]>, listsDo('f-public') as Promise<PubFList[]>,
     env.HISTORY.getByName('main').fetch(new Request('https://internal/hist/pub-reports')).then((r) => r.json() as Promise<PubReportBrief[]>).catch(() => [] as PubReportBrief[]),
     env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/signal-public-boards')).then((r) => r.json() as Promise<PubBoard[]>).catch(() => [] as PubBoard[]),
+    env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/views-public')).then((r) => (r.ok ? (r.json() as Promise<PubView[]>) : [])).catch(() => [] as PubView[]),
   ]);
-  const ctx: Ctx = { topics, lists, alists, flists, reports, boards };
+  const ctx: Ctx = { topics, lists, alists, flists, reports, boards, views };
   const missing = () => html(notFoundHtml(ctx), 404);
 
   if (parts.length === 0) return html(landingHtml(ctx, await signalStrip(env, ctx, 8)));
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
+  if (parts[0] === 'feeds') {   // /feeds/<address>: a feed page
+    if (parts.length === 1) return ctx.views.length ? new Response(null, { status: 302, headers: { location: `/feeds/${ctx.views[0].slug}`, ...NO_STORE } }) : missing();
+    if (parts.length !== 2 || !SLUG.test(parts[1])) return missing();
+    const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/view-public?slug=${parts[1]}`));
+    if (!r.ok) { await r.body?.cancel(); return missing(); }
+    return html(feedPageHtml((await r.json()) as PubViewPage, ctx));
+  }
   if (parts[0] === 'signal') {
     if (parts.length === 1) return ctx.boards.length ? html(signalIndexHtml(ctx)) : missing();
     // An address a Signal had before: send readers (and old links) to where it is now.

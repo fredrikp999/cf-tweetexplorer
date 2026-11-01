@@ -97,6 +97,13 @@ button. Desktop notifications are set here too. New items show in Live feed.
 the model, filtered words, and hide, merge or rename a topic, which applies everywhere and also to what was counted before); and the top-level
 Signals, each with its groups, its public address, and whether it is published and shows its sources.
 
+**Feed pages** (`/admin` → Feed pages): public pages at `/feeds/<address>` that show items from what is watched. Each has a name, an address and a
+line under the name; **From** (everything, all sources of one kind, or one feed list, account list or X List); **Only** (one kind: YouTube videos,
+RSS articles, Hacker News stories or X posts); **Show** the newest or the most reacted, how many (1 to 50) and from how many days (1 to 30);
+**only the newest from each source** (for example the latest video of each channel); **Layout**: the first video playing with the rest as cards,
+cards with pictures, or a plain list; whether it is published, and whether its newest item is on Today under "Watch and read". **Preview** shows
+what it would show. A list must be watched under Sources to show up; nothing extra is fetched or paid for.
+
 **Budgets** (`/admin` → Budgets): the daily cap for X data (watches), the daily cap for Signal topics by AI, and each briefing's data budget per
 run, each next to what has been spent.
 

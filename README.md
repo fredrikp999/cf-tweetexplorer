@@ -21,6 +21,9 @@ weighted, so a busy group cannot drown a small one. Topics are words and phrases
 Always-present topics are left out unless they spike; engagement bait is not counted; topics can be merged and renamed. Several Signals can be
 published, each with its own page, a page per topic, and optionally the items behind each topic.
 
+**Feed pages.** Public pages that show items from what is watched, defined in the admin: for example the latest video of each channel in a
+list, with the newest one playing, or the most reacted articles of the week. Their newest items also appear on Today.
+
 **Archives.** Collect every tweet for a search over weeks or years, read the statistics, run an AI analysis (themes, stance toward subjects,
 a written summary) and publish it as a report.
 
@@ -33,8 +36,8 @@ what failed or waits, with a button to retry each.
 
 | | Who | What |
 | --- | --- | --- |
-| **Public site** `/` | Anyone | **Today** (each briefing's headline and themes), one page per briefing topic with its earlier days and an RSS feed, **Signal** with a page per topic and how it works, published reports, and the lists behind the briefings. Readers can report an error in any theme. Server-rendered, no cookies; the only script is optional Cloudflare Web Analytics. |
-| **Admin** `/admin` | You, behind Cloudflare Access | **Overview** (what needs attention, with fixes), then **Day to day**: Signal, Live feed, Briefings, Archives, Costs; **Explore**: Find tweets, Look up account, Trending, Ask AI; **Setup**: Sources, Signal setup, Briefing setup, Lists & templates, Budgets. Viewing and configuration are kept on separate pages. |
+| **Public site** `/` | Anyone | **Today** (each briefing's headline and themes), one page per briefing topic with its earlier days and an RSS feed, **feed pages** ("Watch and read"), **Signal** with a page per topic and how it works, published reports, and the lists behind the briefings. Readers can report an error in any theme. Server-rendered, no cookies; the only script is optional Cloudflare Web Analytics. |
+| **Admin** `/admin` | You, behind Cloudflare Access | **Overview** (what needs attention, with fixes), then **Day to day**: Signal, Live feed, Briefings, Archives, Costs; **Explore**: Find tweets, Look up account, Trending, Ask AI; **Setup**: Sources, Signal setup, Briefing setup, Lists & templates, Feed pages, Budgets. Viewing and configuration are kept on separate pages. |
 | **MCP server** `/mcp` | Service tokens, behind its own Access application | Read-only tools for briefings, Signal, archives, lists, the live feed and costs. In the Claude app, `get_signal` and `get_costs` open as interactive dashboards. |
 
 Language models come from [OpenRouter](https://openrouter.ai) (Anthropic directly also works for summaries), and audio (Gemini TTS) and
