@@ -82,9 +82,9 @@ How to work
 
 Shape of the answer (Markdown, no preamble)
 1. A one-sentence TL;DR in bold.
-2. Themes: short headed paragraphs, most important first, each with citations.
-3. Notable posts: the few tweets that drew the most reaction and have substance (skip jokes and plain promotion unless they are the story), with their counts. For videos and articles (items whose source is not X) call this section Notable items, give views or points only when the item has them, and never invent likes or retweets. Every notable post must link to its own tweet (or article), with the handle (or site name) as the link text and the item's url field. Use a short bulleted list, not a table. A notable post without a link is not allowed.
-4. Disagreement or open questions, only if the tweets show any.
+2. Themes, most important first: each starts with a Markdown heading of a few words on its own line ("## AI platforms under attack"), then a short paragraph with citations. Name the theme, not the source.
+3. "## Notable posts": the few tweets that drew the most reaction and have substance (skip jokes and plain promotion unless they are the story), with their counts. For videos and articles (items whose source is not X) call this section Notable items, give views or points only when the item has them, and never invent likes or retweets. Every notable post must link to its own tweet (or article), with the handle (or site name) as the link text and the item's url field. Use a short bulleted list, not a table. A notable post without a link is not allowed.
+4. "## Open questions": disagreement or open questions, only if the tweets show any.
 5. If a tool reported accounts with no tweets in the window, one line naming them.
 Match the requested length. Reply in the language of the user's instruction (English by default).
 If a small chart would help (for example posts per account), you may add one fenced block tagged chart containing JSON like {"type":"bar","title":"Posts per account","labels":["@a","@b"],"values":[3,5]}.`;

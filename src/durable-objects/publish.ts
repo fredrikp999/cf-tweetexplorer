@@ -22,6 +22,7 @@ import { MockModel } from '../summarize/mock-model.ts';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
 import { modelFor, workerSources } from '../summarize/worker';
 import { screenTweets } from '../summarize/screen.ts';
+import { sectionsOf, themesOf } from '../site/brief.ts';
 
 export type TopicSource =
   | { type: 'search'; query: string; sort: 'Latest' | 'Top' }
@@ -372,7 +373,7 @@ export class PublishDO extends DurableObject<Env> {
   }
 
   // Public view of an issue's list entry (no body).
-  private brief = (i: Issue) => ({ id: i.id, status: i.status, created: i.created, publishedAt: i.publishedAt, tldr: i.tldr, tweets: i.tweets, accounts: i.provenance?.accounts ?? null });
+  private brief = (i: Issue) => ({ id: i.id, status: i.status, created: i.created, publishedAt: i.publishedAt, tldr: i.tldr, tweets: i.tweets, accounts: i.provenance?.accounts ?? null, themes: themesOf(i.markdown) });
   // Admin list entry: adds the cost. The public routes use brief() and pubIssue(), which never carry it.
   private admBrief = (i: Issue) => ({ ...this.brief(i), cost: i.cost?.total ?? null, audio: i.audio ? { status: i.audio.status, seconds: i.audio.seconds ?? 0, cost: i.audio.cost ?? 0, stale: !!i.audio.stale, error: i.audio.error ?? '', templateName: i.audio.templateName } : null,
     image: i.image ? { status: i.image.status, cost: i.image.cost ?? 0, stale: !!i.image.stale, error: i.image.error ?? '', templateName: i.image.templateName } : null });
@@ -567,16 +568,23 @@ export class PublishDO extends DurableObject<Env> {
       // Which recent published briefings mention any of these names (a Signal topic and the names counted under it), newest first.
       if (path === '/pub/mentions') {
         const names = (q.get('q') ?? '').split('|').map((x) => x.trim().toLowerCase()).filter((x) => x.length >= 3).slice(0, 8);
-        const since = Date.now() - 14 * 86_400_000, out: Array<{ slug: string; title: string; id: string; publishedAt: number; tldr: string }> = [];
+        const since = Date.now() - 14 * 86_400_000, out: Array<{ slug: string; title: string; id: string; publishedAt: number; tldr: string; theme?: string; anchor?: string }> = [];
         const has = (text: string, n: string) => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u').test(text);
         if (names.length) for (const t of this.topics().filter((x) => x.listed)) {
           for (const i of this.issues(t.slug, 'published', 14)) {
             if (i.publishedAt < since) break;
             const text = i.markdown.toLowerCase();
-            if (names.some((n) => has(text, n))) out.push({ slug: t.slug, title: t.title, id: i.id, publishedAt: i.publishedAt, tldr: i.tldr });
+            if (!names.some((n) => has(text, n))) continue;
+            const sec = sectionsOf(i.markdown).find((x) => names.some((n) => has(`${x.title}\n${x.body}`.toLowerCase(), n)));   // the theme that mentions it, to link straight to
+            out.push({ slug: t.slug, title: t.title, id: i.id, publishedAt: i.publishedAt, tldr: i.tldr, ...(sec ? { theme: sec.title, anchor: sec.anchor } : {}) });
           }
         }
         return json(out.sort((a, b) => b.publishedAt - a.publishedAt).slice(0, 6));
+      }
+      if (path === '/pub/feed') {   // the newest published issues in full, for the topic's RSS feed
+        const t = this.topic(q.get('slug') ?? '');
+        if (!t || !t.listed) return json({ error: 'not found' }, 404);
+        return json({ topic: this.publicTopic(t), issues: this.issues(t.slug, 'published', 20).map(this.pubIssue) });
       }
       if (path === '/pub/archive') {
         const t = this.topic(q.get('slug') ?? '');
