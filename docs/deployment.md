@@ -350,7 +350,7 @@ No billing account is needed for this quota.
 ## Visitor statistics (Cloudflare Web Analytics)
 
 The public pages can count visits with Cloudflare Web Analytics: page views, referrers, countries and load times, without cookies and without
-storing anything about a visitor. It is off until a token is set; without it the public pages load no script at all.
+storing anything about a visitor. It is off until a token is set; without it the public pages load no script, apart from the two picture pages (`/history/<slug>/galaxy`, `/signal/<slug>/first`).
 
 Getting the token:
 1. In the [Cloudflare dashboard](https://dash.cloudflare.com/), open your **account** (not the domain).

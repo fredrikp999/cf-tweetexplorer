@@ -1,7 +1,7 @@
 # MCP server
 
 `https://tweets.example.com/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server over the app's data, so Claude (the
-Claude app, claude.ai, Claude Code, or any MCP client) can read your briefings, Signal, archives, lists, live feed and costs. Three of its tools
+Claude app, claude.ai, Claude Code, or any MCP client) can read your briefings, Signal, archives, lists, live feed and costs. Four of its tools
 also come with **MCP Apps**: interactive views that the Claude app draws inline instead of showing JSON.
 
 It only reads. Nothing that starts a job, changes a setting or spends money is exposed.
@@ -20,6 +20,7 @@ It only reads. Nothing that starts a job, changes a setting or spends money is e
 | `get_signal_items` | The items behind a Signal topic (title, link, source, date), with counts per group and source | |
 | `get_tweet_galaxy` | A History collection summarised by theme, kind and stance | **Tweet Galaxy** |
 | `get_galaxy_points` | The compact rows the Tweet Galaxy draws. The view calls it; it is not meant for the model | |
+| `get_who_said_first` | The order Signal's topics reached your source groups in, and which groups tend to be early | **Who Said It First** |
 | `get_costs` | Spend by feature over the last N days | **Costs dashboard** |
 | `list_history_jobs`, `get_history_job` | Archive collections and their progress | |
 | `get_history_analysis` | The AI analysis of a collection: themes, stance, summary | |
@@ -119,7 +120,20 @@ Claude app, claude.ai) draw the page inline in the conversation; every other cli
 | --- | --- | --- |
 | `get_costs` | `ui://tweet-explorer/costs-v6.html` (`src/apps/costs.ts`) | Totals and a per-day chart; switch between 7, 30 and 90 days |
 | `get_signal` | `ui://tweet-explorer/signal-v2.html` (`src/apps/signal.ts`) | Pick the window and which published Signal; switch between strength and where it shows up; show background topics; open a topic to see the items behind it |
-| `get_tweet_galaxy` | `ui://tweet-explorer/galaxy-v1.html` (`src/apps/galaxy.ts`) | Every tweet of a History collection is a particle: move them between spirals per theme or kind, a timeline, and for and against a subject; replay the collection day by day; isolate a theme; select tweets and ask Claude about them |
+| `get_tweet_galaxy` | `ui://tweet-explorer/galaxy-v2.html` (`src/apps/galaxy.ts`) | Every tweet of a History collection is a particle: move them between spirals per theme or kind, a timeline, and for and against a subject; replay the collection day by day; isolate a theme; select tweets and ask Claude about them |
+| `get_who_said_first` | `ui://tweet-explorer/first-v1.html` (`src/apps/first.ts`) | Each topic is a ripple from the group that had it first; distance from the centre is how late the others were. Pick a topic, a window and a Signal; compare every group's firsts with what chance predicts |
+
+Both pictures can also be opened on the public site (`/history/<slug>/galaxy`, `/signal/<slug>/first`), for published reports and Signals only. See [architecture.md](architecture.md).
+
+### How Who Said It First judges
+
+The order is by publication time, so how often a source is polled does not change it. It is the order among your own sources, and does not say where a story began.
+
+- **Only a real start counts.** A topic is judged when it starts after three quiet days and reaches at least two groups, with three mentions or more. A topic that is always talked about has no start.
+- **Chance is the yardstick.** If a wave's mentions were shuffled in time, a group would come first as often as its share of them. A group is called early or late only after 8 topics and two standard deviations from that. Arrivals within 30 minutes tie and share the credit.
+- **Left out:** briefing posts (written from the other sources), dates with no time of day, muted groups, and a group for any wave that began before its first source was added.
+- **Too little overlap** shows as few judged topics: `skipped` says how many never had a clear start and how many stayed in one group.
+- **Known limits:** a feed item with no date at all gets the time it was fetched, so such a feed can look later than it was. With Signal's model topics off it compares plain words, so a "wave" can be the same word by coincidence (`ai: false` in the answer, and the view says so).
 
 ### How it fits together
 

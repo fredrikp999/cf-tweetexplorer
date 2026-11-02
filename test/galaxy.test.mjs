@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import vm from 'node:vm';
-import { GALAXY_PAGE_SQL, MAX_GALAXY_POINTS, galaxyMeta, galaxyPoint } from '../src/history/galaxy.ts';
+import { GALAXY_PAGE_SQL, MAX_GALAXY_POINTS, galaxyMeta, galaxyPoint, publicAnalysis, publicGalaxyMeta, publicGalaxyPoint } from '../src/history/galaxy.ts';
 import html from '../src/apps/galaxy.ts';
 
 const row = (over = {}) => ({ id: '1', json: JSON.stringify({ createdAt: 'Wed Oct 01 12:00:00 +0000 2026', likeCount: 5, text: 'a &gt; b https://t.co/x  c', author: { userName: 'ann' } }), theme: 1, kind: 2, stance: '+.', ...over });
@@ -44,6 +44,31 @@ describe('galaxy summary', () => {
   test('a collection with no finished analysis has no themes or subjects', () => {
     const m = galaxyMeta(job, { config: { themes: [{ name: 'A', description: '' }], subjects: [] } }, []);
     assert.equal(m.analysed, false); assert.deepEqual(m.themes, []); assert.deepEqual(m.subjects, []);
+  });
+});
+
+describe('galaxy on the public site', () => {
+  const config = { themes: [{ name: 'Private theme', description: '' }], subjects: [{ name: 'Private subject', description: '' }] };
+  const results = { themes: [{ count: 1, likes: 0, top: [] }], subjects: [{ for: 1, against: 0, neutral: 0, none: 0 }] };
+  test('uses an analysis only when it was published and is finished', () => {
+    const done = { config, results, public: true, status: 'done' };
+    assert.equal(publicAnalysis(done), done);
+    for (const a of [{ ...done, public: false }, { ...done, status: 'running' }, { config, public: true, status: 'done' }, null, undefined]) assert.equal(publicAnalysis(a), null);
+  });
+  test('a private analysis leaves no trace in a row', () => {
+    const p = publicGalaxyPoint(row(), null);
+    assert.equal(p[3], -1); assert.equal(p[4], 7); assert.equal(p[5], '');
+    assert.equal(p[7], 'a > b c');
+  });
+  test('a public analysis keeps the labels', () => {
+    const p = publicGalaxyPoint(row(), { config: { themes: [{}, {}, {}] }, results, public: true, status: 'done' });
+    assert.equal(p[3], 1); assert.equal(p[5], '+.');
+  });
+  test('the summary names the report, not the job, and no other collection', () => {
+    const job = { id: 'internal-job-id', query: 'q', tweets: 3, fromTs: 1, toTs: 2, report: { title: 'T' } };
+    const m = publicGalaxyMeta(job, 'my-report', null), out = JSON.stringify(m);
+    assert.equal(m.id, 'my-report'); assert.deepEqual(m.jobs, []); assert.ok(!out.includes('internal-job-id'));
+    assert.deepEqual(m.themes, []); assert.deepEqual(m.subjects, []); assert.equal(m.analysed, false);
   });
 });
 

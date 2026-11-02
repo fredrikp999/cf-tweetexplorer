@@ -6,6 +6,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
 import costsHtml from './apps/costs';
+import firstHtml from './apps/first';
 import galaxyHtml from './apps/galaxy';
 import signalHtml from './apps/signal';
 import { GALAXY_PAGE } from './history/galaxy';
@@ -13,7 +14,8 @@ import { GALAXY_PAGE } from './history/galaxy';
 const MAX_TWEETS = 200;
 const COSTS_UI = 'ui://tweet-explorer/costs-v6.html';
 const SIGNAL_UI = 'ui://tweet-explorer/signal-v2.html';
-const GALAXY_UI = 'ui://tweet-explorer/galaxy-v1.html';
+const GALAXY_UI = 'ui://tweet-explorer/galaxy-v2.html';
+const FIRST_UI = 'ui://tweet-explorer/first-v1.html';
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const failure = (message: string) => ({ isError: true, content: [{ type: 'text' as const, text: message }] });
@@ -128,6 +130,16 @@ function buildServer(env: Env): McpServer {
 
   registerAppResource(server, 'Signal', SIGNAL_UI, { mimeType: RESOURCE_MIME_TYPE },
     async () => ({ contents: [{ uri: SIGNAL_UI, mimeType: RESOURCE_MIME_TYPE, text: signalHtml }] }));
+
+  registerAppTool(server, 'get_who_said_first', {
+    description: 'Who Said It First: the order Signal\'s topics reached your source groups in, by publication time, and which groups tend to be early. Only a topic that starts after a quiet spell and reaches at least two groups is judged. For each group, `first` is how often it came first and `expected` how often chance predicts given how much it posts; `verdict` is early or late only when that difference is clear, otherwise unclear. `skipped` says how many topics could not be judged. It is the order among these sources only, and does not say where a story began. Hosts with MCP Apps show each topic as a ripple spreading from the first group to the others; other clients get this JSON.',
+    inputSchema: { days: z.number().int().min(1).max(14).default(14).describe('Judge the topics that started in this many days'), board: z.string().optional().describe('Only the groups of one top-level Signal (its id or address); the answer lists them under `boards`') },
+    annotations: readOnly,
+    _meta: { ui: { resourceUri: FIRST_UI } },
+  }, ({ days, board }) => ask(env.MONITOR, '/mon/who-first', { days, board }));
+
+  registerAppResource(server, 'Who Said It First', FIRST_UI, { mimeType: RESOURCE_MIME_TYPE },
+    async () => ({ contents: [{ uri: FIRST_UI, mimeType: RESOURCE_MIME_TYPE, text: firstHtml }] }));
 
   // The Tweet Galaxy: the model gets the summary, and the view reads the points itself (get_galaxy_points), because thousands of tweets do not belong in the conversation.
   registerAppTool(server, 'get_tweet_galaxy', {

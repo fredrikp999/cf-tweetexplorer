@@ -31,7 +31,13 @@ export function galaxyPoint(row: GalaxyRow, themeCount: number): GalaxyPoint {
 }
 
 export interface GalaxyJob { id: string; query: string; tweets: number; fromTs: number; toTs: number; report?: { title?: string } }
-export interface GalaxyAnalysis { config: { themes: Theme[]; subjects: Subject[] }; results?: Results }
+export interface GalaxyAnalysis { config: { themes: Theme[]; subjects: Subject[] }; results?: Results; public?: boolean; status?: string }
+
+/** The analysis a public page may use: only a finished one that was published with the report. */
+export const publicAnalysis = <A extends GalaxyAnalysis>(a: A | null | undefined): A | null => (a?.public && a.status === 'done' && a.results ? a : null);
+/** A row for a public page: with no public analysis, the tweet's theme, kind and stance stay private. */
+export const publicGalaxyPoint = (row: GalaxyRow, analysis: GalaxyAnalysis | null): GalaxyPoint =>
+  analysis ? galaxyPoint(row, analysis.config.themes.length) : galaxyPoint({ ...row, theme: null, kind: null, stance: null }, 0);
 
 const shortQuery = (q: string): string => (q.length > 60 ? q.slice(0, 59) + '…' : q);
 
@@ -47,3 +53,5 @@ export function galaxyMeta(job: GalaxyJob, analysis: GalaxyAnalysis | null | und
     jobs: jobs.map((j) => ({ id: j.id, title: j.report?.title || shortQuery(j.query), tweets: j.tweets, analysed: j.analysed })),
   };
 }
+/** The summary for a public page: named by the report's address rather than the job's id, and no other collections. */
+export function publicGalaxyMeta(job: GalaxyJob, slug: string, analysis: GalaxyAnalysis | null) { return { ...galaxyMeta(job, analysis, []), id: slug }; }

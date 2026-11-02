@@ -1,5 +1,5 @@
 // The public side of the site: the landing page at / and one page per topic at /<slug>. Rendered here as plain
-// HTML (no client script), from issues the admin has published. Model output is untrusted, so the Markdown
+// HTML (no client script, except the two picture pages in site/viz.ts), from issues the admin has published. Model output is untrusted, so the Markdown
 // renderer escapes everything first and only ever emits links to posts on x.com / twitter.com.
 import { SLUG } from '../durable-objects/publish';
 import { esc, inline, markdown } from './markdown';
@@ -10,6 +10,8 @@ import { serveAudio, serveImage } from '../media/audio-serve';
 import type { Provenance } from '../durable-objects/publish';
 import type { Stats } from '../history/stats.ts';
 import type { Results, Subject, Theme } from '../history/analysis.ts';
+import { GALAXY_PAGE, MAX_GALAXY_POINTS } from '../history/galaxy.ts';
+import { HOST_JS, VIZ_CSS, VIZ_VIEWS, vizFrame, viewCsp } from './viz';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
 import { aiModelInfo } from '../summarize/workers-ai.ts';
 
@@ -208,7 +210,7 @@ function shell(title: string, railHtml: string, body: string, opts: { descriptio
 ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}${opts.feed ? `<link rel="alternate" type="application/rss+xml" title="${esc(opts.feedTitle ?? title)}" href="${esc(opts.feed)}">` : ''}${opts.image ? `<meta property="og:image" content="${esc(opts.image)}"><meta name="twitter:card" content="summary_large_image">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Newsreader:opsz,wght@6..72,400..600&display=swap" rel="stylesheet">
-<style>${CSS}</style>${analyticsToken ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${esc(analyticsToken)}"}'></script>` : ''}</head><body>
+<style>${CSS}${VIZ_CSS}</style>${analyticsToken ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${esc(analyticsToken)}"}'></script>` : ''}</head><body>
 <div class="app">${railHtml}<main class="page">${body}</main></div></body></html>`;
 }
 
@@ -353,6 +355,7 @@ export function signalPageHtml(d: PubSignal, ctx: Ctx, q: { sort: SigSort; group
 <p class="lede">${d.description ? esc(d.description) + ' ' : ''}What is being talked about across ${d.groups.length === 1 ? 'one group of sources' : `${d.groups.length} groups of sources`}, combined into one score, and where each topic shows up.</p></header>
 <nav class="sgwin" aria-label="Period">${win}</nav>
 <div class="sglegend">${d.groups.map((g, i) => `<span><i style="background:${sigColor(i)}"></i>${esc(g.name)} <small>${n(g.items)} items${g.weight === 1 ? '' : ` &middot; counts &times;${g.weight}`}</small></span>`).join('')}</div>
+${d.groups.length > 1 ? `<p class="meta"><a href="/signal/${esc(d.slug)}/first">Who said it first: which of these sources has a topic before the others &rarr;</a></p>` : ''}
 <h2 class="sect">What is in the signal</h2>
 ${sortBar}${rows ? `${view}<p class="note">Each bar is split by the group the topic comes from, so a bar of one colour is a topic only that group is talking about.</p>` : `<p class="meta">${d.top.length ? 'No topic matches this filter.' : 'No topic is mentioned often enough yet.'}</p>`}
 <div class="panels">${list('Everywhere', 'Mentioned in most groups at once', d.shared, (t) => `${t.breadth} of ${t.active} groups`)}
@@ -435,6 +438,7 @@ ${rank('Most active accounts', s.topAuthors.map((a) => ({ label: '@' + a.handle,
 ${rank('Hashtags', s.hashtags)}${rank('Languages', s.langs)}${rank('Most used words', s.words)}${rank('Linked sites', s.domains)}</div>
 ${analysisHtml(r)}
 <h2 class="sect" id="tweets">The tweets</h2>
+<p class="meta"><a href="/history/${esc(report.slug)}/galaxy">See them as a galaxy &rarr;</a></p>
 <nav class="views" aria-label="Order">${nav('new')}${nav('top')}</nav>
 ${pager}<div class="tws">${tw.tweets.map(tweetHtml).join('')}</div>${pager}
 <p class="note">Public posts collected from X, shown as they were when collected. Counts are from the time of collection. The statistics are computed from the collected tweets only, in UTC.</p>`;
@@ -677,14 +681,34 @@ ${kinds.length > 1 ? `<nav class="chips" aria-label="Kinds of list">${kinds.map(
   { description: 'The lists of accounts, feeds and channels that the briefings draw from.' });
 }
 
+interface PubGalaxy { title: string; tweets: number; shown: number; analysed: boolean }
+function galaxyPageHtml(slug: string, g: PubGalaxy, ctx: Ctx): string {
+  const s = esc(slug);
+  return shell(`${g.title} · Tweet Galaxy`, rail(ctx, undefined, 'history'), `<header class="pagehead"><div class="eyebrow"><a href="/history/${s}">${esc(g.title)}</a></div><h1>Tweet Galaxy</h1>
+<p class="lede">Every tweet of this report is a point of light, brighter the more it was liked. ${g.analysed ? 'Move them between themes, kinds, a timeline and stance, ' : 'See them on a timeline, '}replay the collection day by day, and pick a star to read it.</p></header>
+${vizFrame('galaxy', `/history/${s}/galaxy`, 'The tweets of this report as an animated picture')}
+<p class="note">${g.shown < g.tweets ? `The ${n(g.shown)} most liked of ${n(g.tweets)} tweets. ` : ''}Public posts collected from X, as they were when collected. <a href="/history/${s}#tweets">The same tweets as a list</a>.</p>`,
+  { description: `${n(g.tweets)} tweets as an animated picture.` });
+}
+function firstPageHtml(b: PubBoard, ctx: Ctx): string {
+  const s = esc(b.slug);
+  return shell(`Who said it first · ${b.title}`, rail(ctx, undefined, 'signal', b.slug), `<header class="pagehead"><div class="eyebrow"><a href="/signal/${s}">${esc(b.title)}</a></div><h1>Who said it first</h1>
+<p class="lede">When a topic takes off, which sources had it first? A ripple spreads from the first group to the others: the further from the centre, the later it arrived.</p></header>
+${vizFrame('first', `/signal/${s}/first`, 'Which source groups mentioned each topic first, as an animated picture')}
+<p class="note">Only a topic that starts after three quiet days and reaches at least two groups is judged. A group posting more comes first more often by luck, so each one is compared with what chance predicts, and called early or late only when the difference is clear. This is the order among the sources watched here, by publication time. It does not say where a story began.</p>`,
+  { description: `Which sources of ${b.title} tend to have a topic first.` });
+}
+
 export const notFoundHtml = (ctx: Ctx) => shell('Not found', rail(ctx), '<header class="pagehead"><h1>Not found</h1><p class="lede">There is no such page. <a href="/">See the briefings of today</a>.</p></header>');
 
 // ---- routing
 const NO_STORE = { 'cache-control': 'no-store' };
+const NOT_FOUND_JSON = () => new Response('{"error":"not found"}', { status: 404, headers: { 'content-type': 'application/json', ...NO_STORE } });
 // The only script a public page may load is Cloudflare Web Analytics (no cookies), and only when its token is set. Forms post only to this site (the error report).
-const PUBLIC_HEADERS_FOR = (analytics: boolean) => ({
+// The picture pages (viz: site/viz.ts) may also load this site's own script, read its JSON and show its sandboxed frames.
+export const PUBLIC_HEADERS_FOR = (analytics: boolean, viz = false) => ({
   'content-type': 'text/html; charset=utf-8',
-  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self' https://i.ytimg.com; frame-src https://www.youtube-nocookie.com; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${analytics ? '; script-src https://static.cloudflareinsights.com; connect-src https://cloudflareinsights.com' : ''}`,
+  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self' https://i.ytimg.com; frame-src ${viz ? "'self'" : 'https://www.youtube-nocookie.com'}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${analytics || viz ? `; script-src${viz ? " 'self'" : ''}${analytics ? ' https://static.cloudflareinsights.com' : ''}; connect-src${viz ? " 'self'" : ''}${analytics ? ' https://cloudflareinsights.com' : ''}` : ''}`,
   'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin',
 });
 let PUBLIC_HEADERS = PUBLIC_HEADERS_FOR(false);
@@ -704,8 +728,36 @@ async function signalStrip(env: Env, ctx: Ctx, n: number, text?: string): Promis
   } catch { return undefined; }
 }
 
+/** The files and JSON behind the picture pages: no menu to draw, so none of the page's reads. Undefined when the address is something else. */
+async function vizData(env: Env, parts: string[]): Promise<Response | undefined> {
+  const jsonOf = async (r: Response) => { if (!r.ok) { await r.body?.cancel(); return NOT_FOUND_JSON(); } return new Response(r.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } }); };
+  if (parts[0] === 'viz' && parts.length === 2) {
+    if (parts[1] === 'host.js') return new Response(HOST_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
+    const view = Object.hasOwn(VIZ_VIEWS, parts[1]) ? VIZ_VIEWS[parts[1]] : undefined;
+    if (!view) return new Response('Not found', { status: 404, headers: NO_STORE });
+    return new Response(view, { headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': await viewCsp(view), 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' } });
+  }
+  const hist = (p: string) => env.HISTORY.getByName('main').fetch(new Request(`https://internal/hist/${p}`));
+  if (parts[0] === 'history' && parts[1] && SLUG.test(parts[1])) {
+    if (parts.length === 3 && parts[2] === 'galaxy.json') return jsonOf(await hist(`pub-galaxy?slug=${parts[1]}`));
+    if (parts.length === 4 && parts[2] === 'galaxy') {   // whole pages only, so there is a small number of addresses to keep
+      const m = /^(\d{1,5})\.json$/.exec(parts[3]), offset = m ? Number(m[1]) : -1;
+      if (offset < 0 || offset % GALAXY_PAGE || offset >= MAX_GALAXY_POINTS) return NOT_FOUND_JSON();
+      return jsonOf(await hist(`pub-galaxy-points?slug=${parts[1]}&offset=${offset}`));
+    }
+  }
+  if (parts[0] === 'signal' && parts[1] && SLUG.test(parts[1]) && parts.length === 4 && parts[2] === 'first') {
+    const m = /^(7|14)\.json$/.exec(parts[3]);
+    if (!m) return NOT_FOUND_JSON();
+    return jsonOf(await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/first-public?slug=${parts[1]}&days=${m[1]}`)));
+  }
+  return undefined;
+}
+
 async function render(env: Env, url: URL): Promise<Response> {
   const parts = url.pathname.split('/').filter(Boolean);
+  const data = await vizData(env, parts);
+  if (data) return data;
   const html = (body: string, status = 200) => new Response(body, { status, headers: { ...PUBLIC_HEADERS, ...(status === 200 ? { 'cache-control': 'public, max-age=60' } : NO_STORE) } });
   // The rail on every page needs the topics and the public lists.
   const listsDo = (path: string) => env.LISTS.getByName('main').fetch(new Request('https://internal/lists/' + path)).then((r) => r.json()).catch(() => []);
@@ -718,6 +770,7 @@ async function render(env: Env, url: URL): Promise<Response> {
   ]);
   const ctx: Ctx = { topics, lists, alists, flists, reports, boards, views };
   const missing = () => html(notFoundHtml(ctx), 404);
+  const vizPage = (body: string) => new Response(body, { headers: { ...PUBLIC_HEADERS_FOR(!!analyticsToken, true), 'cache-control': 'public, max-age=60' } });
 
   if (parts.length === 0) return html(landingHtml(ctx, await signalStrip(env, ctx, 8)));
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
@@ -739,6 +792,10 @@ async function render(env: Env, url: URL): Promise<Response> {
     const moved = !ctx.boards.some((b) => b.slug === parts[1]) && ctx.boards.find((b) => b.aliases?.includes(parts[1]));
     if (moved) return new Response(null, { status: 301, headers: { location: ['/signal', moved.slug, ...parts.slice(2)].map((x) => x.replace(/[^\w\-/%.~]/g, encodeURIComponent)).join('/') + url.search, 'cache-control': 'public, max-age=3600' } });
     if (parts[1] === 'method' && parts.length === 2) return html(signalMethodHtml(ctx));
+    if (parts[2] === 'first') {   // /signal/<slug>/first: Who Said It First
+      const b = ctx.boards.find((x) => x.slug === parts[1]);
+      return b && parts.length === 3 ? vizPage(firstPageHtml(b, ctx)) : missing();
+    }
     if (parts[2] === 't') {   // /signal/<slug>/t/<term>[/<days>]: one topic of a published Signal
       const days = parts.length === 4 ? 7 : Number(parts[4]);
       let term = ''; try { term = decodeURIComponent(parts[3] ?? ''); } catch { /* not a valid address */ }
@@ -761,6 +818,12 @@ async function render(env: Env, url: URL): Promise<Response> {
   }
   if (parts[0] === 'history') {
     if (parts.length === 1) return reports.length ? html(historyIndexHtml(ctx)) : missing();
+    if (parts.length === 3 && parts[2] === 'galaxy') {   // /history/<slug>/galaxy: the Tweet Galaxy of a published report
+      if (!SLUG.test(parts[1])) return missing();
+      const r = await env.HISTORY.getByName('main').fetch(new Request(`https://internal/hist/pub-galaxy?slug=${parts[1]}`));
+      if (!r.ok) { await r.body?.cancel(); return missing(); }
+      return vizPage(galaxyPageHtml(parts[1], (await r.json()) as PubGalaxy, ctx));
+    }
     let sort: 'new' | 'top' = 'new', pageNo = 1;
     if (parts.length === 4 && (parts[2] === 'new' || parts[2] === 'top') && /^\d{1,5}$/.test(parts[3])) { sort = parts[2]; pageNo = Math.max(1, Number(parts[3])); }
     else if (parts.length !== 2) return missing();

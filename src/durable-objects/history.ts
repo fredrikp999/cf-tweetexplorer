@@ -8,7 +8,7 @@ import { computeStats, epochOf } from '../history/stats';
 import type { Stats } from '../history/stats';
 import { complete, costOf, defaultTiers, modelOptions } from '../llm/analysis';
 import { decide, decideAll, isDecider } from '../llm/decisions';
-import { GALAXY_PAGE, GALAXY_PAGE_SQL, galaxyMeta, galaxyPoint, MAX_GALAXY_POINTS } from '../history/galaxy';
+import { GALAXY_PAGE, GALAXY_PAGE_SQL, galaxyMeta, galaxyPoint, MAX_GALAXY_POINTS, publicAnalysis, publicGalaxyMeta, publicGalaxyPoint } from '../history/galaxy';
 import type { GalaxyRow } from '../history/galaxy';
 import { aggregate, BATCH, cleanSubjects, cleanThemes, decisionQuestions, decisionState, KINDS, labelSystem, labelTokens, labelUser, narrativeMessages, normKey, isTrivial, packStance, parseDecision, parseJson, parseLabels, parseLines, parseProposal, proposeMessages, STRONG_BATCH, unpackStance } from '../history/analysis';
 import type { Label, Results, Subject, Theme } from '../history/analysis';
@@ -521,6 +521,15 @@ export class HistoryDO extends DurableObject<Env> {
         if (name === 'pub-reports') {
           return json(this.jobs().filter((x) => x.report?.published && x.report.listed).sort((a, b) => b.report!.publishedAt - a.report!.publishedAt)
             .map((x) => ({ slug: x.report!.slug, title: x.report!.title, description: x.report!.description, tweets: x.tweets, fromTs: x.fromTs, toTs: x.toTs, publishedAt: x.report!.publishedAt })));
+        }
+        if (name === 'pub-galaxy' || name === 'pub-galaxy-points') {   // the Tweet Galaxy of a published report; the analysis only when it was published too
+          const slug = url.searchParams.get('slug') ?? '', pj = this.publishedReport(slug);
+          if (!pj?.report) return json({ error: 'not found' }, 404);
+          const an = publicAnalysis(this.analysisOf(pj.id));
+          if (name === 'pub-galaxy') return json(publicGalaxyMeta(pj, slug, an));
+          const shown = Math.min(pj.tweets, MAX_GALAXY_POINTS), offset = Math.max(0, Number(url.searchParams.get('offset')) || 0), limit = Math.min(GALAXY_PAGE, Math.max(0, shown - offset));
+          const rows = limit ? this.ctx.storage.sql.exec<GalaxyRow>(GALAXY_PAGE_SQL, pj.id, limit, offset).toArray() : [];
+          return json({ total: pj.tweets, shown, offset, points: rows.map((r) => publicGalaxyPoint(r, an)) });
         }
         if (name === 'pub-report' || name === 'pub-tweets') {
           const pj = this.publishedReport(url.searchParams.get('slug') ?? '');

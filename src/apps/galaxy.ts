@@ -489,7 +489,7 @@ function finishLoad(problem) {
   s.textContent = problem || '';
   el('play').disabled = el('scrub').disabled = !P.length;
   setReveal(1000);
-  el('hint').textContent = meta.analysed ? '' : 'This collection has no AI analysis yet, so only the timeline is available.';
+  el('hint').textContent = meta.analysed ? '' : 'There is no AI analysis to show for this collection, so only the timeline is available.';
   if (P.length) setMode(meta.analysed ? 'themes' : 'time', 'bang');
   else s.textContent = problem || 'This collection has no tweets.';
   renderPanel(); reportSize();
@@ -506,7 +506,7 @@ function loadPoints(token, offset, tries) {
       return finishLoad(P.length ? 'Showing ' + num(P.length) + ' tweets: the rest could not be read (' + err.message + ').' : 'Could not read the tweets: ' + err.message);
     }
     addPoints(d.points);
-    if (P.length >= d.shown || !d.points.length) return finishLoad('');
+    if (P.length >= d.shown || d.points.length < 1000) return finishLoad('');   // a short page is the last, even if the job counted more tweets than it holds
     s.textContent = 'Gathering ' + num(P.length) + ' of ' + num(d.shown) + ' tweets';
     loadPoints(token, offset + d.points.length, 0);
   });

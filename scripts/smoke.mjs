@@ -52,6 +52,9 @@ if (board) {
   const term = first(sig, new RegExp(`href="/signal/${board}/t/([^"/?]+)"`));
   if (term) await check(`/signal/${board}/t/${term}`, { has: ['Day by day', 'Where it shows up'] });
   await check(`/signal/${board}?sort=rising`, { has: ['aria-current="page">Rising'] });
+  await check(`/signal/${board}/first`, { has: ['Who said it first', 'id="viz"', '/viz/host.js'] });
+  await check(`/signal/${board}/first/14.json`, { type: 'json', has: ['"totalWaves"'] });
+  await check(`/signal/${board}/first/9.json`, { status: 404 });
 }
 await check('/signal/method', { has: ['How Signal works'] });
 if (board) { await check('/topics', { has: ['<h1>Topics</h1>', 'All topics, A to Z'] }); await check('/topics?q=a', { has: ['Topics with'] }); }
@@ -61,7 +64,17 @@ const feed = first(today, /href="\/feeds\/([a-z0-9-]+)"/);
 if (feed) await check(`/feeds/${feed}`, { has: ['<h1>', 'Titles, pictures and videos belong to their publishers'] });
 
 // The rest, and what must not be served.
-await check('/history', { status: [200, 404] });
+const hist = await check('/history', { status: [200, 404] });
+const rep = first(hist, /href="\/history\/([a-z0-9-]+)"/);
+if (rep) {
+  await check(`/history/${rep}/galaxy`, { has: ['Tweet Galaxy', 'id="viz"', '/viz/host.js'] });
+  await check(`/history/${rep}/galaxy.json`, { type: 'json', has: ['"tweets"'] });
+  await check(`/history/${rep}/galaxy/0.json`, { type: 'json', has: ['"points"'] });
+  await check(`/history/${rep}/galaxy/7.json`, { status: 404, note: 'only whole pages are served' });
+}
+await check('/viz/host.js', { type: 'javascript' });
+await check('/viz/first.html', { has: ['Who Said It First'], note: 'a view: its policy must keep it sandboxed' });
+await check('/history/no-such-report/galaxy', { status: 404 });
 await check('/lists', { status: [200, 404] });
 await check('/robots.txt', { type: 'text/plain', has: ['Disallow: /admin'] });
 await check('/no-such-page-at-all', { status: 404 });

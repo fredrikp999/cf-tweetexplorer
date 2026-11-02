@@ -12,6 +12,7 @@ import { isSource, toFeedShape, type FetchResult, type SourceKind } from '../sou
 import { extractTerms } from '../signal/terms';
 import { distinctive, findEvergreen, notSteady, rising, scoreTerms, type Counts, type GroupInfo, type ScoredTerm } from '../signal/score';
 import { boostByEngagement, indexItems, mergeTopics, REACTION_CAP, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
+import { QUIET_MS, findWaves, foldTerm, publicFirst, rankWaves, watchStartMs, scoreFirsts, type FirstItem } from '../signal/first';
 import { cleanTitle, isBait } from '../signal/clean';
 import { setYoutubeKey } from '../sources/youtube';
 import { AI_BATCH, VAGUE, estimatePer1000, parseTopics, topicSystem, topicUser } from '../signal/ai';
@@ -31,6 +32,7 @@ const MIN_INTERVAL = 15, MAX_INTERVAL = 86_400;
 const MAX_INFLIGHT = 3;
 const SIGNAL_KEEP_DAYS = 30;   // Signal keeps daily term counts this long: two windows of at most SIGNAL_MAX_DAYS, with room to spare
 const SIGNAL_MAX_DAYS = 14;
+const FIRST_MAX_ITEMS = 8000;   // the newest items Who Said It First reads; anything older is not judged
 const BRIEF_WEIGHT = 2;    // the starting weight of a group that only holds briefing posts
 const BRIEF_KEEP = 3000;   // posts from briefings kept for Signal's headlines, apart from the live feed so they never push its items out
 const AI_QUEUE_MAX = 3000, AI_BACKLOG_DAYS = 14, AI_RETRY_MS = 10 * 60_000;
@@ -811,6 +813,38 @@ export class MonitorDO extends DurableObject<Env> {
       more: offset + limit < shown.length,
     };
   }
+  /** Who Said It First (src/signal/first.ts): the order Signal's topics reached the groups in, and which groups tend to be early. Briefing posts are left out, because they are written from the other sources. */
+  private async whoSaidFirst(daysIn: number, boardRef = '') {
+    const board = boardRef ? this.findBoard(boardRef) : undefined;
+    if (boardRef && !board) throw new Error('unknown Signal');
+    const c = await this.compute(daysIn, board && new Set(board.groups)), DAY = 86_400_000, now = Date.now();
+    const listening = new Set(c.groups.filter((g) => g.weight > 0).map((g) => g.key));
+    const watches = this.watches().filter((w) => !w.briefing && listening.has(c.of.get(w.id) ?? '')), labels = new Map(watches.map((w) => [w.id, w.label] as const));
+    const since: Record<string, number> = {};
+    for (const w of watches) { const g = c.of.get(w.id)!; since[g] = Math.min(since[g] ?? Infinity, watchStartMs(w.created)); }
+
+    // Read back far enough to know that the start of the window was really quiet.
+    const readFrom = dayOf(now - (c.days - 1) * DAY - QUIET_MS), rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; by: string; match: string }>(
+      `SELECT watch, item, ts, title, url, by, match FROM item_log WHERE day >= ? ORDER BY ts DESC LIMIT ${FIRST_MAX_ITEMS}`, readFrom).toArray();
+    const pool = c.terms.filter((t) => !t.evergreen).slice(0, 150), known = new Set(pool.map((t) => t.term));
+    const ai = this.aiTopics(readFrom), alias = this.aliasFn(), boiler = this.boilerplate(c.from, c.to), items: FirstItem[] = [];
+    for (const r of rows) {
+      if (!labels.has(r.watch)) continue;
+      const terms = new Set((ai ? ai.get(`${r.watch}\n${r.item}`) ?? [] : extractTerms(r.match)).filter((t) => !boiler.has(`${r.watch}\n${t}`)).map((t) => foldTerm(alias(t), known)).filter(Boolean));
+      if (terms.size) items.push({ terms, ts: r.ts, group: c.of.get(r.watch)!, watch: r.watch, title: cleanTitle(r.title, 140), url: r.url, by: r.by });
+    }
+    const topics = mergeTopics(pool, indexItems(items), 60).map((cl) => ({ label: cl.label, terms: cl.members.map((m) => m.term) }));
+    const historyStart = rows.length ? rows[rows.length - 1].ts : now;
+    const { waves, skipped, dateOnly } = findWaves(topics, items, { from: Date.parse(c.from + 'T00:00:00Z'), historyStart, since });
+    const compared = c.groups.filter((g) => since[g.key] !== undefined), scores = new Map(scoreFirsts(waves, compared.map((g) => g.key)).map((s) => [s.key, s] as const));
+    const round = (n: number) => Math.round(n * 10) / 10;
+    return {
+      days: c.days, from: c.from, to: c.to, board: board?.id ?? '', boards: this.boards().map((b) => ({ id: b.id, title: b.title })), ai: !!ai,
+      groups: compared.map((g) => { const s = scores.get(g.key)!; return { key: g.key, name: g.name, joined: s.joined, first: round(s.first), expected: round(s.expected), medianLag: s.medianLag, verdict: s.verdict }; }),
+      waves: rankWaves(waves).slice(0, 30).map((w) => ({ ...w, arrivals: w.arrivals.map(({ watch, ...a }) => ({ ...a, source: labels.get(watch) ?? '' })) })),
+      totalWaves: waves.length, checked: topics.length, skipped, dateOnly, truncated: rows.length >= FIRST_MAX_ITEMS,
+    };
+  }
   /**
    * The proof the public page shows for one topic of a published Signal that has switched it on: titles, links, sources and dates of the items
    * (never their text), from that Signal's groups only. Null when the Signal is not public or does not show sources.
@@ -909,6 +943,7 @@ export class MonitorDO extends DurableObject<Env> {
           }));
         }
         if (name === 'signal') return json(await this.signalOverview(Number(url.searchParams.get('days')), url.searchParams.get('board') ?? '', url.searchParams.get('steady') !== '1'));
+        if (name === 'who-first') return json(await this.whoSaidFirst(Number(url.searchParams.get('days')), url.searchParams.get('board') ?? ''));
         if (name === 'signal-term') {
           const term = (url.searchParams.get('term') ?? '').trim().toLowerCase().slice(0, 80);
           if (!term) throw new Error('term required');
@@ -918,6 +953,15 @@ export class MonitorDO extends DurableObject<Env> {
           const k = `${url.searchParams.get('slug')}|${url.searchParams.get('days')}`, hit = this.pubCache.get(k);
           if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
           const v = await this.signalPublic(url.searchParams.get('slug') ?? '', Number(url.searchParams.get('days')));
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
+        if (name === 'first-public') {   // reads thousands of items, for an address anyone can open: kept for two minutes like the other public Signal reads
+          const slug = url.searchParams.get('slug') ?? '', days = Number(url.searchParams.get('days')), board = this.boards().find((b) => b.public && b.slug === slug);
+          if (!board) return json({ error: 'not found' }, 404);
+          const k = `first|${slug}|${days}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = publicFirst(await this.whoSaidFirst(days, board.id), board.proof === true);
           this.pubCache.set(k, { at: Date.now(), v });
           return json(v);
         }
