@@ -38,7 +38,7 @@ what failed or waits, with a button to retry each.
 | --- | --- | --- |
 | **Public site** `/` | Anyone | **Today** (each briefing's headline and themes), one page per briefing topic with its earlier days and an RSS feed, **feed pages** ("Watch and read"), **Signal** with a page per topic, **Topics** (every topic Signal found, new, rising and A to Z, searchable), and how it works, published reports, and the lists behind the briefings. Readers can report an error in any theme. Server-rendered, no cookies; the only script is optional Cloudflare Web Analytics. |
 | **Admin** `/admin` | You, behind Cloudflare Access | **Overview** (what needs attention, with fixes), then **Day to day**: Signal, Live feed, Briefings, Archives, Costs; **Explore**: Find tweets, Look up account, Trending, Ask AI; **Setup**: Sources, Signal setup, Briefing setup, Lists & templates, Feed pages, Budgets. Viewing and configuration are kept on separate pages. |
-| **MCP server** `/mcp` | You, behind its own Access application: your Access login (OAuth) from the Claude app, or a service token | Read-only tools for briefings, Signal, archives, lists, the live feed and costs. In the Claude app, `get_signal` and `get_costs` open as interactive dashboards (MCP Apps). See [docs/mcp.md](docs/mcp.md). |
+| **MCP server** `/mcp` | You, behind its own Access application: your Access login (OAuth) from the Claude app, or a service token | Read-only tools for briefings, Signal, archives, lists, the live feed and costs. In the Claude app, `get_signal` and `get_costs` open as interactive dashboards, and `get_tweet_galaxy` as an animated picture of a History collection (MCP Apps). See [docs/mcp.md](docs/mcp.md). |
 
 Language models come from [OpenRouter](https://openrouter.ai) (Anthropic directly also works for summaries), audio (Gemini TTS) from
 [Replicate](https://replicate.com), and pictures from Cloudflare Workers AI (free within its daily allowance) or Replicate. Model calls can go
@@ -103,7 +103,7 @@ src/            The Cloudflare Worker
   history/        Archive statistics and AI analysis
   media/          Audio (text to speech) and pictures for briefings (Replicate, Workers AI)
   llm/, lib/      Model calls, AI Gateway routing, cost recording, shared helpers
-  apps/           The MCP App views (Signal and Costs dashboards); mcp.ts registers the tools
+  apps/           The MCP App views (Signal and Costs dashboards, Tweet Galaxy); mcp.ts registers the tools
 public/admin/   The admin app (a single HTML page, no build step) and setup.html, the illustrated setup overview
 server/         The local Node app
 scripts/        smoke.mjs: the smoke test run after each release

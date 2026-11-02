@@ -1,7 +1,7 @@
 # MCP server
 
 `https://tweets.example.com/mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server over the app's data, so Claude (the
-Claude app, claude.ai, Claude Code, or any MCP client) can read your briefings, Signal, archives, lists, live feed and costs. Two of its tools
+Claude app, claude.ai, Claude Code, or any MCP client) can read your briefings, Signal, archives, lists, live feed and costs. Three of its tools
 also come with **MCP Apps**: interactive views that the Claude app draws inline instead of showing JSON.
 
 It only reads. Nothing that starts a job, changes a setting or spends money is exposed.
@@ -18,6 +18,8 @@ It only reads. Nothing that starts a job, changes a setting or spends money is e
 | `get_briefing_issue` | The full text of one issue (`slug`, `id`) | |
 | `get_signal` | Signal: topics across all watched sources, one weighted score each; top, rising, shared and single-group terms | **Signal dashboard** |
 | `get_signal_items` | The items behind a Signal topic (title, link, source, date), with counts per group and source | |
+| `get_tweet_galaxy` | A History collection summarised by theme, kind and stance | **Tweet Galaxy** |
+| `get_galaxy_points` | The compact rows the Tweet Galaxy draws. The view calls it; it is not meant for the model | |
 | `get_costs` | Spend by feature over the last N days | **Costs dashboard** |
 | `list_history_jobs`, `get_history_job` | Archive collections and their progress | |
 | `get_history_analysis` | The AI analysis of a collection: themes, stance, summary | |
@@ -117,6 +119,7 @@ Claude app, claude.ai) draw the page inline in the conversation; every other cli
 | --- | --- | --- |
 | `get_costs` | `ui://tweet-explorer/costs-v6.html` (`src/apps/costs.ts`) | Totals and a per-day chart; switch between 7, 30 and 90 days |
 | `get_signal` | `ui://tweet-explorer/signal-v2.html` (`src/apps/signal.ts`) | Pick the window and which published Signal; switch between strength and where it shows up; show background topics; open a topic to see the items behind it |
+| `get_tweet_galaxy` | `ui://tweet-explorer/galaxy-v1.html` (`src/apps/galaxy.ts`) | Every tweet of a History collection is a particle: move them between spirals per theme or kind, a timeline, and for and against a subject; replay the collection day by day; isolate a theme; select tweets and ask Claude about them |
 
 ### How it fits together
 
@@ -155,7 +158,10 @@ The messages the views use:
 | `ui/notifications/tool-result` | host → view | The tool's result, the same JSON a text client gets |
 | `tools/call` | view → host | Call a tool of this server again (another window, the items behind a topic). The host makes the call with the connector's own login, so the page holds no credential |
 | `ui/notifications/size-changed` | view → host | The page's height, so the host sizes the frame (sent again when the content changes) |
-| `ui/notifications/host-context-changed` | host → view | The theme changed (light or dark) |
+| `ui/notifications/host-context-changed` | host → view | The theme changed (light or dark), or the display mode |
+| `ui/request-display-mode` | view → host | Tweet Galaxy: go fullscreen and back |
+| `ui/update-model-context` | view → host | Tweet Galaxy: tell Claude which tweets are selected, for the next turn |
+| `ui/message` | view → host | Tweet Galaxy: the "Ask Claude about these" button sends a chat message |
 
 The view can only reach this server's tools, through the host, and the tools are read-only, so a view cannot change or spend anything either.
 
@@ -169,6 +175,7 @@ The view can only reach this server's tools, through the host, and the tools are
   **new chat**. A new chat alone can still show the old view.
 - **Test in the Claude app**, not in Claude Code: Claude Code only shows the JSON text.
 - Keep the result JSON useful on its own: clients without MCP Apps, and the model itself, read the same data.
+- Keep large data out of that result. The Tweet Galaxy's tool returns a summary, and the page reads its thousands of points through `tools/call` (`get_galaxy_points`, at most 6,000 tweets, most liked first).
 
 ### Adding a view
 

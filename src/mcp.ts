@@ -6,11 +6,14 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
 import costsHtml from './apps/costs';
+import galaxyHtml from './apps/galaxy';
 import signalHtml from './apps/signal';
+import { GALAXY_PAGE } from './history/galaxy';
 
 const MAX_TWEETS = 200;
 const COSTS_UI = 'ui://tweet-explorer/costs-v6.html';
 const SIGNAL_UI = 'ui://tweet-explorer/signal-v2.html';
+const GALAXY_UI = 'ui://tweet-explorer/galaxy-v1.html';
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const failure = (message: string) => ({ isError: true, content: [{ type: 'text' as const, text: message }] });
@@ -125,6 +128,23 @@ function buildServer(env: Env): McpServer {
 
   registerAppResource(server, 'Signal', SIGNAL_UI, { mimeType: RESOURCE_MIME_TYPE },
     async () => ({ contents: [{ uri: SIGNAL_UI, mimeType: RESOURCE_MIME_TYPE, text: signalHtml }] }));
+
+  // The Tweet Galaxy: the model gets the summary, and the view reads the points itself (get_galaxy_points), because thousands of tweets do not belong in the conversation.
+  registerAppTool(server, 'get_tweet_galaxy', {
+    description: 'Tweet Galaxy: a History collection summarised by theme, kind and stance. Hosts with MCP Apps show it as an interactive picture where every tweet is a particle that moves between a timeline, spirals per theme or kind, and for and against a subject; selecting tweets there tells you which ones the user is looking at. Other clients get this JSON. Leave `id` out for the latest analysed collection; the answer lists the others under `jobs`.',
+    inputSchema: { id: z.string().optional().describe('A History collection id from list_history_jobs') },
+    annotations: readOnly,
+    _meta: { ui: { resourceUri: GALAXY_UI } },
+  }, ({ id }) => ask(env.HISTORY, '/hist/galaxy', { id }));
+
+  server.registerTool('get_galaxy_points', {
+    description: 'The data the Tweet Galaxy view draws, as compact rows, most liked first. It is meant for the view: to read tweets, use get_history_tweets.',
+    inputSchema: { id: z.string(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(GALAXY_PAGE).default(GALAXY_PAGE) },
+    annotations: readOnly,
+  }, ({ id, offset, limit }) => ask(env.HISTORY, '/hist/galaxy-points', { id, offset, limit }));
+
+  registerAppResource(server, 'Tweet Galaxy', GALAXY_UI, { mimeType: RESOURCE_MIME_TYPE },
+    async () => ({ contents: [{ uri: GALAXY_UI, mimeType: RESOURCE_MIME_TYPE, text: galaxyHtml }] }));
 
   return server;
 }

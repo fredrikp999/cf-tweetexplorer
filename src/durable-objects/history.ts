@@ -8,6 +8,8 @@ import { computeStats, epochOf } from '../history/stats';
 import type { Stats } from '../history/stats';
 import { complete, costOf, defaultTiers, modelOptions } from '../llm/analysis';
 import { decide, decideAll, isDecider } from '../llm/decisions';
+import { GALAXY_PAGE, GALAXY_PAGE_SQL, galaxyMeta, galaxyPoint, MAX_GALAXY_POINTS } from '../history/galaxy';
+import type { GalaxyRow } from '../history/galaxy';
 import { aggregate, BATCH, cleanSubjects, cleanThemes, decisionQuestions, decisionState, KINDS, labelSystem, labelTokens, labelUser, narrativeMessages, normKey, isTrivial, packStance, parseDecision, parseJson, parseLabels, parseLines, parseProposal, proposeMessages, STRONG_BATCH, unpackStance } from '../history/analysis';
 import type { Label, Results, Subject, Theme } from '../history/analysis';
 import { useGateway } from '../llm/gateway.ts';
@@ -536,8 +538,21 @@ export class HistoryDO extends DurableObject<Env> {
           const rows = this.ctx.storage.sql.exec<{ json: string }>(`SELECT t.json FROM tweet_index i JOIN tweets t ON t.job = i.job AND t.id = i.id WHERE i.job = ? ORDER BY ${order} LIMIT ? OFFSET ?`, pj.id, PAGE_SIZE, (page - 1) * PAGE_SIZE).toArray();
           return json({ total, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)), page, sort, tweets: rows.map((r) => publicTweet(JSON.parse(r.json) as Tweet)) });
         }
+        if (name === 'galaxy') {
+          const all = this.jobs().filter((x) => x.tweets > 0).sort((a, b) => b.created - a.created).map((x) => ({ ...x, analysis: this.analysisOf(x.id), analysed: !!this.analysisOf(x.id)?.results }));
+          const g = id ? all.find((x) => x.id === id) : all.find((x) => x.analysed) ?? all[0];
+          if (!g) return json({ error: id ? 'unknown job, or it has no tweets' : 'no History collection has tweets yet' }, 404);
+          return json(galaxyMeta(g, g.analysis, all));
+        }
         const j = this.job(id);
         if (!j) return json({ error: 'unknown job' }, 404);
+        if (name === 'galaxy-points') {
+          const offset = Math.max(0, Number(url.searchParams.get('offset')) || 0), shown = Math.min(j.tweets, MAX_GALAXY_POINTS);
+          const limit = Math.min(GALAXY_PAGE, Math.max(1, Number(url.searchParams.get('limit')) || GALAXY_PAGE), Math.max(0, shown - offset));
+          const themes = this.analysisOf(id)?.config.themes.length ?? 0;
+          const rows = limit ? this.ctx.storage.sql.exec<GalaxyRow>(GALAXY_PAGE_SQL, id, limit, offset).toArray() : [];
+          return json({ total: j.tweets, shown, offset, points: rows.map((r) => galaxyPoint(r, themes)) });
+        }
         if (name === 'analysis') return json({ analysis: this.analysisOf(id) ?? null, defaults: defaultTiers(this.env), models: modelOptions(this.env), kinds: KINDS });
         if (name === 'job') return json(this.view(j));
         if (name === 'data') {
