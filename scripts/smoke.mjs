@@ -67,6 +67,7 @@ if (feed) await check(`/feeds/${feed}`, { has: ['<h1>', 'Titles, pictures and vi
 const hist = await check('/history', { status: [200, 404] });
 const rep = first(hist, /href="\/history\/([a-z0-9-]+)"/);
 if (rep) {
+  await check(`/history/${rep}`, { has: [`href="/history/${rep}/galaxy"`, 'class="vizlink"'], note: 'the report links to its picture near the top' });
   await check(`/history/${rep}/galaxy`, { has: ['Tweet Galaxy', 'id="viz"', '/viz/host.js'] });
   await check(`/history/${rep}/galaxy.json`, { type: 'json', has: ['"tweets"'] });
   await check(`/history/${rep}/galaxy/0.json`, { type: 'json', has: ['"points"'] });

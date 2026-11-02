@@ -183,7 +183,13 @@ const MARK = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" heigh
 
 // The left rail on every public page: the brand, the topics (the one you are in opens its views), and a note.
 interface Active { slug: string; title: string; view: 'latest' | 'archive' | 'issue'; earlier: number }
-function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics', board?: string): string {
+/** Who Said It First compares groups, so a Signal with only one has nothing to show. */
+const hasFirst = (b: { groups: string[] }) => b.groups.length > 1;
+const vizLink = (href: string, title: string, text: string) => `<a class="vizlink" href="${href}"><b>${title} &rarr;</b><span>${text}</span></a>`;
+/** A link to one of the other reports or Signals on a picture page. Only when there is more than one to choose from. */
+const vizSwitch = (label: string, items: Array<{ href: string; title: string; on: boolean }>) => (items.length > 1 ? `<nav class="chips" aria-label="${label}">${items.map((i) => `<a href="${i.href}"${i.on ? ' aria-current="page"' : ''}>${esc(i.title)}</a>`).join('')}</nav>` : '');
+
+function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy', board?: string): string {
   const list = [...ctx.topics].sort((a, b) => a.title.localeCompare(b.title));
   if (active && !list.some((t) => t.slug === active.slug)) list.push({ slug: active.slug, title: active.title } as PubTopic);   // an unlisted topic, reached by its link
   const items = list.map((t) => {
@@ -191,9 +197,11 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' |
     // The menu is the same on every page; only what is current is marked. A briefing's latest issue and earlier days are tabs on its own page.
     return `<a href="/${esc(t.slug)}"${on ? ' class="on" aria-current="page"' : ''}>${esc(t.title)}</a>`;
   }).join('');
+  // The picture pages open on the first Signal that has groups to compare and on the newest report; each page can switch to the others.
+  const firstBoard = ctx.boards.find(hasFirst);
   // Today, the briefings, Signal and Reports. The lists behind the briefings are linked from the foot and from each briefing's sources.
-  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Briefings</div>${items}` : ''}${ctx.views.length ? `<div class="grp">Watch and read</div>${ctx.views.map((v) => `<a href="/feeds/${esc(v.slug)}"${page === 'feeds' && board === v.slug ? ' aria-current="page"' : ''}>${esc(v.title)}</a>`).join('')}` : ''}${ctx.boards.length || ctx.reports.length || page === 'history' ? '<div class="grp">Analysis</div>' : ''}${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>` : ''}${ctx.boards.length ? `<a href="/topics"${page === 'topics' ? ' aria-current="page"' : ''}>Topics</a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${listTotal(ctx) ? `<div class="grp">Browse</div><a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}`;
-  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : page === 'feeds' ? ctx.views.find((v) => v.slug === board)?.title ?? 'Watch and read' : page === 'topics' ? 'Topics' : 'Today');
+  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Briefings</div>${items}` : ''}${ctx.views.length ? `<div class="grp">Watch and read</div>${ctx.views.map((v) => `<a href="/feeds/${esc(v.slug)}"${page === 'feeds' && board === v.slug ? ' aria-current="page"' : ''}>${esc(v.title)}</a>`).join('')}` : ''}${ctx.boards.length || ctx.reports.length || page === 'history' ? '<div class="grp">Analysis</div>' : ''}${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board && page === 'signal' ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>` : ''}${firstBoard ? `<a href="/signal/${esc(firstBoard.slug)}/first"${page === 'first' ? ' aria-current="page"' : ''}>Who said it first</a>` : ''}${ctx.boards.length ? `<a href="/topics"${page === 'topics' ? ' aria-current="page"' : ''}>Topics</a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${ctx.reports.length ? `<a href="/history/${esc(ctx.reports[0].slug)}/galaxy"${page === 'galaxy' ? ' aria-current="page"' : ''}>Tweet Galaxy</a>` : ''}${listTotal(ctx) ? `<div class="grp">Browse</div><a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}`;
+  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'first' ? 'Who said it first' : page === 'galaxy' ? 'Tweet Galaxy' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : page === 'feeds' ? ctx.views.find((v) => v.slug === board)?.title ?? 'Watch and read' : page === 'topics' ? 'Topics' : 'Today');
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Agent Cortex<small>Briefings and Signal</small></span></a>
 <nav class="full" aria-label="Site">${links}</nav>
 <details class="mnav"><summary><span>${esc(here)}</span> Menu</summary><nav aria-label="Site">${links}</nav></details>
@@ -245,8 +253,8 @@ const sigColor = (i: number) => SIG_COLORS[i % SIG_COLORS.length];
 const sigPct = (x: number) => { const p = x * 100; return (p < 10 ? p.toFixed(1) : String(Math.round(p))) + '%'; };
 
 export function signalIndexHtml(ctx: Ctx): string {
-  const cards = ctx.boards.map((b) => `<li><a class="card" href="/signal/${esc(b.slug)}"><span class="eyebrow">${b.groups.length} group${b.groups.length === 1 ? '' : 's'}</span><h2>${esc(b.title)}</h2>${b.description ? `<p>${esc(b.description)}</p>` : ''}
-<div class="foot"><span>${esc(b.groups.join(' · '))}</span></div></a></li>`).join('');
+  const cards = ctx.boards.map((b) => `<li class="pic"><a class="card" href="/signal/${esc(b.slug)}"><span class="eyebrow">${b.groups.length} group${b.groups.length === 1 ? '' : 's'}</span><h2>${esc(b.title)}</h2>${b.description ? `<p>${esc(b.description)}</p>` : ''}
+<div class="foot"><span>${esc(b.groups.join(' · '))}</span></div></a>${hasFirst(b) ? `<a class="cardpic" href="/signal/${esc(b.slug)}/first">Who said it first &rarr;</a>` : ''}</li>`).join('');
   return shell('Signal · Agent Cortex', rail(ctx, undefined, 'signal'), `<header class="pagehead"><div class="eyebrow">${ctx.boards.length} signal${ctx.boards.length === 1 ? '' : 's'}</div><h1>Signal</h1>
 <p class="lede">What is being talked about across news, blogs, X and Hacker News, combined into one score per topic, and where each topic shows up. <a href="/signal/method">How it works</a>.</p></header>
 <ul class="topics">${cards}</ul>`, { description: 'What is being talked about across news, blogs, X and Hacker News, combined into one score per topic.' });
@@ -353,9 +361,9 @@ export function signalPageHtml(d: PubSignal, ctx: Ctx, q: { sort: SigSort; group
   const win = [[1, 'Today'], [3, '3 days'], [7, '7 days'], [14, '14 days']].map(([k, label]) => `<a href="/signal/${esc(d.slug)}${k === 7 ? '' : '/' + k}${keep ? '?' + keep : ''}"${d.days === k ? ' aria-current="page"' : ''}>${label}</a>`).join('');
   return shell(`${d.title} · Signal · Agent Cortex`, rail(ctx, undefined, 'signal', d.slug), `<header class="pagehead"><div class="eyebrow">${esc(d.from)}${d.from === d.to ? '' : ' to ' + esc(d.to)}</div><h1>${esc(d.title)}</h1>
 <p class="lede">${d.description ? esc(d.description) + ' ' : ''}What is being talked about across ${d.groups.length === 1 ? 'one group of sources' : `${d.groups.length} groups of sources`}, combined into one score, and where each topic shows up.</p></header>
+${d.groups.length > 1 ? vizLink(`/signal/${esc(d.slug)}/first`, 'Who said it first', 'See which of these sources has a topic before the others.') : ''}
 <nav class="sgwin" aria-label="Period">${win}</nav>
 <div class="sglegend">${d.groups.map((g, i) => `<span><i style="background:${sigColor(i)}"></i>${esc(g.name)} <small>${n(g.items)} items${g.weight === 1 ? '' : ` &middot; counts &times;${g.weight}`}</small></span>`).join('')}</div>
-${d.groups.length > 1 ? `<p class="meta"><a href="/signal/${esc(d.slug)}/first">Who said it first: which of these sources has a topic before the others &rarr;</a></p>` : ''}
 <h2 class="sect">What is in the signal</h2>
 ${sortBar}${rows ? `${view}<p class="note">Each bar is split by the group the topic comes from, so a bar of one colour is a topic only that group is talking about.</p>` : `<p class="meta">${d.top.length ? 'No topic matches this filter.' : 'No topic is mentioned often enough yet.'}</p>`}
 <div class="panels">${list('Everywhere', 'Mentioned in most groups at once', d.shared, (t) => `${t.breadth} of ${t.active} groups`)}
@@ -372,8 +380,8 @@ const dayTime = (iso: string) => new Date(iso).toLocaleString('en-GB', { timeZon
 const rangeText = (from: number, to: number) => `${day(from)} – ${day(to - 1)}`;
 
 function reportCards(list: PubReportBrief[]): string {
-  return list.map((r) => `<li><a class="card" href="/history/${esc(r.slug)}"><span class="eyebrow">${rangeText(r.fromTs, r.toTs)}</span><h2>${esc(r.title)}</h2>${r.description ? `<p>${esc(r.description)}</p>` : ''}
-<div class="foot"><span>${n(r.tweets)} tweets</span><span>Published ${date(r.publishedAt)}</span></div></a></li>`).join('');
+  return list.map((r) => `<li class="pic"><a class="card" href="/history/${esc(r.slug)}"><span class="eyebrow">${rangeText(r.fromTs, r.toTs)}</span><h2>${esc(r.title)}</h2>${r.description ? `<p>${esc(r.description)}</p>` : ''}
+<div class="foot"><span>${n(r.tweets)} tweets</span><span>Published ${date(r.publishedAt)}</span></div></a><a class="cardpic" href="/history/${esc(r.slug)}/galaxy">See as a galaxy &rarr;</a></li>`).join('');
 }
 
 export function historyIndexHtml(ctx: Ctx): string {
@@ -431,6 +439,7 @@ ${s.heat.map((row, d) => `<span class="d">${WD[d]}</span>${row.map((c, h) => `<i
   const nav = (sort: 'new' | 'top') => `<a href="${href(sort, 1)}"${tw.sort === sort ? ' aria-current="page"' : ''}>${sort === 'new' ? 'Newest' : 'Most liked'}</a>`;
   const pager = tw.pages > 1 ? `<nav class="pager" aria-label="Pages">${tw.page > 1 ? `<a href="${href(tw.sort, tw.page - 1)}" rel="prev">&larr; Previous</a>` : '<span></span>'}<span>Page ${n(tw.page)} of ${n(tw.pages)}</span>${tw.page < tw.pages ? `<a href="${href(tw.sort, tw.page + 1)}" rel="next">Next &rarr;</a>` : '<span></span>'}</nav>` : '';
   const body = `<header class="pagehead"><div class="eyebrow">Report &middot; ${rangeText(job.fromTs, job.toTs)}</div><h1>${esc(report.title)}</h1>${report.description ? `<p class="lede">${esc(report.description)}</p>` : ''}</header>
+${vizLink(`/history/${esc(report.slug)}/galaxy`, 'See it as a Tweet Galaxy', "Every tweet as a point of light, in an animated picture.")}
 <p class="meta">Collected from X with <code>${esc(job.query)}</code>${flags ? ` (${esc(flags)})` : ''}. Published ${date(report.publishedAt)}.</p>${partial}
 <div class="kpis">${kpi.map(([l, v]) => `<div><b>${n(v)}</b><span>${esc(l)}</span></div>`).join('')}</div>
 <div class="panels">${chart}${heat}
@@ -438,7 +447,6 @@ ${rank('Most active accounts', s.topAuthors.map((a) => ({ label: '@' + a.handle,
 ${rank('Hashtags', s.hashtags)}${rank('Languages', s.langs)}${rank('Most used words', s.words)}${rank('Linked sites', s.domains)}</div>
 ${analysisHtml(r)}
 <h2 class="sect" id="tweets">The tweets</h2>
-<p class="meta"><a href="/history/${esc(report.slug)}/galaxy">See them as a galaxy &rarr;</a></p>
 <nav class="views" aria-label="Order">${nav('new')}${nav('top')}</nav>
 ${pager}<div class="tws">${tw.tweets.map(tweetHtml).join('')}</div>${pager}
 <p class="note">Public posts collected from X, shown as they were when collected. Counts are from the time of collection. The statistics are computed from the collected tweets only, in UTC.</p>`;
@@ -684,16 +692,18 @@ ${kinds.length > 1 ? `<nav class="chips" aria-label="Kinds of list">${kinds.map(
 interface PubGalaxy { title: string; tweets: number; shown: number; analysed: boolean }
 function galaxyPageHtml(slug: string, g: PubGalaxy, ctx: Ctx): string {
   const s = esc(slug);
-  return shell(`${g.title} · Tweet Galaxy`, rail(ctx, undefined, 'history'), `<header class="pagehead"><div class="eyebrow"><a href="/history/${s}">${esc(g.title)}</a></div><h1>Tweet Galaxy</h1>
+  return shell(`${g.title} · Tweet Galaxy`, rail(ctx, undefined, 'galaxy'), `<header class="pagehead"><div class="eyebrow"><a href="/history/${s}">${esc(g.title)}</a></div><h1>Tweet Galaxy</h1>
 <p class="lede">Every tweet of this report is a point of light, brighter the more it was liked. ${g.analysed ? 'Move them between themes, kinds, a timeline and stance, ' : 'See them on a timeline, '}replay the collection day by day, and pick a star to read it.</p></header>
+${vizSwitch('Report', ctx.reports.map((r) => ({ href: `/history/${esc(r.slug)}/galaxy`, title: r.title, on: r.slug === slug })))}
 ${vizFrame('galaxy', `/history/${s}/galaxy`, 'The tweets of this report as an animated picture')}
 <p class="note">${g.shown < g.tweets ? `The ${n(g.shown)} most liked of ${n(g.tweets)} tweets. ` : ''}Public posts collected from X, as they were when collected. <a href="/history/${s}#tweets">The same tweets as a list</a>.</p>`,
   { description: `${n(g.tweets)} tweets as an animated picture.` });
 }
 function firstPageHtml(b: PubBoard, ctx: Ctx): string {
   const s = esc(b.slug);
-  return shell(`Who said it first · ${b.title}`, rail(ctx, undefined, 'signal', b.slug), `<header class="pagehead"><div class="eyebrow"><a href="/signal/${s}">${esc(b.title)}</a></div><h1>Who said it first</h1>
+  return shell(`Who said it first · ${b.title}`, rail(ctx, undefined, 'first', b.slug), `<header class="pagehead"><div class="eyebrow"><a href="/signal/${s}">${esc(b.title)}</a></div><h1>Who said it first</h1>
 <p class="lede">When a topic takes off, which sources had it first? A ripple spreads from the first group to the others: the further from the centre, the later it arrived.</p></header>
+${vizSwitch('Signal', ctx.boards.filter(hasFirst).map((x) => ({ href: `/signal/${esc(x.slug)}/first`, title: x.title, on: x.slug === b.slug })))}
 ${vizFrame('first', `/signal/${s}/first`, 'Which source groups mentioned each topic first, as an animated picture')}
 <p class="note">Only a topic that starts after three quiet days and reaches at least two groups is judged. A group posting more comes first more often by luck, so each one is compared with what chance predicts, and called early or late only when the difference is clear. This is the order among the sources watched here, by publication time. It does not say where a story began.</p>`,
   { description: `Which sources of ${b.title} tend to have a topic first.` });

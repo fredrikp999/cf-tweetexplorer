@@ -5,7 +5,7 @@ import firstHtml from '../apps/first.ts';
 import galaxyHtml from '../apps/galaxy.ts';
 
 export const VIZ_VIEWS: Record<string, string> = { 'galaxy.html': galaxyHtml, 'first.html': firstHtml };
-export const VIZ_CSS = '.vizbox{margin:14px 0;border-radius:10px;overflow:hidden;background:#07090f;min-height:320px}.vizbox iframe{display:block;width:100%;height:560px;border:0;background:#07090f}.vizbox iframe.full{position:fixed;inset:0;width:100vw;height:100vh!important;z-index:50}.vizbox noscript p{margin:0;padding:18px;color:#eef0f5}';
+export const VIZ_CSS = '.vizlink{display:flex;flex-direction:column;gap:2px;max-width:40rem;margin:14px 0 22px;padding:12px 16px;border:1px solid var(--accent);border-radius:12px;background:var(--card);color:var(--text);text-decoration:none}.vizlink:hover{background:var(--line)}.vizlink b{font-size:15.5px}.vizlink span{color:var(--muted);font-size:13.5px}.topics li.pic{flex-direction:column;gap:6px}.topics li.pic a.card{flex:1}.cardpic{padding:2px 4px;font-size:13.5px;color:var(--muted)}.cardpic:hover{color:var(--text)}.chips a[aria-current=page]{border-color:var(--accent);font-weight:600}.vizbox{margin:14px 0;border-radius:10px;overflow:hidden;background:#07090f;min-height:320px}.vizbox iframe{display:block;width:100%;height:560px;border:0;background:#07090f}.vizbox iframe.full{position:fixed;inset:0;width:100vw;height:100vh!important;z-index:50}.vizbox noscript p{margin:0;padding:18px;color:#eef0f5}';
 
 /** The policy of a view's frame: only its own script runs, and it cannot reach anything. */
 export async function viewCsp(html: string): Promise<string> {
