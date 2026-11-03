@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { anchorOf, continuity, langOf, normalizeThemes, readingMinutes, sectionsOf, themesOf } from '../src/site/brief.ts';
+import { anchorOf, continuity, langOf, normalizeThemes, pickHero, readingMinutes, sectionsOf, themesOf } from '../src/site/brief.ts';
 
 const OLD = `**Nvidia's Brev platform disclosed a breach.**
 
@@ -37,4 +37,12 @@ describe('briefing structure', () => {
     assert.deepEqual(continuity(['AI developer platforms under attack', 'Browser and endpoint risks'], ['Attacks on AI developer platforms', 'Local models']), ['continuing', 'new']);
     assert.deepEqual(continuity(['Anything'], undefined), [null]);
   });
+});
+
+describe('pickHero', () => {
+  const t = (slug, publishedAt, image) => ({ slug, latest: { publishedAt, ...(image ? { image: { v: 1, aspect: '16:9' } } : {}) } });
+  test('the newest briefing that has a picture, even when a newer one has none', () => {
+    assert.equal(pickHero([t('old', 1, true), t('mid', 2, true), t('new', 3, false)]).slug, 'mid');
+  });
+  test('nothing when no briefing has a picture', () => assert.equal(pickHero([t('a', 1, false)]), undefined));
 });

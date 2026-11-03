@@ -3,7 +3,7 @@
 // renderer escapes everything first and only ever emits links to posts on x.com / twitter.com.
 import { SLUG } from '../durable-objects/publish';
 import { esc, inline, markdown } from './markdown';
-import { anchorOf as anchorOfTheme, continuity, isMeta, langOf, normalizeThemes, readingMinutes, sectionsOf } from './brief';
+import { anchorOf as anchorOfTheme, continuity, isMeta, langOf, normalizeThemes, pickHero, readingMinutes, sectionsOf } from './brief';
 import { pageOfFeed } from '../sources/youtube';
 export { markdown };
 import { serveAudio, serveImage } from '../media/audio-serve';
@@ -18,7 +18,7 @@ import { aiModelInfo } from '../summarize/workers-ai.ts';
 interface Brief { id: string; tldr: string; publishedAt: number; tweets: number; accounts?: number | null; /** Its theme headings (absent on answers from before themes were listed). */ themes?: string[] }
 interface TopicInfo { slug: string; title: string; description: string; intervalHours: number }
 interface IssueFull extends Brief { markdown: string; links?: string[]; windowHours: number; model: string; provenance?: Provenance; audio?: { seconds: number; v: number }; image?: { v: number; aspect: string } }
-type PubTopic = TopicInfo & { latest: Brief };
+type PubTopic = TopicInfo & { latest: Brief & { image?: { v: number; aspect: string } } };
 interface PubXList { id: string; name: string; groups: string[]; description: string }
 interface PubReportBrief { slug: string; title: string; description: string; tweets: number; fromTs: number; toTs: number; publishedAt: number }
 interface PubReport { report: { slug: string; title: string; description: string; publishedAt: number }; job: { query: string; fromTs: number; toTs: number; filters: { excludeReplies: boolean; excludeRetweets: boolean; minFaves: number; lang: string }; status: string; maxTweets: number }; stats: Stats; analysis?: { narrative: string; results: Results; themes: Theme[]; subjects: Subject[] } }
@@ -105,6 +105,7 @@ h2.sect{font-size:20px;margin:30px 0 12px}
 .pager{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:12px 0;font-size:14px;color:var(--muted)}
 @media(max-width:520px){.rank div{grid-template-columns:minmax(0,1fr) 3.5rem 4rem}}
 .hero{margin:0 0 22px}.hero img{display:block;width:100%;height:auto;border-radius:12px;background:var(--card)}.hero figcaption{margin-top:6px;font-size:12.5px;color:var(--muted)}
+.hero.lead img{aspect-ratio:21/9;object-fit:cover}@media (max-width:640px){.hero.lead img{aspect-ratio:16/9}}.hero.lead figcaption a{color:inherit}
 .listen{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 24px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:12px}
 .listen .lbl{font-size:12.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}.listen audio{flex:1 1 260px;min-width:0;height:38px}.listen .dur{color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 28px}.chips a{padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--text);text-decoration:none;font-size:13.5px}.chips a:hover{border-color:var(--accent)}
@@ -224,7 +225,7 @@ ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}$
 
 const NOTE = '<p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals.</p>';
 
-export function landingHtml(ctx: Ctx, strip?: SigStrip): string {
+export function landingHtml(ctx: Ctx, strip?: SigStrip, origin = ''): string {
   const topics = [...ctx.topics].sort((a, b) => b.latest.publishedAt - a.latest.publishedAt);
   // Today: each briefing's headline and themes, newest first; what is from the last day is marked new.
   const today = topics.map((t) => {
@@ -232,13 +233,16 @@ export function landingHtml(ctx: Ctx, strip?: SigStrip): string {
     return `<li><div class="h"><a href="/${esc(t.slug)}"><b>${esc(t.title)}</b></a><small>${fresh ? '<span class="up">new</span> ' : ''}${date(t.latest.publishedAt)}</small></div>
 ${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class="th">${th.map((x) => `<a href="/${esc(t.slug)}#${esc(anchorOfTheme(x))}">${esc(x)}</a>`).join(' &middot; ')}</p>` : ''}</li>`;
   }).join('');
-  return shell('Agent Cortex', rail(ctx), `<header class="pagehead"><div class="eyebrow">${date(Date.now())}</div><h1>Today</h1>
+  const lead = pickHero(ctx.topics), leadSrc = lead?.latest.image ? `/image/${esc(lead.slug)}/${esc(lead.latest.id)}.jpg?v=${lead.latest.image.v}` : '';
+  // The first thing on the page, so it is not lazy. Cropped to a band, so the briefings stay near the top; the briefing itself shows the whole picture.
+  const hero = lead ? `<figure class="hero lead"><a href="/${esc(lead.slug)}"><img src="${leadSrc}" alt="Illustration for the ${esc(lead.title)} briefing" decoding="async" fetchpriority="high"></a><figcaption>AI-generated illustration for <a href="/${esc(lead.slug)}">${esc(lead.title)}</a></figcaption></figure>` : '';
+  return shell('Agent Cortex', rail(ctx), `${hero}<header class="pagehead"><div class="eyebrow">${date(Date.now())}</div><h1>Today</h1>
 <p class="lede">Short briefings on what is being said online, from X, news and blog feeds, YouTube and Hacker News, and <a href="/signal">Signal</a>: what is talked about across all of it.</p></header>
 ${today ? `<ul class="today">${today}</ul>` : ctx.reports.length ? '' : '<p class="lede">Nothing published yet.</p>'}
 ${strip?.topics.length ? stripHtml(strip, 'Talked about now') : ''}
 ${ctx.views.some((v) => v.listed && v.first) ? `<h2 class="sect">Watch and read</h2><ul class="vcards">${ctx.views.filter((v) => v.listed && v.first).map((v) => `<li>${itemLink(v.first!, `${thumb(v.first!)}<b>${esc(v.first!.title)}</b>`)}<small><a href="/feeds/${esc(v.slug)}">${esc(v.title)} &rarr;</a> &middot; ${ago(v.first!.ts)}</small></li>`).join('')}</ul>` : ''}
 ${ctx.reports.length ? `<h2 class="sect">Reports</h2><ul class="topics">${reportCards(ctx.reports)}</ul>` : ''}`,
-  { description: 'Short briefings on what is being said online, from X, feeds, YouTube and Hacker News, and Signal: what is talked about across all of it.' });
+  { description: 'Short briefings on what is being said online, from X, feeds, YouTube and Hacker News, and Signal: what is talked about across all of it.', ...(leadSrc && origin ? { image: origin + leadSrc } : {}) });
 }
 
 
@@ -782,7 +786,7 @@ async function render(env: Env, url: URL): Promise<Response> {
   const missing = () => html(notFoundHtml(ctx), 404);
   const vizPage = (body: string) => new Response(body, { headers: { ...PUBLIC_HEADERS_FOR(!!analyticsToken, true), 'cache-control': 'public, max-age=60' } });
 
-  if (parts.length === 0) return html(landingHtml(ctx, await signalStrip(env, ctx, 8)));
+  if (parts.length === 0) return html(landingHtml(ctx, await signalStrip(env, ctx, 8), url.origin));
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
   if (parts[0] === 'topics' && parts.length === 1) {   // /topics[?q=]: every Signal topic of the published Signals
     const all = (await Promise.all(ctx.boards.map((b) => env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public-terms?slug=${b.slug}`))

@@ -78,3 +78,8 @@ export function continuity(themes: string[], prev: string[] | undefined): Array<
     return hit ? 'continuing' : 'new';
   });
 }
+
+/** The picture at the top of Today: from the newest published briefing that has one, so it changes with the news and costs nothing extra. */
+export function pickHero<T extends { latest: { publishedAt: number; image?: { v: number; aspect: string } } }>(topics: T[]): T | undefined {
+  return topics.filter((t) => t.latest.image).sort((a, b) => b.latest.publishedAt - a.latest.publishedAt)[0];
+}

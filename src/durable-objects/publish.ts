@@ -644,7 +644,9 @@ export class PublishDO extends DurableObject<Env> {
       if (path === '/pub/topics') {
         const out = this.topics().filter((t) => t.listed).flatMap((t) => {
           const latest = this.issues(t.slug, 'published', 1)[0];
-          return latest ? [{ ...this.publicTopic(t), latest: this.brief(latest) }] : [];
+          if (!latest) return [];
+          const image = this.pubIssue(latest).image;   // for the picture at the top of Today
+          return [{ ...this.publicTopic(t), latest: { ...this.brief(latest), ...(image ? { image } : {}) } }];
         });
         return json(out);
       }
