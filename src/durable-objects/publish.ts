@@ -24,7 +24,7 @@ import { openrouterModelInfo } from '../summarize/openrouter.ts';
 import { modelFor, workerSources } from '../summarize/worker';
 import { mockX } from '../collect/mock.ts';
 import { screenTweets } from '../summarize/screen.ts';
-import { sectionsOf, themesOf } from '../site/brief.ts';
+import { pickHero, sectionsOf, themesOf } from '../site/brief.ts';
 import { setYoutubeKey } from '../sources/youtube';
 import { useGateway } from '../llm/gateway.ts';
 
@@ -253,6 +253,7 @@ export class PublishDO extends DurableObject<Env> {
     sql.exec('CREATE TABLE IF NOT EXISTS topics (slug TEXT PRIMARY KEY, data TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS issues (topic TEXT NOT NULL, id TEXT NOT NULL, status TEXT NOT NULL, created INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (topic, id))');
     sql.exec('CREATE INDEX IF NOT EXISTS issues_by_status ON issues (topic, status, created)');
+    sql.exec('CREATE TABLE IF NOT EXISTS site_settings (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS audio_templates (id TEXT PRIMARY KEY, ord INTEGER NOT NULL, data TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS audio_jobs (topic TEXT NOT NULL, id TEXT NOT NULL, PRIMARY KEY (topic, id))');
     sql.exec('CREATE TABLE IF NOT EXISTS image_templates (id TEXT PRIMARY KEY, ord INTEGER NOT NULL, data TEXT NOT NULL)');
@@ -274,6 +275,22 @@ export class PublishDO extends DurableObject<Env> {
     return row ? (JSON.parse(row.data) as Topic) : undefined;
   }
   private saveTopic(t: Topic): void { this.ctx.storage.sql.exec('INSERT OR REPLACE INTO topics (slug, data) VALUES (?, ?)', t.slug, JSON.stringify(t)); }
+  /** The briefing whose picture opens Today; '' means the newest picture of any briefing. */
+  private heroChoice(): string { return this.ctx.storage.sql.exec<{ v: string }>("SELECT v FROM site_settings WHERE k = 'heroTopic'").toArray()[0]?.v ?? ''; }
+  /** A briefing's newest published issue with a finished picture, which need not be its newest issue. */
+  private newestPicture(slug: string): Issue | undefined {
+    const r = this.ctx.storage.sql.exec<{ data: string }>("SELECT data FROM issues WHERE topic = ? AND status = 'published' AND json_extract(data, '$.image.status') = 'ready' ORDER BY created DESC LIMIT 1", slug).toArray()[0];
+    return r ? (JSON.parse(r.data) as Issue) : undefined;
+  }
+  /** The picture at the top of Today. A briefing you chose counts even if it is not listed: its page is public all the same. */
+  private hero() {
+    const choice = this.heroChoice();
+    const pictures = this.topics().filter((t) => t.listed || t.slug === choice).flatMap((t) => {
+      const i = this.newestPicture(t.slug);
+      return i?.image ? [{ slug: t.slug, title: t.title, id: i.id, publishedAt: i.publishedAt, v: i.image.created }] : [];
+    });
+    return pickHero(pictures, choice) ?? null;
+  }
   /** Asks the collection layer. A failure here must never stop a briefing or a save: it is logged, and the caller gets null. */
   private async collect(path: string, body: unknown): Promise<Response | null> {
     try {
@@ -644,12 +661,11 @@ export class PublishDO extends DurableObject<Env> {
       if (path === '/pub/topics') {
         const out = this.topics().filter((t) => t.listed).flatMap((t) => {
           const latest = this.issues(t.slug, 'published', 1)[0];
-          if (!latest) return [];
-          const image = this.pubIssue(latest).image;   // for the picture at the top of Today
-          return [{ ...this.publicTopic(t), latest: { ...this.brief(latest), ...(image ? { image } : {}) } }];
+          return latest ? [{ ...this.publicTopic(t), latest: this.brief(latest) }] : [];
         });
         return json(out);
       }
+      if (path === '/pub/hero') return json(this.hero());
       if (path === '/pub/topic' || path === '/pub/issue') {
         const t = this.topic(q.get('slug') ?? '');
         if (!t) return json({ error: 'not found' }, 404);
@@ -735,6 +751,7 @@ export class PublishDO extends DurableObject<Env> {
         const stats = await this.env.COST.getByName('main').topicStats().catch(() => ({}) as Record<string, never>);
         return json(this.topics().map((t) => ({ ...t, stats: stats[t.slug] ?? null, issues: this.issues(t.slug, undefined, 30).map(this.admBrief) })));
       }
+      if (path === '/adm/hero-choice') return json({ slug: this.heroChoice(), current: this.hero() });
       if (path === '/adm/issue') {
         const i = this.issue(q.get('slug') ?? '', q.get('id') ?? '');
         return i ? json(i) : json({ error: 'not found' }, 404);
@@ -743,6 +760,11 @@ export class PublishDO extends DurableObject<Env> {
       const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
       const slug = str(b.slug, 40);
 
+      if (path === '/adm/hero-set') {
+        if (slug && !this.topic(slug)) throw new Error('unknown topic');
+        this.ctx.storage.sql.exec("INSERT OR REPLACE INTO site_settings (k, v) VALUES ('heroTopic', ?)", slug);
+        return json({ slug, current: this.hero() });
+      }
       if (path === '/adm/save-topic') {
         const prev = this.topic(slug);
         if (b.isNew && prev) throw new Error('a topic with that slug already exists');

@@ -3,7 +3,7 @@
 // renderer escapes everything first and only ever emits links to posts on x.com / twitter.com.
 import { SLUG } from '../durable-objects/publish';
 import { esc, inline, markdown } from './markdown';
-import { anchorOf as anchorOfTheme, continuity, isMeta, langOf, normalizeThemes, pickHero, readingMinutes, sectionsOf } from './brief';
+import { anchorOf as anchorOfTheme, continuity, isMeta, langOf, normalizeThemes, readingMinutes, sectionsOf } from './brief';
 import { pageOfFeed } from '../sources/youtube';
 export { markdown };
 import { serveAudio, serveImage } from '../media/audio-serve';
@@ -18,7 +18,9 @@ import { aiModelInfo } from '../summarize/workers-ai.ts';
 interface Brief { id: string; tldr: string; publishedAt: number; tweets: number; accounts?: number | null; /** Its theme headings (absent on answers from before themes were listed). */ themes?: string[] }
 interface TopicInfo { slug: string; title: string; description: string; intervalHours: number }
 interface IssueFull extends Brief { markdown: string; links?: string[]; windowHours: number; model: string; provenance?: Provenance; audio?: { seconds: number; v: number }; image?: { v: number; aspect: string } }
-type PubTopic = TopicInfo & { latest: Brief & { image?: { v: number; aspect: string } } };
+type PubTopic = TopicInfo & { latest: Brief };
+/** The picture at the top of Today (publish.ts decides which). */
+interface PubHero { slug: string; title: string; id: string; v: number }
 interface PubXList { id: string; name: string; groups: string[]; description: string }
 interface PubReportBrief { slug: string; title: string; description: string; tweets: number; fromTs: number; toTs: number; publishedAt: number }
 interface PubReport { report: { slug: string; title: string; description: string; publishedAt: number }; job: { query: string; fromTs: number; toTs: number; filters: { excludeReplies: boolean; excludeRetweets: boolean; minFaves: number; lang: string }; status: string; maxTweets: number }; stats: Stats; analysis?: { narrative: string; results: Results; themes: Theme[]; subjects: Subject[] } }
@@ -225,7 +227,7 @@ ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}$
 
 const NOTE = '<p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals.</p>';
 
-export function landingHtml(ctx: Ctx, strip?: SigStrip, origin = ''): string {
+export function landingHtml(ctx: Ctx, strip?: SigStrip, origin = '', lead?: PubHero | null): string {
   const topics = [...ctx.topics].sort((a, b) => b.latest.publishedAt - a.latest.publishedAt);
   // Today: each briefing's headline and themes, newest first; what is from the last day is marked new.
   const today = topics.map((t) => {
@@ -233,7 +235,7 @@ export function landingHtml(ctx: Ctx, strip?: SigStrip, origin = ''): string {
     return `<li><div class="h"><a href="/${esc(t.slug)}"><b>${esc(t.title)}</b></a><small>${fresh ? '<span class="up">new</span> ' : ''}${date(t.latest.publishedAt)}</small></div>
 ${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class="th">${th.map((x) => `<a href="/${esc(t.slug)}#${esc(anchorOfTheme(x))}">${esc(x)}</a>`).join(' &middot; ')}</p>` : ''}</li>`;
   }).join('');
-  const lead = pickHero(ctx.topics), leadSrc = lead?.latest.image ? `/image/${esc(lead.slug)}/${esc(lead.latest.id)}.jpg?v=${lead.latest.image.v}` : '';
+  const leadSrc = lead ? `/image/${esc(lead.slug)}/${esc(lead.id)}.jpg?v=${lead.v}` : '';
   // The first thing on the page, so it is not lazy. Cropped to a band, so the briefings stay near the top; the briefing itself shows the whole picture.
   const hero = lead ? `<figure class="hero lead"><a href="/${esc(lead.slug)}"><img src="${leadSrc}" alt="Illustration for the ${esc(lead.title)} briefing" decoding="async" fetchpriority="high"></a><figcaption>AI-generated illustration for <a href="/${esc(lead.slug)}">${esc(lead.title)}</a></figcaption></figure>` : '';
   return shell('Agent Cortex', rail(ctx), `${hero}<header class="pagehead"><div class="eyebrow">${date(Date.now())}</div><h1>Today</h1>
@@ -786,7 +788,11 @@ async function render(env: Env, url: URL): Promise<Response> {
   const missing = () => html(notFoundHtml(ctx), 404);
   const vizPage = (body: string) => new Response(body, { headers: { ...PUBLIC_HEADERS_FOR(!!analyticsToken, true), 'cache-control': 'public, max-age=60' } });
 
-  if (parts.length === 0) return html(landingHtml(ctx, await signalStrip(env, ctx, 8), url.origin));
+  if (parts.length === 0) {
+    // Today is worth having without its picture, so a failure here only leaves the picture out.
+    const lead = await publish(env, '/pub/hero').then((r) => (r.ok ? (r.json() as Promise<PubHero | null>) : null)).catch(() => null);
+    return html(landingHtml(ctx, await signalStrip(env, ctx, 8), url.origin, lead));
+  }
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
   if (parts[0] === 'topics' && parts.length === 1) {   // /topics[?q=]: every Signal topic of the published Signals
     const all = (await Promise.all(ctx.boards.map((b) => env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public-terms?slug=${b.slug}`))

@@ -25,6 +25,9 @@ The domain is never stored in the repository, so every deploy names it. The usua
 
 ```sh
 DEPLOY_DOMAIN=tweets.example.com npm run release
+
+# The same site on several domains: name them all, every time
+DEPLOY_DOMAIN="tweets.example.com news.example.com" npm run release
 ```
 
 `npm run release` does three things and stops at the first that fails:
@@ -71,7 +74,7 @@ pass `--env=""` for production (`npx wrangler secret put NAME --env=""`, `npx wr
    npx wrangler secret put POLICY_AUD --env=""      # the Application Audience (AUD) tag
    npm run deploy -- --domain tweets.example.com
    ```
-   Every deploy needs the domain (`--domain`, or `DEPLOY_DOMAIN` with `npm run release`). Deploying without any domain leaves the Worker
+   Every deploy needs all the domains (`--domain` once per domain, or `DEPLOY_DOMAIN` with `npm run release`). Deploying without any domain leaves the Worker
    unreachable (`workers_dev` is off). From here on, deploy as described in [How to deploy](#how-to-deploy).
 
 ## Publishing (scheduled briefings)
@@ -395,3 +398,11 @@ about a piece of content (`src/llm/decisions.ts`, endpoint `/api/v1/systemone`, 
   spam tweets and gives each of the rest a `signal` (0 to 100) that the writer uses to choose notable posts. On by default when OpenRouter is
   available; set `SUMMARY_SCREEN_MODEL` to `off`, or to the non-Flash id for the more accurate model. It only runs with 25 or more tweets, keeps at
   least 20, and never fails a summary: if it cannot run, the tweets go on unscreened.
+
+## More than one domain
+
+The public site can answer on several domains at once. Add the new one to `DEPLOY_DOMAIN`; the deploy creates its DNS record and certificate, and the release smoke-tests each domain.
+
+- **`/admin` and `/mcp` stay on the domains you set up in Cloudflare Access.** On any other domain there is no Access token, so the Worker answers 403: nothing private is exposed. To use the admin on the new domain too, add that domain to the Access application.
+- **Each domain's pages name themselves as canonical**, so search engines see two copies of the site.
+- **A page cached on one domain is not shared with the other**, because the cache key includes the address.

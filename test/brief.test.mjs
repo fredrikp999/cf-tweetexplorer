@@ -40,9 +40,9 @@ describe('briefing structure', () => {
 });
 
 describe('pickHero', () => {
-  const t = (slug, publishedAt, image) => ({ slug, latest: { publishedAt, ...(image ? { image: { v: 1, aspect: '16:9' } } : {}) } });
-  test('the newest briefing that has a picture, even when a newer one has none', () => {
-    assert.equal(pickHero([t('old', 1, true), t('mid', 2, true), t('new', 3, false)]).slug, 'mid');
-  });
-  test('nothing when no briefing has a picture', () => assert.equal(pickHero([t('a', 1, false)]), undefined));
+  const pics = [{ slug: 'old', publishedAt: 1 }, { slug: 'new', publishedAt: 3 }, { slug: 'mid', publishedAt: 2 }];
+  test('with no choice, the newest picture of any briefing', () => assert.equal(pickHero(pics).slug, 'new'));
+  test('the briefing you chose, even when another has a newer picture', () => assert.equal(pickHero(pics, 'old').slug, 'old'));
+  test('a chosen briefing with no picture yet, or one that is gone, falls back to the newest', () => assert.equal(pickHero(pics, 'nope').slug, 'new'));
+  test('nothing when no briefing has a picture', () => { assert.equal(pickHero([]), undefined); assert.equal(pickHero([], 'old'), undefined); });
 });

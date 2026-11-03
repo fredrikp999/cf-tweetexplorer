@@ -79,7 +79,10 @@ export function continuity(themes: string[], prev: string[] | undefined): Array<
   });
 }
 
-/** The picture at the top of Today: from the newest published briefing that has one, so it changes with the news and costs nothing extra. */
-export function pickHero<T extends { latest: { publishedAt: number; image?: { v: number; aspect: string } } }>(topics: T[]): T | undefined {
-  return topics.filter((t) => t.latest.image).sort((a, b) => b.latest.publishedAt - a.latest.publishedAt)[0];
+/**
+ * The picture at the top of Today, from each briefing's newest picture: the briefing you chose, or the newest of them all when you chose none,
+ * or the one you chose has no picture yet (or no longer exists).
+ */
+export function pickHero<T extends { slug: string; publishedAt: number }>(pictures: T[], chosen = ''): T | undefined {
+  return pictures.find((p) => chosen && p.slug === chosen) ?? [...pictures].sort((a, b) => b.publishedAt - a.publishedAt)[0];
 }

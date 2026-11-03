@@ -849,6 +849,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <header class="page"><h1>Briefings</h1><p>What has been written: read, edit, publish and run. Summaries of X, feeds, YouTube and Hacker News, published to <a href="/" target="_blank" rel="noopener">the public site</a>. Topics are set up under <a href="#pubsetup" data-tabgo="pubsetup">Briefing setup</a>.</p></header>
     <div class="layout" id="pubLayout">
       <aside><div id="pubTopics"></div><p><button class="primary" id="pubNew">New topic</button></p>
+      <div class="card" id="pubHero" style="padding:12px 14px;margin-bottom:12px"><label for="pubHeroSel"><b>Picture on Today</b></label><select id="pubHeroSel" style="width:100%;margin-top:6px"></select><p class="muted" id="pubHeroNow" style="font-size:13px;margin:6px 0 0"></p></div>
       <div id="pubReports"></div><p class="muted" style="font-size:13px">Voices and picture styles are managed under <a href="#" data-libgo="audio">Audio templates</a> and <a href="#" data-libgo="image">Image templates</a>.</p></aside>
       <div id="pubDetail"><div class="card muted">Pick a topic, or create one.</div></div>
     </div>
@@ -3859,12 +3860,35 @@ async function load() {
   loadReports();
   topics = await call('topics');
   renderList(); if (sel) renderDetail(false);
+  if (document.activeElement !== $('#pubHeroSel')) loadHero();
   clearTimeout(timer); if (topics.some((t) => busy(t) || audioBusy(t))) timer = setTimeout(() => { if (!$('#publish').hidden || !$('#pubsetup').hidden) load().catch(() => {}); }, 5000);
 }
 function renderList() {
   $('#pubTopics').innerHTML = topics.map((t) => `<button class="t ${t.slug === sel ? 'on' : ''}" data-slug="${esc(t.slug)}">
     <b>${esc(t.title)}</b><small>/${esc(t.slug)} · ${busy(t) ? 'running…' : t.enabled ? 'next ' + when(t.nextRun) : 'paused'}</small></button>`).join('') || '<p class="muted">No topics yet.</p>';
 }
+// Which briefing's picture opens the public Today page. It always shows that briefing's newest finished picture.
+async function loadHero() {
+  const r = await fetch('/pub/hero-choice').then((x) => (x.ok ? x.json() : null)).catch(() => null);
+  if (r) renderHero(r);
+}
+function renderHero(r) {
+  const sel = $('#pubHeroSel');
+  sel.innerHTML = `<option value="">Newest picture from any briefing</option>${topics.map((t) => `<option value="${esc(t.slug)}">${esc(t.title)}</option>`).join('')}`;
+  sel.value = topics.some((t) => t.slug === r.slug) ? r.slug : '';
+  const missed = sel.value && r.current && r.current.slug !== sel.value;
+  $('#pubHeroNow').textContent = !r.current ? 'No briefing has a finished picture yet, so Today shows none.'
+    : missed ? `This briefing has no picture yet, so Today shows the newest from ${r.current.title}.`
+    : `Now showing the picture from ${r.current.title}, ${r.current.id}.`;
+}
+$('#pubHeroSel').addEventListener('change', async (e) => {
+  try {
+    const res = await fetch('/pub/hero-set', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: e.target.value }) });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
+    renderHero(r); toast('Saved. Today shows it within a minute.');
+  } catch (err) { toast(err.message); loadHero(); }
+});
 $('#pubTopics').addEventListener('click', (e) => { const b = e.target.closest('[data-slug]'); if (b) { sel = b.dataset.slug; renderList(); renderDetail(true); } });
 $('#pubNew').onclick = () => { sel = '+new'; if (window.pubMode !== 'setup') { show('pubsetup'); return; } renderList(); renderDetail(true); };
 
