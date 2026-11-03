@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { anchorOf, continuity, langOf, normalizeThemes, pickHero, readingMinutes, sectionsOf, themesOf } from '../src/site/brief.ts';
+import { anchorOf, continuity, langOf, inOrder, normalizeThemes, pickHero, readingMinutes, sectionsOf, themesOf } from '../src/site/brief.ts';
 
 const OLD = `**Nvidia's Brev platform disclosed a breach.**
 
@@ -45,4 +45,12 @@ describe('pickHero', () => {
   test('the briefing you chose, even when another has a newer picture', () => assert.equal(pickHero(pics, 'old').slug, 'old'));
   test('a chosen briefing with no picture yet, or one that is gone, falls back to the newest', () => assert.equal(pickHero(pics, 'nope').slug, 'new'));
   test('nothing when no briefing has a picture', () => { assert.equal(pickHero([]), undefined); assert.equal(pickHero([], 'old'), undefined); });
+});
+
+describe('inOrder', () => {
+  const newest = (a, b) => b.at - a.at;
+  const names = (x) => x.map((t) => t.slug).join(' ');
+  test('with no order set, the page keeps its own: newest first', () => assert.equal(names(inOrder([{ slug: 'a', at: 1 }, { slug: 'b', at: 2 }], newest)), 'b a'));
+  test('the order you set wins over how new a briefing is', () => assert.equal(names(inOrder([{ slug: 'a', at: 1, position: 1 }, { slug: 'b', at: 2, position: 2 }, { slug: 'c', at: 3, position: 0 }], newest)), 'c a b'));
+  test('a briefing added since comes after the ones you placed', () => assert.equal(names(inOrder([{ slug: 'new', at: 9 }, { slug: 'a', at: 1, position: 0 }], newest)), 'a new'));
 });

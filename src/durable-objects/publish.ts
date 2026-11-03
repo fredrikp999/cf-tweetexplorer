@@ -275,6 +275,11 @@ export class PublishDO extends DurableObject<Env> {
     return row ? (JSON.parse(row.data) as Topic) : undefined;
   }
   private saveTopic(t: Topic): void { this.ctx.storage.sql.exec('INSERT OR REPLACE INTO topics (slug, data) VALUES (?, ?)', t.slug, JSON.stringify(t)); }
+  /** The order of the briefings on the public pages, as addresses. Empty: you have not set one. */
+  private briefingOrder(): string[] {
+    const v = this.ctx.storage.sql.exec<{ v: string }>("SELECT v FROM site_settings WHERE k = 'briefingOrder'").toArray()[0]?.v;
+    return v ? (JSON.parse(v) as string[]) : [];
+  }
   /** The briefing whose picture opens Today; '' means the newest picture of any briefing. */
   private heroChoice(): string { return this.ctx.storage.sql.exec<{ v: string }>("SELECT v FROM site_settings WHERE k = 'heroTopic'").toArray()[0]?.v ?? ''; }
   /** A briefing's newest published issue with a finished picture, which need not be its newest issue. */
@@ -659,9 +664,10 @@ export class PublishDO extends DurableObject<Env> {
     try {
       // Public reads: only what has been published.
       if (path === '/pub/topics') {
+        const order = this.briefingOrder();
         const out = this.topics().filter((t) => t.listed).flatMap((t) => {
-          const latest = this.issues(t.slug, 'published', 1)[0];
-          return latest ? [{ ...this.publicTopic(t), latest: this.brief(latest) }] : [];
+          const latest = this.issues(t.slug, 'published', 1)[0], position = order.indexOf(t.slug);
+          return latest ? [{ ...this.publicTopic(t), latest: this.brief(latest), ...(position >= 0 ? { position } : {}) }] : [];
         });
         return json(out);
       }
@@ -751,6 +757,7 @@ export class PublishDO extends DurableObject<Env> {
         const stats = await this.env.COST.getByName('main').topicStats().catch(() => ({}) as Record<string, never>);
         return json(this.topics().map((t) => ({ ...t, stats: stats[t.slug] ?? null, issues: this.issues(t.slug, undefined, 30).map(this.admBrief) })));
       }
+      if (path === '/adm/order') return json({ slugs: this.briefingOrder() });
       if (path === '/adm/hero-choice') return json({ slug: this.heroChoice(), current: this.hero() });
       if (path === '/adm/issue') {
         const i = this.issue(q.get('slug') ?? '', q.get('id') ?? '');
@@ -760,6 +767,12 @@ export class PublishDO extends DurableObject<Env> {
       const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
       const slug = str(b.slug, 40);
 
+      if (path === '/adm/order-set') {   // the whole order; an empty one goes back to newest first
+        const known = new Set(this.topics().map((t) => t.slug));
+        const slugs = [...new Set((Array.isArray(b.slugs) ? b.slugs : []).map((x) => String(x)))].filter((x) => known.has(x));
+        this.ctx.storage.sql.exec("INSERT OR REPLACE INTO site_settings (k, v) VALUES ('briefingOrder', ?)", JSON.stringify(slugs));
+        return json({ slugs });
+      }
       if (path === '/adm/hero-set') {
         if (slug && !this.topic(slug)) throw new Error('unknown topic');
         this.ctx.storage.sql.exec("INSERT OR REPLACE INTO site_settings (k, v) VALUES ('heroTopic', ?)", slug);

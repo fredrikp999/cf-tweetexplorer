@@ -86,3 +86,8 @@ export function continuity(themes: string[], prev: string[] | undefined): Array<
 export function pickHero<T extends { slug: string; publishedAt: number }>(pictures: T[], chosen = ''): T | undefined {
   return pictures.find((p) => chosen && p.slug === chosen) ?? [...pictures].sort((a, b) => b.publishedAt - a.publishedAt)[0];
 }
+
+/** Briefings in the order you set. Those you have not placed (none, until you set an order; or one added since) come after, in the page's own order. */
+export function inOrder<T extends { position?: number }>(topics: T[], rest: (a: T, b: T) => number): T[] {
+  return [...topics].sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity) || rest(a, b));
+}

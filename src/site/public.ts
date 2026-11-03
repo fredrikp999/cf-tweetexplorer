@@ -3,7 +3,7 @@
 // renderer escapes everything first and only ever emits links to posts on x.com / twitter.com.
 import { SLUG } from '../durable-objects/publish';
 import { esc, inline, markdown } from './markdown';
-import { anchorOf as anchorOfTheme, continuity, isMeta, langOf, normalizeThemes, readingMinutes, sectionsOf } from './brief';
+import { anchorOf as anchorOfTheme, continuity, inOrder, isMeta, langOf, normalizeThemes, readingMinutes, sectionsOf } from './brief';
 import { pageOfFeed } from '../sources/youtube';
 export { markdown };
 import { serveAudio, serveImage } from '../media/audio-serve';
@@ -18,7 +18,7 @@ import { aiModelInfo } from '../summarize/workers-ai.ts';
 interface Brief { id: string; tldr: string; publishedAt: number; tweets: number; accounts?: number | null; /** Its theme headings (absent on answers from before themes were listed). */ themes?: string[] }
 interface TopicInfo { slug: string; title: string; description: string; intervalHours: number }
 interface IssueFull extends Brief { markdown: string; links?: string[]; windowHours: number; model: string; provenance?: Provenance; audio?: { seconds: number; v: number }; image?: { v: number; aspect: string } }
-type PubTopic = TopicInfo & { latest: Brief };
+type PubTopic = TopicInfo & { latest: Brief; /** Its place in the order you set; absent when it has none. */ position?: number };
 /** The picture at the top of Today (publish.ts decides which). */
 interface PubHero { slug: string; title: string; id: string; v: number }
 interface PubXList { id: string; name: string; groups: string[]; description: string }
@@ -193,7 +193,7 @@ const vizLink = (href: string, title: string, text: string) => `<a class="vizlin
 const vizSwitch = (label: string, items: Array<{ href: string; title: string; on: boolean }>) => (items.length > 1 ? `<nav class="chips" aria-label="${label}">${items.map((i) => `<a href="${i.href}"${i.on ? ' aria-current="page"' : ''}>${esc(i.title)}</a>`).join('')}</nav>` : '');
 
 function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy', board?: string): string {
-  const list = [...ctx.topics].sort((a, b) => a.title.localeCompare(b.title));
+  const list = inOrder(ctx.topics, (a, b) => a.title.localeCompare(b.title));
   if (active && !list.some((t) => t.slug === active.slug)) list.push({ slug: active.slug, title: active.title } as PubTopic);   // an unlisted topic, reached by its link
   const items = list.map((t) => {
     const on = active?.slug === t.slug;
@@ -228,8 +228,8 @@ ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}$
 const NOTE = '<p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals.</p>';
 
 export function landingHtml(ctx: Ctx, strip?: SigStrip, origin = '', lead?: PubHero | null): string {
-  const topics = [...ctx.topics].sort((a, b) => b.latest.publishedAt - a.latest.publishedAt);
-  // Today: each briefing's headline and themes, newest first; what is from the last day is marked new.
+  const topics = inOrder(ctx.topics, (a, b) => b.latest.publishedAt - a.latest.publishedAt);
+  // Today: each briefing's headline and themes, in the order you set, otherwise newest first; what is from the last day is marked new.
   const today = topics.map((t) => {
     const fresh = Date.now() - t.latest.publishedAt < 26 * 3600_000, th = (t.latest.themes ?? []).slice(0, 4);
     return `<li><div class="h"><a href="/${esc(t.slug)}"><b>${esc(t.title)}</b></a><small>${fresh ? '<span class="up">new</span> ' : ''}${date(t.latest.publishedAt)}</small></div>

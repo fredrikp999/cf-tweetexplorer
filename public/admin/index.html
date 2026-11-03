@@ -850,6 +850,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <div class="layout" id="pubLayout">
       <aside><div id="pubTopics"></div><p><button class="primary" id="pubNew">New topic</button></p>
       <div class="card" id="pubHero" style="padding:12px 14px;margin-bottom:12px"><label for="pubHeroSel"><b>Picture on Today</b></label><select id="pubHeroSel" style="width:100%;margin-top:6px"></select><p class="muted" id="pubHeroNow" style="font-size:13px;margin:6px 0 0"></p></div>
+      <div class="card" id="pubOrder" style="padding:12px 14px;margin-bottom:12px"><b>Order on Today</b><div id="pubOrderList" style="display:grid;gap:4px;margin-top:8px"></div><p class="muted" id="pubOrderNote" style="font-size:13px;margin:8px 0 0"></p></div>
       <div id="pubReports"></div><p class="muted" style="font-size:13px">Voices and picture styles are managed under <a href="#" data-libgo="audio">Audio templates</a> and <a href="#" data-libgo="image">Image templates</a>.</p></aside>
       <div id="pubDetail"><div class="card muted">Pick a topic, or create one.</div></div>
     </div>
@@ -3861,12 +3862,46 @@ async function load() {
   topics = await call('topics');
   renderList(); if (sel) renderDetail(false);
   if (document.activeElement !== $('#pubHeroSel')) loadHero();
+  loadOrder();
   clearTimeout(timer); if (topics.some((t) => busy(t) || audioBusy(t))) timer = setTimeout(() => { if (!$('#publish').hidden || !$('#pubsetup').hidden) load().catch(() => {}); }, 5000);
 }
 function renderList() {
   $('#pubTopics').innerHTML = topics.map((t) => `<button class="t ${t.slug === sel ? 'on' : ''}" data-slug="${esc(t.slug)}">
     <b>${esc(t.title)}</b><small>/${esc(t.slug)} · ${busy(t) ? 'running…' : t.enabled ? 'next ' + when(t.nextRun) : 'paused'}</small></button>`).join('') || '<p class="muted">No topics yet.</p>';
 }
+// The order of the briefings on the public Today page and in its menu. Only listed briefings with something published appear there, so only listed ones are offered.
+let briefingOrder = [];
+async function loadOrder() {
+  const r = await fetch('/pub/order').then((x) => (x.ok ? x.json() : null)).catch(() => null);
+  if (r) { briefingOrder = r.slugs; renderOrder(); }
+}
+const newestOf = (t) => Math.max(0, ...t.issues.filter((i) => i.status === 'published').map((i) => i.publishedAt));
+function orderedTopics() {
+  const pos = (t) => { const i = briefingOrder.indexOf(t.slug); return i < 0 ? Infinity : i; };
+  return topics.filter((t) => t.listed && newestOf(t)).sort((a, b) => pos(a) - pos(b) || newestOf(b) - newestOf(a));
+}
+function renderOrder() {
+  const list = orderedTopics(), custom = briefingOrder.length > 0;
+  $('#pubOrderList').innerHTML = list.map((t, i) => `<div style="display:flex;align-items:center;gap:6px"><span style="flex:1;min-width:0;overflow-wrap:anywhere">${i + 1}. ${esc(t.title)}</span>
+    <button class="sec" data-omove="-1" data-oslug="${esc(t.slug)}" aria-label="Move ${esc(t.title)} up" ${i ? '' : 'disabled'} style="padding:2px 10px">&uarr;</button><button class="sec" data-omove="1" data-oslug="${esc(t.slug)}" aria-label="Move ${esc(t.title)} down" ${i < list.length - 1 ? '' : 'disabled'} style="padding:2px 10px">&darr;</button></div>`).join('') || '<span class="muted">Nothing is published yet.</span>';
+  $('#pubOrderNote').innerHTML = custom ? 'The menu follows this order too. A new briefing goes last. <button class="link" data-oreset>Back to newest first</button>' : 'Newest first, so this changes as briefings run. Move one to fix the order; the menu then follows it too.';
+}
+async function saveOrder(slugs, done) {
+  try {
+    const res = await fetch('/pub/order-set', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slugs }) });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
+    briefingOrder = r.slugs; renderOrder(); toast(done);
+  } catch (err) { toast(err.message); loadOrder(); }
+}
+$('#pubOrder').addEventListener('click', (e) => {
+  if (e.target.closest('[data-oreset]')) { saveOrder([], 'Back to newest first. Today shows it within a minute.'); return; }
+  const b = e.target.closest('[data-omove]'); if (!b) return;
+  const slugs = orderedTopics().map((t) => t.slug), i = slugs.indexOf(b.dataset.oslug), j = i + Number(b.dataset.omove);
+  if (i < 0 || j < 0 || j >= slugs.length) return;
+  [slugs[i], slugs[j]] = [slugs[j], slugs[i]];
+  saveOrder(slugs, 'Order saved. Today shows it within a minute.');
+});
 // Which briefing's picture opens the public Today page. It always shows that briefing's newest finished picture.
 async function loadHero() {
   const r = await fetch('/pub/hero-choice').then((x) => (x.ok ? x.json() : null)).catch(() => null);
