@@ -27,6 +27,8 @@ It only reads. Nothing that starts a job, changes a setting or spends money is e
 | `get_history_tweets` | The tweets of a collection, 200 per call at most, paged with `offset` | |
 | `list_user_lists`, `list_feed_lists`, `list_x_lists` | Your account lists, feed lists (RSS, YouTube, Hacker News) and X Lists | |
 | `list_monitor_watches`, `get_monitor_feed` | What is watched, and the newest items it found | |
+| `list_collection_sources` | The collection layer: every source, how often it is read, its health, limits hit, cost over 7 days, who uses it, the mode and how live fetches compare with the store | |
+| `get_collected_items` | Items the layer has stored, newest first, 100 per call at most, paged with `offset`; filter by source, kind, consumer (`briefing:<slug>`), words or days (1 to 90) | |
 
 Every tool is marked `readOnlyHint`. The tools ask the Durable Objects the same internal questions the admin app does.
 

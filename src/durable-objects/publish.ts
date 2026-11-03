@@ -22,6 +22,7 @@ import { INSTRUCTION_MAX } from '../summarize/request.ts';
 import { MockModel } from '../summarize/mock-model.ts';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
 import { modelFor, workerSources } from '../summarize/worker';
+import { mockX } from '../collect/mock.ts';
 import { screenTweets } from '../summarize/screen.ts';
 import { sectionsOf, themesOf } from '../site/brief.ts';
 import { setYoutubeKey } from '../sources/youtube';
@@ -81,9 +82,13 @@ export interface IssueCost { twitter: number; llm: number | null; audio?: number
 /** Where a briefing's tweets came from. Shown to readers, so it never holds cost. */
 export interface SourceInfo { kind: 'search' | 'list' | 'flist' | 'xlist' | 'xgroup' | 'feed'; label: string; count: number; id?: string; accounts?: number; handles?: string[]; lists?: Array<{ id?: string; label: string; count: number }>; mode?: XMode; minFaves?: number }
 export interface Provenance { from: number; to: number; fetched: number; used: number; accounts: number; topAccounts: Array<{ handle: string; count: number }>; sources: SourceInfo[]; truncated: boolean; partial?: boolean;
+  /** Read from the collection layer: when its oldest X read was made, and the sources that failed last time, so a thin briefing can be explained. */
+  collected?: { at: number; failed: string[] };
   /** RSS feeds and Hacker News watches the posts came from, with how many items each gave. Absent on issues that used none. */
   feeds?: Array<{ source: 'rss' | 'hn' | 'youtube'; label: string; url?: string; count: number }> }
-interface Spend { meter: Meter; tokensIn: number; tokensOut: number; model: string; screen: number; /** Dollars for the briefing model, priced per call: a retry on a stronger model is not priced at the first model's rate. */ text: number; priced: boolean }     // screen: dollars spent by the decision model that screens the tweets
+/** What the collection layer answers when a briefing is about to run. */
+interface Collected { mode: 'off' | 'shadow' | 'store'; since?: number; items?: RawTweet[]; infos?: SourceInfo[]; failed?: string[]; allocated?: number; collectedAt?: number; capped?: boolean; tweets?: number }
+interface Spend { /** This run's share of what the collection layer spent, and how many tweets it bought just now. The ledger has them under 'collect'. */ allocated?: number; collectedTweets?: number; meter: Meter; tokensIn: number; tokensOut: number; model: string; screen: number; /** Dollars for the briefing model, priced per call: a retry on a stronger model is not priced at the first model's rate. */ text: number; priced: boolean }     // screen: dollars spent by the decision model that screens the tweets
 export interface Issue {
   id: string; topic: string; status: IssueStatus; created: number; publishedAt: number;
   markdown: string; tldr: string; tweets: number; model: string; tokens: number; windowHours: number;
@@ -269,6 +274,15 @@ export class PublishDO extends DurableObject<Env> {
     return row ? (JSON.parse(row.data) as Topic) : undefined;
   }
   private saveTopic(t: Topic): void { this.ctx.storage.sql.exec('INSERT OR REPLACE INTO topics (slug, data) VALUES (?, ?)', t.slug, JSON.stringify(t)); }
+  /** Asks the collection layer. A failure here must never stop a briefing or a save: it is logged, and the caller gets null. */
+  private async collect(path: string, body: unknown): Promise<Response | null> {
+    try {
+      const r = await this.env.COLLECT.getByName('main').fetch(new Request(`https://internal/collect/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
+      if (r.ok) return r;
+      console.error('collection refused', path, r.status, (await r.text()).slice(0, 200));
+    } catch (err) { console.error('collection failed', path, err instanceof Error ? err.message : String(err)); }
+    return null;
+  }
   private issues(slug: string, status?: IssueStatus, limit = 60): Issue[] {
     const rows = status
       ? this.ctx.storage.sql.exec<{ data: string }>('SELECT data FROM issues WHERE topic = ? AND status = ? ORDER BY created DESC LIMIT ?', slug, status, limit)
@@ -480,25 +494,39 @@ export class PublishDO extends DurableObject<Env> {
     }
     console.log('topic run fetches', slug, Object.fromEntries(hosts));
     // Money was spent even when the run failed (the tweets were fetched), so the ledger gets it either way.
-    if (spend.meter.calls || spend.tokensIn) {
-      await recordCost(this.env, { kind: 'publish', ref: slug, label: t.title, twitter: spend.meter.cost, tweets: spend.meter.tweets, calls: spend.meter.calls,
+    if (spend.meter.calls || spend.tokensIn || spend.allocated) {
+      await recordCost(this.env, { kind: 'publish', ref: slug, label: t.title, twitter: spend.meter.cost, allocated: spend.allocated, tweets: spend.meter.tweets, calls: spend.meter.calls,
         llm: spend.text + spend.screen, tokensIn: spend.tokensIn, tokensOut: spend.tokensOut, model: spend.model, run: { ok: !error, note: error || issueId } });
     }
     if (!error && issueId && t.imageAuto) await this.makeImage(slug, issueId);   // likewise
     if (!error && issueId && t.audioAuto) await this.makeAudio(slug, issueId);   // its outcome is recorded on the issue, it cannot fail the briefing
     const cur = this.topic(slug) ?? t;   // the admin may have edited it meanwhile
-    this.saveTopic({ ...cur, running: 0, replaceId: undefined, lastRun: Date.now(), lastError: error, ...(scheduled || cur.nextRun <= Date.now() ? { nextRun: nextSlot(cur, Date.now()) } : {}) });
+    const done: Topic = { ...cur, running: 0, replaceId: undefined, lastRun: Date.now(), lastError: error, ...(scheduled || cur.nextRun <= Date.now() ? { nextRun: nextSlot(cur, Date.now()) } : {}) };
+    this.saveTopic(done);
+    await this.collect('sync-briefing', { topic: done });   // the collection layer plans its next read from the new time
   }
 
   private async generate(t: Topic, spend: Spend): Promise<string> {
     if (t.maxCost) spend.meter.cap = t.maxCost;
-    const sources = workerSources(this.env, spend.meter);
+    const realSources = workerSources(this.env, spend.meter), sources = this.env.SUMMARY_MOCK === '1' ? mockX(realSources, spend.meter) : realSources;
     // SUMMARY_MOCK only exists in .dev.vars (local `wrangler dev`); it is not a deployed variable.
     const built = this.env.SUMMARY_MOCK === '1' ? { model: new MockModel(), id: 'mock' } : modelFor(this.env, t.model || undefined, t.fallback);
     if (!built) throw new Error('no AI provider is configured');
-    const windowHours = t.intervalHours, since = Date.now() - windowHours * HOUR;
+    const windowHours = t.intervalHours;
+    let since = Date.now() - windowHours * HOUR;
+    // Ask the collection layer first. It fetches in its own invocation, so this run's budget of requests goes to the writing. If it cannot answer, the run fetches live as before.
+    const ensured = await this.collect('ensure', { topic: t, hours: windowHours });
+    const collected = ensured ? ((await ensured.json().catch(() => null)) as Collected | null) : null;
+    const store = collected?.mode === 'store' ? collected : null;
+    if (store?.since) since = store.since;
 
     const got: RawTweet[] = [], paid: RawTweet[] = [], notes: string[] = [], infos: SourceInfo[] = [];
+    if (store) {
+      got.push(...(store.items ?? [])); infos.push(...(store.infos ?? []));
+      spend.allocated = store.allocated ?? 0; spend.collectedTweets = store.tweets ?? 0;
+      if (store.capped) spend.meter.capped = true;
+      if (store.failed?.length) notes.push(`could not read: ${store.failed.join(', ')}`);
+    }
     // With a data budget, give every X list the same share of it (pages per list), so the first lists cannot use it all up.
     const xl = (await sources.xlists?.().catch(() => [])) ?? [];
     const idsOf = (s: TopicSource) => (s.type === 'xgroup' ? xl.filter((l) => l.groups.includes(s.group)).map((l) => l.id) : s.type === 'xlist' ? [s.listId] : []);
@@ -508,6 +536,7 @@ export class PublishDO extends DurableObject<Env> {
       return t.maxCost && listReads ? Math.max(1, Math.min(want, Math.floor((t.maxCost * 0.85) / (listReads * perPage)))) : want;
     };
     for (const s of t.sources) {
+      if (store && s.type !== 'feed') continue;   // already read above; the Live feed is still read through the Monitor
       try {
         let spec: Exclude<SourceSpec, { type: 'free' }>;
         if (s.type === 'xgroup') {
@@ -531,11 +560,17 @@ export class PublishDO extends DurableObject<Env> {
     const recent = dedupeSort(got).filter((x) => !x.createdAt || Date.parse(x.createdAt) >= since);
     if (!recent.length) throw new Error(spend.meter.capped ? 'the data budget was reached before any tweets were collected; raise it' : notes.length ? `no tweets: ${notes.join('; ')}` : 'no tweets matched in this period');
     // The posts are paid for: Signal can count them too, so it does not have to fetch them again. Never fails the briefing.
-    if (t.toSignal) {
+    // With the store, the collection layer has handed them over already.
+    if (t.toSignal && !store) {
       try {
         await this.env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/signal-ingest', { method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ slug: t.slug, title: t.title, group: t.signalGroup || t.title, posts: dedupeSort(paid) }) }));
       } catch (err) { console.error('signal hand-over failed', t.slug, err instanceof Error ? err.message : String(err)); }
+    }
+    // Comparing: how the live fetch this run paid for lines up with what the store holds. Decides nothing, so it never fails the briefing.
+    if (collected?.mode === 'shadow') {
+      const ids = (x: RawTweet[]) => dedupeSort(x).filter((p) => !p.createdAt || Date.parse(p.createdAt) >= since).map((p) => String(p.id));
+      await this.collect('compare', { slug: t.slug, live: ids(paid), store: ids(collected.items ?? []), liveCost: spend.meter.cost, storeCost: collected.allocated ?? 0 });
     }
     // Too many: keep the ones people reacted to most, then restore chronological order.
     const used = recent.length <= MAX_TWEETS ? recent : dedupeSort([...recent].sort((a, b) => engagement(b) - engagement(a)).slice(0, MAX_TWEETS));
@@ -590,11 +625,12 @@ export class PublishDO extends DurableObject<Env> {
     this.saveIssue({
       id, topic: t.slug, status: live ? 'published' : 'draft', created: now, publishedAt: live ? now : 0,
       markdown, tldr: tldrOf(markdown), tweets: used.length, model: usedModel, tokens, windowHours, ...(links.length ? { links } : {}),
-      cost: { twitter: spend.meter.cost, llm, total: spend.meter.cost + (llm ?? 0), calls: spend.meter.calls, fetched: spend.meter.tweets, tokensIn: spend.tokensIn, tokensOut: spend.tokensOut, ...(spend.meter.capped ? { capped: true } : {}) },
+      cost: { twitter: spend.meter.cost + (spend.allocated ?? 0), llm, total: spend.meter.cost + (spend.allocated ?? 0) + (llm ?? 0), calls: spend.meter.calls, fetched: spend.meter.tweets + (spend.collectedTweets ?? 0), tokensIn: spend.tokensIn, tokensOut: spend.tokensOut, ...(spend.meter.capped ? { capped: true } : {}) },
       provenance: {
         from: since, to: now, fetched: recent.length, used: used.length, accounts: byAccount.size, sources: infos, truncated: recent.length > used.length, ...(spend.meter.capped ? { partial: true } : {}),
         topAccounts: [...byAccount.values()].sort((a, b) => b.count - a.count).slice(0, 10),
         ...(byFeed.size ? { feeds: [...byFeed.values()].sort((a, b) => b.count - a.count).slice(0, 40) } : {}),
+        ...(store ? { collected: { at: store.collectedAt ?? now, failed: store.failed ?? [] } } : {}),
       },
     });
     return id;
@@ -713,6 +749,7 @@ export class PublishDO extends DurableObject<Env> {
         const t = cleanTopic(b, prev, this.env);
         this.saveTopic(t);
         await this.arm();
+        await this.collect('sync-briefing', { topic: t });
         return json(t);
       }
       if (path === '/adm/delete-topic') {
@@ -721,6 +758,7 @@ export class PublishDO extends DurableObject<Env> {
         this.ctx.storage.sql.exec('DELETE FROM issues WHERE topic = ?', slug);
         this.ctx.storage.sql.exec('DELETE FROM audio_jobs WHERE topic = ?', slug); this.ctx.storage.sql.exec('DELETE FROM image_jobs WHERE topic = ?', slug);
         await this.arm();
+        await this.collect('sync-briefing', { delete: slug });
         return json({ ok: true });
       }
       if (path === '/adm/image-template-save') {

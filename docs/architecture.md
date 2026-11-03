@@ -19,21 +19,24 @@ flowchart LR
       HIS[HistoryDO<br/>collection · analysis · reports]
       PUB[PublishDO<br/>topics · issues · schedule]
       LST[ListsDO<br/>your lists · X Lists]
-      MON[MonitorDO<br/>watches · feed]
+      MON[MonitorDO<br/>watches · feed · Signal]
+      COL[CollectDO<br/>sources · items · outbox]
       CST[CostDO<br/>spend ledger]
     end
     R2[(R2 bucket<br/>audio + pictures)]
     AIG[AI Gateway<br/>logs · analytics]
     WAI[Workers AI<br/>image models]
     W --> ASSETS
-    W --> HIS & PUB & LST & MON & CST
+    W --> HIS & PUB & LST & MON & COL & CST
+    PUB <-->|topics · ensure| COL
+    MON <-->|watches · collected items| COL
     PUB --> R2
     PUB -->|pictures, free Neurons| WAI
   end
 
   W -->|read-only proxy| TW[(twitterapi.io)]
-  HIS & PUB & MON --> TW
-  W & HIS & PUB & MON -->|chat · decision models| AIG
+  HIS & PUB & COL --> TW
+  W & HIS & PUB -->|chat · decision models| AIG
   AIG --> OR[(OpenRouter)]
   PUB -->|text to speech · images when Workers AI is out| RP[(Replicate)]
 ```
@@ -59,7 +62,7 @@ Model output is untrusted: the Markdown renderer escapes everything and only emi
 
 ## Durable Objects
 
-All state lives in SQLite inside five Durable Objects, one instance (`main`) each. Long jobs run from **alarms** in time-boxed slices, so they
+All state lives in SQLite inside six Durable Objects, one instance (`main`) each. Long jobs run from **alarms** in time-boxed slices, so they
 survive eviction and deploys and carry on where they stopped.
 
 | Object | Holds | Runs from alarms |
@@ -67,8 +70,16 @@ survive eviction and deploys and carry on where they stopped.
 | `HistoryDO` | History jobs, their tweets (sharded by time window and query), labels, analyses, saved reports | Collection slices (10 min) and analysis slices (8 min) |
 | `PublishDO` | Briefing topics, issues (drafts and published), audio and image templates | The schedule: a topic's next run |
 | `ListsDO` | Your curated lists of accounts, X Lists kept by reference (with groups), and feed lists (RSS, YouTube, Hacker News) | |
-| `MonitorDO` | Watches (X searches and accounts, RSS feeds, Hacker News), their checkpoints, the combined feed, and Signal's daily term counts and a log of the items behind them (30 days) | Polling |
+| `MonitorDO` | Watches (your definition of what is watched), the Live feed, and Signal's daily term counts and a log of the items behind them (30 days). It no longer fetches: it sends its watches to `CollectDO` and receives the items back | Delivery and housekeeping |
+| `CollectDO` | The collection layer: sources, items (one stored copy, kept 90 days), which source collected what, run records, uses (who reads what) and an outbox to the Monitor | Collection: polling free feeds, window reads before a briefing, X search watches |
 | `CostDO` | The spend ledger behind the Costs tab | |
+
+`MonitorDO` sends all its watches to `CollectDO` after any change (`/collect/sync-monitor`), the first time with their checkpoints. `CollectDO`
+delivers new items and each watch's status to `/mon/collected`, at least once; the Monitor's seen ids make a repeat harmless. `PublishDO` tells
+`CollectDO` about each topic on save, on delete and after each run, and asks `/collect/ensure` before it writes. How it works is in
+[flows](flows.md#8-collection).
+
+The local Node server in `server/` was deliberately not changed. It has no collection layer and keeps its own polling Monitor.
 
 Audio (MP3) and briefing pictures are stored in the R2 bucket `AUDIO`.
 
@@ -80,7 +91,8 @@ src/
   access.ts                Verifies the Cloudflare Access JWT
   mcp.ts                   Read-only MCP server at /mcp (tools and MCP App resources; see mcp.md)
   apps/                    The MCP App views: costs.ts and signal.ts, hand-written HTML pages
-  durable-objects/         history · publish · lists · monitor · cost  (one SQLite-backed object each)
+  durable-objects/         history · publish · lists · monitor · collect · cost  (one SQLite-backed object each)
+  collect/                 plan.ts (pure decisions: what a briefing needs, reuse, polling pace, caps; tested in test/collect.test.mjs) · mock.ts (scripted X posts for SUMMARY_MOCK)
   history/                 analysis.ts (prompts, parsing, estimates, aggregation) · stats.ts (statistics for a collection)
   llm/                     analysis.ts (chat models for History) · decisions.ts (decision-model client) · gateway.ts (routes OpenRouter calls through AI Gateway)
   summarize/               The Strands summarizer agent, model providers, screening, cost tables, Worker and Node hosts
@@ -89,7 +101,7 @@ src/
   sources/                 Non-X sources: types.ts (the neutral item and its feed shape) · rss.ts (RSS/Atom) · youtube.ts (channel and playlist feeds) · hn.ts (Hacker News via Algolia) · read.ts (article and comment reading) · presets.ts (shorthand such as `r/rust` or `github:owner/repo`, expanded to the feed address it stands for) · feedlist.ts (curated feed lists) · transcript.ts (video transcripts)
   signal/                  terms.ts (words, phrases and hashtags of an item) · score.ts (weighted score per term across groups; shared / single / rising) · topics.ts (merging terms into topics, what goes with them) · ai.ts (optional: prompt and parsing for topics written by a model)
   lib/                     twitterapi.ts (API client) · costs.ts (ledger writes) · pool.ts
-server/                    The same app for running locally with Node (npm start): index.js, History, Lists, Monitor, Agent
+server/                    The same app for running locally with Node (npm start): index.js, History, Lists, Monitor, Agent (no collection layer)
 public/admin/              The admin app (one HTML page, no build step)
 test/                      Tests (node --test)
 docs/                      Architecture, flows, configuration, deployment, MCP

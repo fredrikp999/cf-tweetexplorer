@@ -85,7 +85,12 @@ export async function fetchYoutubeApi(feedUrl: string): Promise<{ title: string;
   const api = new URL('https://www.googleapis.com/youtube/v3/playlistItems');
   for (const [k, v] of Object.entries({ part: 'snippet,contentDetails', maxResults: '15', playlistId: playlist, key: apiKey })) api.searchParams.set(k, v);
   const res = await fetch(api, { signal: AbortSignal.timeout(15_000) });
-  if (!res.ok) { await res.body?.cancel(); throw new Error(`the YouTube API answered HTTP ${res.status}`); }
+  if (!res.ok) {
+    // Google says why (quotaExceeded, accessNotConfigured, API_KEY_HTTP_REFERRER_BLOCKED…): a 403 alone does not say what to fix.
+    const why = ((await res.json().catch(() => null)) as { error?: { errors?: Array<{ reason?: string }>; details?: Array<{ reason?: string }> } } | null)?.error;
+    const reason = why?.details?.[0]?.reason ?? why?.errors?.[0]?.reason;
+    throw new Error(`the YouTube API answered HTTP ${res.status}${reason ? ` (${String(reason).slice(0, 60)})` : ''}`);
+  }
   type Item = { snippet?: { title?: string; description?: string; publishedAt?: string; channelTitle?: string; videoOwnerChannelTitle?: string; resourceId?: { videoId?: string } }; contentDetails?: { videoId?: string; videoPublishedAt?: string } };
   const d = (await res.json()) as { items?: Item[] };
   const items: SourceItem[] = [];

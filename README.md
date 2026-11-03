@@ -95,7 +95,7 @@ with its own data on workers.dev.
 ```
 src/            The Cloudflare Worker
   index.ts        Routing: public site, /admin (Access), /mcp
-  durable-objects/  Monitor (sources, live feed, Signal), Publish (briefings), History (archives), Lists, Cost (ledger)
+  durable-objects/  Monitor (watches, live feed, Signal), Collect (fetching and storing sources), Publish (briefings), History (archives), Lists, Cost (ledger)
   signal/         Signal: terms, scoring, topics, AI topic names, filters
   site/           The public site (server-rendered HTML), Markdown, briefing structure
   summarize/      The writing agent, model providers, screening, pricing
@@ -105,7 +105,7 @@ src/            The Cloudflare Worker
   llm/, lib/      Model calls, AI Gateway routing, cost recording, shared helpers
   apps/           The MCP App views (Signal and Costs dashboards, Tweet Galaxy, Who Said It First); mcp.ts registers the tools
 public/admin/   The admin app (a single HTML page, no build step) and setup.html, the illustrated setup overview
-server/         The local Node app
+server/         The local Node app (no collection layer)
 scripts/        smoke.mjs: the smoke test run after each release
 test/           Tests (node --test)
 docs/           Documentation

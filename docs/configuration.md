@@ -45,7 +45,7 @@ them in `wrangler.jsonc` → `vars`, or in `.dev.vars` locally); with none set, 
 A transcript from a paid service is recorded in the Costs tab under **Summarize tab** as "Video transcripts (openrouter|replicate)". Captions cost nothing.
 A run can read at most 5 pages, comment threads and transcripts together, and the text is capped at 12,000 characters by default.
 
-Bindings in `wrangler.jsonc`: the five Durable Objects, the R2 bucket `AUDIO` (create it once with
+Bindings in `wrangler.jsonc`: the six Durable Objects, the R2 bucket `AUDIO` (create it once with
 `npx wrangler r2 bucket create tweet-explorer-audio`), Workers AI (`AI`, for the picture models and the gateway), the version metadata, and the static `ASSETS`.
 
 ## Settings in the app
@@ -79,7 +79,7 @@ Bindings in `wrangler.jsonc`: the five Durable Objects, the R2 bucket `AUDIO` (c
 | Setting | Meaning |
 | --- | --- |
 | Address | `/<address>` on the public site (reserved: `admin*`, `custom*`, `history`, `lists`, `signal`, `report`, `audio`, `image`, `api`, `feed`, `rss`, `robots`, …). |
-| Sources | Searches, your Lists, X Lists, X List groups, or the Monitor feed. |
+| Sources | Searches, your Lists, X Lists, X List groups, or the Monitor feed. The editor shows an estimate of what collecting them costs. |
 | Instruction, Length | What to write about, and how long. |
 | Model | Overrides `SUMMARY_MODEL`. |
 | Schedule | Every 6, 12, 24 or 48 hours, or weekly, from a UTC hour. |
@@ -106,8 +106,10 @@ RSS articles, Hacker News stories or X posts); **Show** the newest or the most r
 cards with pictures, or a plain list; whether it is published, and whether its newest item is on Today under "Watch and read". **Preview** shows
 what it would show. A list must be watched under Sources to show up; nothing extra is fetched or paid for.
 
-**Budgets** (`/admin` → Budgets): the daily cap for X data (watches), the daily cap for Signal topics by AI, and each briefing's data budget per
+**Budgets** (`/admin` → Budgets): the daily cap for X data (one cap for all recurring X collection: watches and briefings, briefings first), the daily cap for Signal topics by AI, and each briefing's data budget per
 run, each next to what has been spent.
+
+**Collection** (`/admin` → Collection): the mode (Comparing, Collected data, Live only), the status of each source (health, limit hit, used by, cost per briefing), *Collect now* (a fresh read, not reused), the comparisons of live against the store, unused sources, feed list members with no watch (one click to add), and a browser of everything collected. Items are kept 90 days.
 
 **Retrying and re-running**: see [deployment.md](deployment.md#retrying-and-re-running).
 
@@ -116,7 +118,7 @@ run, each next to what has been spent.
 ## Costs
 
 Everything that spends goes into the ledger on the **Costs** tab: Search, Users and Lists, History collection, History analysis (split into the cheap
-and the stronger model), Monitor, the Summarize tab, scheduled briefings (with audio and pictures). Tweet data is billed per tweet returned
-(about $0.15 per 1,000); models by tokens at the list prices in `src/summarize/openrouter.ts` and `src/llm/decisions.ts`; Replicate by the prices in `src/media/replicate.ts`.
+and the stronger model), Monitor, collection (kind `collect`, per source), the Summarize tab, scheduled briefings (with audio and pictures). Tweet data is billed per tweet returned
+(about $0.15 per 1,000). A shared source's cost is split evenly between the briefings that read it in issue costs and topic stats; the ledger totals count it once; models by tokens at the list prices in `src/summarize/openrouter.ts` and `src/llm/decisions.ts`; Replicate by the prices in `src/media/replicate.ts`.
 Workers AI pictures are recorded at $0 (they stay inside the free daily Neurons), with the model that made them and a note when a fallback was used.
 Estimates are shown before anything large starts, and History collections, analyses and briefings each have a cap you set.

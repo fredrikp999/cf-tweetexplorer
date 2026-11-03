@@ -37,6 +37,7 @@ After a deploy:
 - **Briefings and Signal pick the change up by themselves.** Nothing needs restarting. Settings live in the Durable Objects, not in the code.
 - **If you use the Claude app with the MCP connector** and the deploy changed the Signal or Costs dashboard: disconnect and reconnect the connector
   (Settings → Connectors), then start a new chat. The app keeps the old view otherwise.
+- **The collection layer starts by itself, in Comparing mode.** Existing watches are taken over automatically at the first alarm, with their checkpoints. Briefings keep fetching live, and each run is compared with the store, so X data costs about double while Comparing is on. After a week of comparisons, when *only live* on the Collection tab is near zero, switch to **Collected data**. (`CollectDO` is a new Durable Object, migration v5, binding `COLLECT`.) Reconnecting the Claude connector shows the two new collection tools.
 - New secrets are read at once; a secret set after the deploy needs no new deploy.
 
 Other ways:
@@ -83,7 +84,7 @@ straight away if the topic is set to auto-publish). Drafts can be edited before 
   (`SUMMARY_MODEL`, now `anthropic/claude-haiku-5.5`). Each issue records the model that actually wrote it. Needs the
   `OPENROUTER_API_KEY` secret (see below).
 - "Run now" starts a run immediately; failures (no tweets, model quota) show under the topic as "Last run".
-- Each run costs twitterapi.io credits (up to 3 pages per search source) and one OpenRouter / Anthropic call.
+- Each run costs twitterapi.io credits (up to 3 pages per search source) and one OpenRouter / Anthropic call. The posts are collected by the collection layer, about 15 minutes before the run, and shared between briefings that read the same source ([flows](flows.md#8-collection)). A re-run the same morning reuses them.
 - Unlisted topics are reachable by link but not shown on the landing page. A topic with nothing published is a 404.
 - Reserved addresses: anything starting with `admin` or `custom`, plus `api`, `robots`, `feed`, `rss`, etc.
 
@@ -290,7 +291,7 @@ Notes
   long agent requests short.
 - Anthropic directly is also possible: `SUMMARY_PROVIDER=anthropic` and `wrangler secret put ANTHROPIC_API_KEY`.
 - The agent code in `src/summarize/` runs unchanged under Node (type-stripped, so Node 22.18+) and in the Worker.
-  `SUMMARY_MOCK=1` (dev only, never honoured behind Cloudflare's edge) swaps in a scripted model for tests.
+  `SUMMARY_MOCK=1` (dev only, never honoured behind Cloudflare's edge) swaps in a scripted model for tests. It also gives scripted X posts for briefings and collection, so the whole flow can be tried without spending.
 - The OpenRouter models have not been run against real tweets yet. Check the output of the one you choose.
 - The browser can only pick models from the built-in list; the ids in `wrangler.jsonc` are trusted. Locally, put `OPENROUTER_API_KEY` in `.env`.
 - The AI analysis of History jobs and the model fallback logic are described in their own sections; the fallback to OpenRouter is no longer

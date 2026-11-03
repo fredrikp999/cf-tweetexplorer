@@ -84,7 +84,7 @@ are only for extra context (replies, another search). Every claim must link to i
 
 ```mermaid
 flowchart TD
-  AL{{PublishDO alarm · next slot}} --> FE[Fetch the last interval from each source<br/>searches · lists · X Lists / groups · Monitor feed]
+  AL{{PublishDO alarm · next slot}} --> FE[Get the last interval from each source<br/>searches · lists · X Lists / groups · Monitor feed<br/>from the collection store, or live; see section 8]
   FE --> TOP[Keep the 150 most engaged tweets]
   TOP --> SC[Screen · decision model<br/>needs 25+ tweets, keeps at least 20]
   SC --> WR[Write · writing model<br/>cited Markdown, TL;DR]
@@ -104,7 +104,10 @@ flowchart TD
 - The writer is asked for a bold TL;DR and one `## heading` per theme. The page builds "In brief" from the headings, gives each theme an anchor,
   marks it new or continuing (against the themes of the issue before), and lists the Signal topics and the accounts it cites. Older issues, written
   with a bold lead-in per theme instead of a heading, are shown the same way.
-- With **Signal** ticked, the posts a run fetched are also counted in Signal (free).
+- With **Signal** ticked, the posts a run read are also counted in Signal (free), in one `brief:<slug>` feed per briefing, so scores do not depend on
+  how many lists the briefing reads. In *Collected data* mode the posts are handed over when the briefing runs; in the other modes the briefing hands over what it fetched.
+- Where the posts come from depends on the collection mode (section 8). In *Collected data* the briefing reads the store, and fetches live only if
+  the layer does not answer. A briefing stopped by the daily cap is written from what it has and marked partial.
 - Screening never fails a briefing: if it cannot run, the tweets go on unscreened.
 
 ## 6. Screening (decision models)
@@ -119,7 +122,55 @@ likes. Screening 150 tweets costs a few hundredths of a cent.
 - **Search, User, Trends** go through a read-only allowlisted proxy to twitterapi.io; the API key stays on the server and each call's cost is estimated into the ledger.
 - **Lists** are groups of accounts you curate. **X Lists** are lists on x.com kept by reference (id, name, groups); they can be read as the
   period's top posts or their latest timeline, summarized, used in History, or made public as links.
-- **Monitor** polls watches on a schedule, keeps a checkpoint and a seen-id set, and has a daily spend cap (default $2). A watch has a source: X (billed per tweet), or RSS/Atom and Hacker News (free, so they keep running when the cap is reached). Every source writes into one feed, tagged with its `source`; `/mon/feed?source=rss|hn|x` reads one source, no filter reads them combined. Non-X items are stored in the tweet shape (author, text, counts) plus `source`, `title` and `discussionUrl`. A new RSS or Hacker News watch shows the latest 10 items on its first check.
+- **Monitor** keeps your watches, the Live feed and Signal's counts. It does not fetch: `CollectDO` collects for it (section 8) and hands the items back, and the Monitor keeps its seen-id set. The daily spend cap (default $2) now covers all recurring X collection. A watch has a source: X (billed per tweet), or RSS/Atom and Hacker News (free, so they keep running when the cap is reached). Every source writes into one feed, tagged with its `source`; `/mon/feed?source=rss|hn|x` reads one source, no filter reads them combined. Non-X items are stored in the tweet shape (author, text, counts) plus `source`, `title` and `discussionUrl`. A new RSS or Hacker News watch shows the latest 10 items on its first check.
+
+## 8. Collection
+
+One layer fetches and stores everything that is read on a schedule, so the same source is bought once and used by every briefing, watch and Signal that needs it. It lives in `CollectDO`; the decisions are in `src/collect/plan.ts`.
+
+```mermaid
+flowchart TD
+  MON[MonitorDO<br/>watches] -->|all watches after any change<br/>first time with checkpoints| SY[/collect/sync-monitor/]
+  PUB[PublishDO<br/>briefing topics] -->|on save · delete · after each run| TP[Topics: what each briefing needs]
+  SY & TP --> SRC[(Sources<br/>one per list, search or feed,<br/>depth and likes merged across uses)]
+  SRC --> AL{{CollectDO alarm}}
+  AL -->|poll · free feeds| TW1[RSS · YouTube · Hacker News]
+  AL -->|window · 15 min before a briefing| TW2[(twitterapi.io)]
+  AL -->|incremental · X search watch| TW2
+  TW1 & TW2 --> IT[(Items: one copy, 90 days<br/>+ which source collected what)]
+  IT --> OB[Outbox] -->|at least once| MC[/mon/collected/]
+  MC --> LF[Monitor: Live feed · Signal]
+  IT --> RD[Briefing reads the store]
+  PUB -->|/collect/ensure before writing| RD
+```
+
+**Three strategies**
+- **Poll** (free: RSS, YouTube, Hacker News). Backs off when a feed is quiet or failing, to at most 6 hours. An interval you pinned does not stretch when quiet, but it does back off on failure. A feed only a briefing reads is checked every 6 hours.
+- **Window** (paid: X lists, account lists and searches that briefings read). Read once per period, 15 minutes before the briefing, because a likes filter only means something once posts have had time to collect them.
+- **Incremental** (an X search watch). Read from its checkpoint.
+
+**Reuse.** A window read is used again instead of bought again if it is at most a quarter of the period old (never more than 6 hours), and covers the period, the pages and the likes the briefing needs. A re-run or a retry the same morning therefore costs no X data and reads the same posts. A read cut short by the daily cap does not count as covering the period. *Collect now* on the Collection tab forces a fresh read.
+
+**One cap.** One daily cap covers all recurring X collection. Briefing collection comes first: an X search watch waits when the cap, minus what briefings still need today, is used up. A briefing stopped by the cap is written from what it has and marked partial. History, Explore and Summarize are not under this cap.
+
+**Sources and membership.**
+- Two uses of the same list, search or feed share one source. A shared source is fetched with the most pages and the fewest likes of its uses.
+- Sources nothing uses stop being collected and are listed as unused. They are never deleted by themselves.
+- Group and list membership is followed at each run and once a day. Feed list members with no watch are shown with a one-click button to add them. They are not added automatically, so a watch you removed on purpose stays removed.
+
+**Modes** (Collection tab)
+
+| Mode | What happens |
+| --- | --- |
+| Comparing (`shadow`, the default after a deploy) | Briefings fetch live as before. Each run is also compared with the store. X data costs about double while this is on. |
+| Collected data (`store`) | Briefings read the store, with a live fallback if the layer does not answer. |
+| Live only (`off`) | The layer is bypassed. |
+
+**Costs.** The ledger has a kind `collect`, per source. Issue costs and topic stats include the briefing's allocated share: a shared source's cost is split evenly between the briefings that read it. The share is not counted twice in the ledger totals.
+
+**Trying it locally.** `SUMMARY_MOCK=1` also gives scripted X posts for briefings and collection, so the whole flow runs without spending anything.
+
+**Local Node server.** `server/` has no collection layer. It keeps its own polling Monitor.
 
 ---
 

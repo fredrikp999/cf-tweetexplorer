@@ -425,6 +425,15 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
 .sigwatch:first-of-type { border-top: 0; }
 .sigwatch .grow { flex: 1; min-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sigwatch input { width: 190px; }
+.co-wrap { overflow-x: auto; } .co-wrap table.guide td, .co-wrap table.guide th { white-space: nowrap; } .co-wrap table.guide td.wrap { white-space: normal; min-width: 130px; max-width: 320px; overflow-wrap: anywhere; } .co-wrap tr.co-main td { border-bottom: 0; padding-bottom: 2px; } .co-wrap tr.co-acts td { padding-top: 2px; white-space: normal; } #collection a, #pubCollect a { color: var(--accent); }
+.co-chips { display: flex; flex-wrap: wrap; gap: 4px; } .co-q { display: block; color: var(--muted); font-size: 12.5px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+.co-item { padding: 12px 0; border-top: 1px solid var(--line); } .co-item:first-child { border-top: 0; }
+.co-item .tx { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; margin: 4px 0; }
+.co-item .meta { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: 13px; color: var(--muted); }
+.co-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 12px; } .co-filters input[type=search] { flex: 1; min-width: 180px; }
+.co-mode { display: grid; gap: 8px; margin-bottom: 12px; } .co-mode label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; } .co-mode input { margin-top: 4px; } .co-mode small { display: block; color: var(--muted); font-size: 13px; }
+.co-strip { display: flex; flex-wrap: wrap; gap: 8px 28px; } .co-strip b { display: block; font-size: 22px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; } .co-strip span { color: var(--muted); font-size: 13px; }
+.co-warn { color: var(--bar4); font-size: 12.5px; }
 @media (max-width: 800px) {
   .sigrow, .sigcap { grid-template-columns: minmax(0, 1fr) 54px; } .sigrow .bar, .sigrow .cells, .sigrow .cs, .sigcap .cells { grid-column: 1 / -1; }
   .sigcap > :nth-child(3) { display: none; }
@@ -450,6 +459,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <div class="sp"></div>
     <div class="grp">Setup</div>
     <button data-tab="sources"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/></svg><span>Sources</span></button>
+    <button data-tab="collection" data-feature="collection" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6.5" rx="7" ry="2.8"/><path d="M5 6.5v11c0 1.6 3.1 2.8 7 2.8s7-1.2 7-2.8v-11M5 12c0 1.6 3.1 2.8 7 2.8s7-1.2 7-2.8"/></svg><span>Collection</span></button>
     <button data-tab="signalsetup" data-feature="signal" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h9M18 7h1M5 17h1M10 17h9"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>Signal setup</span></button>
     <button data-tab="pubsetup" data-feature="publish" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><circle cx="16" cy="9.5" r="2"/><path d="M8 9.5h5"/></svg><span>Briefing setup</span></button>
     <button data-tab="lists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg><span>Lists and templates</span></button>
@@ -703,14 +713,15 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   </section>
 
   <section id="sources" hidden>
-    <header class="page"><h1>Sources</h1><p>What is watched: X accounts and searches, RSS feeds, YouTube and Hacker News. New items appear in the <a href="#monitor" data-tabgo="monitor">Live feed</a> and feed <a href="#signal" data-tabgo="signal" data-feature="signal">Signal</a>.</p></header>
+    <header class="page"><h1>Sources</h1><p>What is watched: X accounts and searches, RSS feeds, YouTube and Hacker News. New items appear in the <a href="#monitor" data-tabgo="monitor">Live feed</a> and feed <a href="#signal" data-tabgo="signal" data-feature="signal">Signal</a>. <span data-feature="collection" hidden>How often each one is checked may stretch automatically for quiet or failing feeds; see <a href="#collection" data-tabgo="collection">Collection</a>.</span></p></header>
     <details class="about" data-about="monitor"><summary>How this works and what it costs</summary>
       <div><p>Get new tweets as they are posted, from an account or a search query, without keeping the page open.</p>
    <ul><li>The <b>server</b> checks each watch every N seconds (15 s to 1 h) using a <code>since_time</code> window, and pushes anything new to this page live.</li>
    <li>Watches are saved: restart the server and nothing is missed or repeated (tweets are de-duplicated by ID).</li>
    <li>A tab badge and optional desktop notifications tell you when something arrives while you are elsewhere.</li>
    <li><b>RSS / Atom</b> feeds, <b>YouTube</b> channels and playlists (new videos, from their public feeds) and <b>Hacker News</b> (the front page, new stories, Show HN, Ask HN, or a keyword with a points threshold) are watched the same way and are <b>free</b>. The live feed shows every source combined, or one source at a time.</li></ul>
-   <p class="cost">Cost (X): this is polling, so you pay for checks even when nothing is posted. 1 minute ≈ $6.50/month per watch while idle; 5 minutes ≈ $1.30; 15 minutes ≈ $0.43. A <b>daily cap</b> (default $2) pauses the X watches when reached; RSS and Hacker News carry on.</p></div></details>
+   <p class="cost">Cost (X): this is polling, so you pay for checks even when nothing is posted. 1 minute ≈ $6.50/month per watch while idle; 5 minutes ≈ $1.30; 15 minutes ≈ $0.43. A <b>daily cap</b> (default $2) covers all recurring X collection, including what briefings read, and pauses it when reached; RSS and Hacker News carry on.</p>
+   <p>Schedules set here may stretch automatically for quiet or failing feeds; see <a href="#collection" data-tabgo="collection">Collection</a> for what is collected, how often and what it costs.</p></div></details>
     <h2 class="ssh">Add a source</h2>
     <form id="monForm">
       <label data-feature="sources" hidden>Source
@@ -743,6 +754,36 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <div class="card"><label class="chk"><input type="checkbox" id="monNotify"> desktop notifications when something new arrives</label></div>
   </section>
 
+  <section id="collection" hidden>
+    <header class="page"><h1>Collection</h1><p>What is collected from X, feeds, YouTube and Hacker News, how often, what it costs and who uses it. Briefings, Signal and feed pages read this data; they do not each fetch their own. Which sources are watched is set under <a href="#sources" data-tabgo="sources">Sources</a>.</p></header>
+    <div class="card" style="margin-bottom:14px"><div class="co-strip" id="coStrip"><div class="note">Loading…</div></div></div>
+    <div class="err" id="coErr" hidden></div>
+    <div class="card" style="margin-bottom:14px"><h3>How briefings get their data</h3>
+      <div class="co-mode" id="coMode" role="radiogroup" aria-label="How briefings get their data">
+        <label><input type="radio" name="comode" value="shadow"><span><b>Comparing</b><small>Briefings still fetch live, and each run is compared with what was collected. Costs about double on X data.</small></span></label>
+        <label><input type="radio" name="comode" value="store"><span><b>Collected data</b><small>Briefings read what was collected; re-runs cost no X data.</small></span></label>
+        <label><input type="radio" name="comode" value="off"><span><b>Live only</b><small>X is not collected ahead of briefings.</small></span></label>
+      </div>
+      <div id="coCompare"></div></div>
+    <div class="card" style="margin-bottom:14px"><h3>Sources</h3>
+      <div class="co-filters"><label>Data <select id="coFKind"><option value="">all kinds</option><option value="x">X posts</option><option value="rss">Articles</option><option value="youtube">Videos</option><option value="hn">Hacker News</option></select></label>
+        <label>State <select id="coFState"><option value="">any</option><option value="failing">Failing</option><option value="active">Active</option><option value="paused">Paused</option><option value="unused">Not used</option></select></label>
+        <label>Used by <select id="coFUse"></select></label></div>
+      <div class="co-wrap" id="coSources"></div></div>
+    <div class="card" style="margin-bottom:14px" id="coDecide" hidden><h3>Needs a decision</h3><div id="coDecideBody"></div></div>
+    <div class="card" style="margin-bottom:14px"><h3>What each briefing and view costs</h3>
+      <div class="co-wrap" id="coCosts"></div>
+      <div class="note" style="margin-top:8px">Data cost over the last 7 days. When several briefings read the same source, its cost is split evenly between them. Only briefings carry a cost: Signal, feed pages and the Live feed use what is already collected.</div></div>
+    <div class="card" id="coBrowse"><h3>Browse collected data</h3>
+      <div class="co-filters"><input type="search" id="coQ" placeholder="Search the collected text" aria-label="Search the collected text" maxlength="100">
+        <label>Source <select id="coQSource"></select></label>
+        <label>Kind <select id="coQKind"><option value="">all</option><option value="x">X posts</option><option value="rss">Articles</option><option value="youtube">Videos</option><option value="hn">Hacker News</option></select></label>
+        <label>Period <select id="coQDays"><option value="1">1 day</option><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="0">all</option></select></label>
+        <label>Used by <select id="coQUse"></select></label></div>
+      <div id="coItems"></div>
+      <div class="optrow" id="coPager" style="margin-top:10px" hidden><button class="go ghost" id="coPrev" type="button">Previous</button><span class="note" id="coPageInfo"></span><button class="go ghost" id="coNext" type="button">Next</button></div></div>
+  </section>
+
   <section id="pubsetup" hidden>
     <header class="page"><h1>Briefing setup</h1><p>What each briefing reads, how it is written, when it runs, and what it costs. What it has written is under <a href="#publish" data-tabgo="publish">Briefings</a>.</p></header>
     <div id="pubSetupHost"></div>
@@ -757,8 +798,8 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
 
   <section id="budgets" hidden>
     <header class="page"><h1>Budgets</h1><p>Every spending limit in one place, next to what has been spent. Everything spent is under <a href="#costs" data-tabgo="costs">Costs</a>.</p></header>
-    <div class="card" style="margin-bottom:14px"><h3>X data for watches, per day</h3>
-      <div class="note" style="margin-bottom:8px">When it is reached, X watches wait until tomorrow (UTC); RSS, YouTube and Hacker News carry on.</div>
+    <div class="card" style="margin-bottom:14px"><h3>X data, per day</h3>
+      <div class="note" style="margin-bottom:8px">The cap covers all recurring X collection, including what briefings read, with published briefings served first. When it is reached, recurring X collection waits until tomorrow (UTC); RSS, YouTube and Hacker News carry on.</div>
       <div class="optrow"><span id="budXSpent" class="note"></span><label class="chk">Daily cap $<input type="number" id="monCap" min="0" step="0.5" style="width:90px"></label><button class="go ghost" id="monCapSave" type="button">Set</button></div></div>
     <div class="card" style="margin-bottom:14px" data-feature="signal" hidden><h3>Signal topics by AI, per day</h3>
       <div class="note" style="margin-bottom:8px">When it is reached, new items wait to be read until tomorrow; Signal keeps showing what was read.</div>
@@ -1447,7 +1488,7 @@ $('#xAddForm').addEventListener('submit', async (e) => {
 });
 
 // ---------- Costs: the ledger of what everything has spent ----------
-const KIND = { analysis: 'History analysis (AI)', image: 'Pictures', audio: 'Audio versions', explore: 'Explorer (Search, Users, Lists, Trends)', history: 'History collection', monitor: 'Monitor', summarize: 'Summarize tab', publish: 'Scheduled briefings', signal: 'Signal topics (AI)' };
+const KIND = { analysis: 'History analysis (AI)', image: 'Pictures', audio: 'Audio versions', explore: 'Explorer (Search, Users, Lists, Trends)', history: 'History collection', monitor: 'Monitor', summarize: 'Summarize tab', publish: 'Scheduled briefings', signal: 'Signal topics (AI)', collect: 'Data collection' };
 const dollars = (n) => '$' + (n < 0.1 ? n.toFixed(4) : n.toFixed(2));
 const ctable = (head, rows, empty) => rows.length ? `<table class="guide"><thead><tr>${head.map((h) => `<th${h.endsWith('$') ? ' style="text-align:right"' : ''}>${esc(h.replace(/\$$/, ''))}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>` : `<div class="empty" style="padding:18px 0">${empty}</div>`;
 const money$ = (n) => `<td style="text-align:right;white-space:nowrap">${dollars(n)}</td>`;
@@ -1716,7 +1757,7 @@ function renderWatches() {
   sel.innerHTML = '<option value="">all watches</option>' + ws.filter((w) => (!monSrc || srcOf(w) === monSrc) && (!monList || w.list === monList)).map((w) => `<option value="${esc(w.id)}">${esc(w.label)}</option>`).join('');
   sel.value = ws.some((w) => w.id === cur && (!monSrc || srcOf(w) === monSrc)) ? cur : ''; monFilter = sel.value;
   const sp = mon.spend.cost, cap = mon.settings.dailyCap;
-  $('#monSpend').innerHTML = `Spent today <b>${money(sp)}</b> of ${money(cap)}${mon.capped ? ' <span class="err">· cap reached, polling paused until tomorrow or until you raise the cap</span>' : ''}`;
+  $('#monSpend').innerHTML = `Spent today <b>${money(sp)}</b> of ${money(cap)} (the cap covers all recurring X collection, including what briefings read)${mon.capped ? ' <span class="err">· cap reached, recurring X collection paused until tomorrow or until you raise the cap</span>' : ''}`;
   if (document.activeElement !== $('#monCap')) $('#monCap').value = cap;
 }
 setInterval(() => {
@@ -3175,7 +3216,7 @@ $('#views').addEventListener('click', async (e) => {
 async function loadBudgets() {
   const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const [mon, ai, topics] = await Promise.all([get('/mon/state'), features.signal ? get('/mon/signal-ai') : null, features.publish ? get('/pub/topics') : null]);
-  if (mon) { $('#budXSpent').textContent = `Spent today $${(+mon.spend.cost).toFixed(3)}${mon.capped ? ' · cap reached' : ''}`; if (document.activeElement !== $('#monCap')) $('#monCap').value = mon.settings.dailyCap; }
+  if (mon) { $('#budXSpent').textContent = `Spent today $${(+mon.spend.cost).toFixed(3)} on recurring X collection (watches and briefings)${mon.capped ? ' · cap reached' : ''}`; if (document.activeElement !== $('#monCap')) $('#monCap').value = mon.settings.dailyCap; }
   if (ai) { $('#budAiSpent').textContent = ai.enabled ? `Spent today $${(+ai.spentToday).toFixed(3)}${ai.spentToday >= ai.dailyCap ? ' · cap reached' : ''}` : 'Off: Signal counts words, so nothing is spent.'; if (document.activeElement !== $('#budAiCap')) $('#budAiCap').value = ai.dailyCap; }
   if (topics) {
     $('#budTopics').innerHTML = topics.length ? `<table><thead><tr><th>Briefing</th><th>Average run</th><th>Last 30 days</th><th>Budget per run</th><th></th></tr></thead><tbody>${topics.map((t) => `<tr data-bslug="${esc(t.slug)}"><td>${esc(t.title)}</td>
@@ -3220,8 +3261,8 @@ $('#monCapSave').addEventListener('click', () => setTimeout(loadBudgets, 400));
 // Overview: one list of what is broken or waiting, gathered from the other tabs' own data, each linking to where it is fixed.
 async function loadOverview() {
   const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const [mon, ai, topics, costs, sigd, reports, jobs] = await Promise.all([get('/mon/state'), features.signal ? get('/mon/signal-ai') : null, features.publish ? get('/pub/topics') : null,
-    features.costs ? get('/costs/summary?days=7') : null, features.signal ? get('/mon/signal?days=1') : null, features.publish ? get('/pub/reports') : null, get('/hist/jobs')]);
+  const [mon, ai, topics, costs, sigd, reports, jobs, col] = await Promise.all([get('/mon/state'), features.signal ? get('/mon/signal-ai') : null, features.publish ? get('/pub/topics') : null,
+    features.costs ? get('/costs/summary?days=7') : null, features.signal ? get('/mon/signal?days=1') : null, features.publish ? get('/pub/reports') : null, get('/hist/jobs'), features.collection ? get('/collect/overview') : null]);
   const items = [], go = (tab, label) => `<a href="#${tab}" data-tabgo="${tab}">${label}</a>`;
   // Each problem: what it is, a button that fixes or retries it here (when there is one), and a link to where it lives.
   const act = (label, attrs) => `<button class="go ghost" ${attrs}>${label}</button>`;
@@ -3234,6 +3275,11 @@ async function loadOverview() {
     const yt = failing.filter((w) => w.source === 'youtube');
     if (yt.length && !mon.youtubeApi) add('info', `${yt.length} YouTube channel${yt.length === 1 ? '' : 's'} failing: YouTube's public feeds answer errors. Add a <code>YOUTUBE_API_KEY</code> secret to read them through the YouTube API instead (free quota)`, go('sources', 'Sources'));
     if (mon.capped) add('warn', `X data cap reached today ($${(+mon.spend.cost).toFixed(2)} of $${(+mon.settings.dailyCap).toFixed(2)}): X watches wait until tomorrow`, go('monitor', 'Raise the cap'));
+  }
+  if (col && Array.isArray(col.sources)) {
+    const bad = col.sources.filter((s) => s.state === 'failing'), lim = col.sources.filter((s) => s.kind.startsWith('x_') && s.week && s.week.hitLimit > 0 && s.state !== 'unused');
+    if (bad.length) add('warn', `${bad.length} collected source${bad.length === 1 ? '' : 's'} failing: ${esc(bad.slice(0, 4).map((s) => s.label).join(', '))}${bad.length > 4 ? '…' : ''}${bad[0].lastError ? ` <span class="note">(${esc(String(bad[0].lastError).slice(0, 80))})</span>` : ''}`, go('collection', 'Collection'));
+    if (lim.length) add('info', `${lim.length} X source${lim.length === 1 ? '' : 's'} hit the limit of pages asked for, so some posts were missed: ${esc(lim.slice(0, 4).map((s) => s.label).join(', '))}${lim.length > 4 ? '…' : ''}`, go('collection', 'Collection'));
   }
   if (ai && ai.enabled) {
     if (ai.error && !/cap is reached/.test(ai.error)) add('warn', `Signal topics: ${esc(ai.error)}`, go('signalsetup', 'Signal setup'), act('Retry now', 'data-ovact="airetry"'));
@@ -3280,6 +3326,150 @@ async function loadOverview() {
   }
   $('#ovToday').innerHTML = cards.join('');
 }
+// ---------- Collection: what is collected, how often, what it costs, who uses it, and the data itself ----------
+var CO = { ov: null, sure: '', q: { source: '', kind: '', consumer: '', q: '', days: '30', offset: 0 }, seq: 0, timer: 0 };
+const CO_KIND = { x_list: 'X list', x_accounts: 'X accounts', x_search: 'X search', x_watch: 'X watch', rss: 'RSS', youtube: 'YouTube', hn: 'Hacker News' };
+const CO_ITEM = { x: 'X post', rss: 'Article', hn: 'Hacker News', youtube: 'Video' };
+const coUse = (u) => u.kind === 'live' ? 'Live feed' : `${{ briefing: 'Briefing', signal: 'Signal', feedpage: 'Feed page' }[u.kind] ?? 'Used'}: ${u.label}`;
+const coEvery = (s) => `every ${s < 60 ? s + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : +(s / 3600).toFixed(1) + ' h'}`;
+const coWhen = (ms) => !ms ? 'never' : Date.now() - ms < 36 * 3600000 ? ago(ms) : new Date(ms).toLocaleDateString([], { dateStyle: 'medium' });
+const coIsX = (s) => s.kind.startsWith('x_');
+const coTable = (head, rows, empty) => rows.length ? `<table class="guide"><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>` : `<div class="empty" style="padding:18px 0">${empty}</div>`;
+
+async function loadCollection() {
+  const err = $('#coErr');
+  try {
+    const r = await fetch('/collect/overview'), d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    CO.ov = d; err.hidden = true; renderCollection();
+    if (!$('#coItems').dataset.loaded) loadCollectItems();
+  } catch (e) { err.hidden = false; err.textContent = `Could not load the collection: ${e.message}`; }
+}
+function coSelect(sel, opts, cur) { sel.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join(''); sel.value = opts.some(([v]) => v === cur) ? cur : ''; }
+function renderCollection() {
+  const o = CO.ov; if (!o) return;
+  const cap = o.spend.dailyCap, left = Math.max(0, cap - o.spend.today);
+  $('#coStrip').innerHTML = `<div><b>${fmt(o.items.n)}</b><span>items stored${o.items.oldest ? `, oldest ${esc(coWhen(o.items.oldest))}` : ''}</span></div>
+    <div><b>${money(o.spend.today)} <small style="font-size:14px;font-weight:400;color:var(--muted)">of ${money(cap)}</small></b><span>spent today on X data, ${money(left)} left · <a href="#budgets" data-tabgo="budgets">Budgets</a>. The cap covers all recurring X collection.</span></div>
+    <div><b>${fmt(o.keepDays)} days</b><span>how long collected data is kept</span></div>`;
+  document.querySelectorAll('input[name=comode]').forEach((r) => { r.checked = r.value === o.mode; });
+  const slugName = new Map(o.consumers.filter((c) => c.kind === 'briefing').map((c) => [c.id, c.label]));
+  const cmp = (o.comparisons ?? []).slice(0, 10);
+  $('#coCompare').innerHTML = (cmp.length ? `<div class="co-wrap">${coTable(['When', 'Briefing', 'Live', 'Collected', 'In both', 'Only live', 'Only collected'], cmp.map((c) =>
+    `<tr><td>${esc(new Date(c.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</td><td>${esc(slugName.get(c.slug) ?? c.slug)}</td><td>${fmt(c.live)}</td><td>${fmt(c.store)}</td><td>${fmt(c.both)}</td><td>${fmt(c.onlyLive)}</td><td>${fmt(c.onlyStore)}</td></tr>`), '')}</div>` : '<div class="note">No comparisons yet. They appear after a briefing has run while comparing.</div>')
+    + '<div class="note" style="margin-top:8px">Each row counts the posts a briefing read live and the posts the collection had for the same run. When “only live” stays near zero, switching to collected data is safe.</div>';
+  // filters keep what is chosen
+  const use = [['', 'anyone'], ...o.consumers.map((c) => [`${c.kind}:${c.id}`, coUse(c)])];
+  coSelect($('#coFUse'), use, $('#coFUse').value);
+  coSelect($('#coQUse'), use, CO.q.consumer);
+  coSelect($('#coQSource'), [['', 'all sources'], ...o.sources.map((s) => [s.id, s.label])], CO.q.source);
+  renderCoSources(); renderCoCosts(); renderCoDecide();
+}
+function renderCoSources() {
+  const o = CO.ov, fk = $('#coFKind').value, fs = $('#coFState').value, fu = $('#coFUse').value;
+  const list = o.sources.filter((s) => (!fk || s.itemKind === fk) && (!fs || s.state === fs) && (!fu || s.usedBy.some((u) => `${u.kind}:${u.id}` === fu)))
+    .sort((a, b) => (b.state === 'failing') - (a.state === 'failing') || b.week.cost - a.week.cost);
+  $('#coSources').innerHTML = coTable(['Source', 'How often', 'Last run', 'Last 7 days', 'Health'], list.map((s) => {
+    const win = s.strategy === 'window', off = !win && s.nextRun - Date.now() > s.baseSec * 1500 && (s.quiet || s.errors);
+    const how = win ? 'once per period, just before the briefing' : `${coEvery(s.baseSec)}${s.pinnedSec ? ' <span class="badge">pinned</span>' : ''}${off ? ' <span class="note">backing off</span>' : ''}`;
+    const sure = (k) => CO.sure === `${k}:${s.id}`;
+    const ask = coIsX(s) ? (sure('check') ? `<button class="go" data-coact="check" data-id="${esc(s.id)}">Spend about ${money(s.lastCost > 0 ? s.lastCost : 0.06)}?</button> <button class="go ghost" data-coact="cancel">Cancel</button>` : `<button class="go ghost" data-coact="ask-check" data-id="${esc(s.id)}">Collect now</button>`)
+      : `<button class="go ghost" data-coact="check" data-id="${esc(s.id)}">Collect now</button>`;
+    const pin = win ? '' : `<select data-copin="${esc(s.id)}" aria-label="How often for ${esc(s.label)}">${[['', 'automatic'], [900, '15 min'], [3600, '1 h'], [21600, '6 h'], [86400, '24 h']].map(([v, l]) => `<option value="${v}"${(s.pinnedSec || '') === v ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+    const del = s.state === 'unused' ? (sure('delete') ? `<button class="go" data-coact="delete" data-id="${esc(s.id)}">Delete for good?</button> <button class="go ghost" data-coact="cancel">Cancel</button>` : `<button class="go ghost" data-coact="ask-delete" data-id="${esc(s.id)}">Delete</button>`) : '';
+    return `<tr class="co-main"><td class="wrap"><b>${esc(s.label)}</b> <span class="badge">${esc(CO_KIND[s.kind] ?? s.kind)}</span>${s.query ? `<span class="co-q" title="${esc(s.query)}">${esc(s.query)}</span>` : ''}</td>
+      <td class="${win ? 'wrap' : ''}">${how}</td>
+      <td>${esc(coWhen(s.lastRun))}<span class="co-q">${s.lastRun ? `${fmt(s.lastReturned)} returned${s.lastCost > 0 ? `, ${money(s.lastCost)}` : ''}` : ''}</span></td>
+      <td>${fmt(s.week.fresh)} new<span class="co-q">${s.week.cost > 0 ? money(s.week.cost) : 'free'}</span></td>
+      <td class="wrap"><span class="badge ${s.state === 'active' ? 'active' : s.state === 'failing' ? 'error' : ''}">${{ active: 'Active', paused: 'Paused', failing: 'Failing', unused: 'Not used' }[s.state] ?? esc(s.state)}</span>${s.lastError ? ` <span class="perr">${esc(String(s.lastError).slice(0, 160))}</span>` : ''}${s.week.hitLimit > 0 ? `<div class="co-warn">limit hit in ${s.week.hitLimit} of ${s.week.runs} run${s.week.runs === 1 ? '' : 's'}: more posts existed than the pages asked for</div>` : ''}</td></tr>
+      <tr class="co-acts"><td colspan="5"><div class="co-chips" style="margin-bottom:8px"><span class="note">Used by</span> ${s.usedBy.length ? s.usedBy.map((u) => `<span class="badge">${esc(coUse(u))}</span>`).join('') : '<span class="note">nothing</span>'}</div><div class="optrow">${ask} ${s.state === 'paused' ? `<button class="go ghost" data-coact="resume" data-id="${esc(s.id)}">Resume</button>` : `<button class="go ghost" data-coact="pause" data-id="${esc(s.id)}">Pause</button>`} ${pin} ${del} <button class="go ghost" data-coact="see" data-id="${esc(s.id)}">See the data</button></div></td></tr>`;
+  }), o.sources.length ? 'No source matches these filters.' : 'Nothing is collected yet. Add sources under Sources, or set up a briefing.');
+}
+function renderCoCosts() {
+  const order = { briefing: 0, signal: 1, feedpage: 2, live: 3 };
+  const cs = [...CO.ov.consumers].sort((a, b) => (order[a.kind] ?? 9) - (order[b.kind] ?? 9) || b.cost7d - a.cost7d);
+  $('#coCosts').innerHTML = coTable(['Name', 'Sources', 'Data cost, 7 days', 'Per run'], cs.map((c) => {
+    const paid = c.kind === 'briefing';
+    return `<tr><td class="wrap">${esc(coUse(c))}</td><td>${fmt(c.sources)}</td><td>${paid ? (c.cost7d > 0 ? money(c.cost7d) : 'free') : '<span class="note">none</span>'}</td><td>${paid ? (c.costPerRun > 0 ? money(c.costPerRun) : 'free') : '<span class="note">none</span>'}</td></tr>`;
+  }), 'Nothing uses collected data yet.');
+}
+function renderCoDecide() {
+  const o = CO.ov, unused = o.sources.filter((s) => s.state === 'unused'), drift = o.drift ?? [];
+  $('#coDecide').hidden = !(unused.length || drift.length);
+  $('#coDecideBody').innerHTML = (unused.length ? `<h4 style="margin:0 0 6px">Not used</h4>${unused.map((s) => `<div class="sigwatch"><span class="grow" style="white-space:normal"><b>${esc(s.label)}</b> <span class="note">Nothing uses this any more; it is no longer collected.${s.unusedSince ? ` Since ${esc(coWhen(s.unusedSince))}.` : ''}</span></span>
+      ${CO.sure === `delete:${s.id}` ? `<button class="go" data-coact="delete" data-id="${esc(s.id)}">Delete for good?</button><button class="go ghost" data-coact="cancel">Cancel</button>` : `<button class="go ghost" data-coact="ask-delete" data-id="${esc(s.id)}">Delete</button>`}</div>`).join('')}` : '')
+    + (drift.length ? `<h4 style="margin:${unused.length ? 14 : 0}px 0 6px">In a feed list but not watched</h4>${drift.map((d, i) => `<div class="sigwatch"><span class="grow" style="white-space:normal"><b>${esc(d.label)}</b> <span class="note">is in the feed list ${esc(d.listName)} but not watched.</span></span><button class="go ghost" data-codrift="${i}">Add</button></div>`).join('')}` : '');
+}
+
+async function coSource(id, action, extra = {}) {
+  CO.sure = '';
+  try { const r = await post('/collect/source', { id, action, ...extra }); CO.ov = { ...r, drift: CO.ov?.drift ?? [] }; renderCollection(); toast({ check: 'Collected', pause: 'Paused', resume: 'Resumed', pin: 'Interval set', unpin: 'Interval is automatic again', delete: 'Deleted' }[action] ?? 'Done'); }
+  catch (e) { toast(e.message); renderCollection(); }
+}
+$('#collection').addEventListener('click', async (e) => {
+  const d = e.target.closest('[data-codrift]');
+  if (d) {
+    const r = CO.ov.drift[+d.dataset.codrift]; if (!r) return;
+    d.disabled = true;
+    try { await post('/mon/add', { source: r.source, query: r.query, label: r.label, list: r.list, intervalSec: 3600, ...(r.hnTag ? { hnTag: r.hnTag } : {}), ...(r.minPoints != null ? { minPoints: r.minPoints } : {}) }); toast('Watching'); await loadCollection(); }
+    catch (err) { toast(err.message); d.disabled = false; }
+    return;
+  }
+  const b = e.target.closest('[data-coact]'); if (!b) return;
+  const a = b.dataset.coact, id = b.dataset.id;
+  if (a === 'cancel') { CO.sure = ''; return renderCollection(); }
+  if (a === 'ask-check' || a === 'ask-delete') { CO.sure = `${a.slice(4)}:${id}`; return renderCollection(); }
+  if (a === 'see') {
+    CO.q = { source: id, kind: '', consumer: '', q: '', days: '0', offset: 0 };
+    $('#coQ').value = ''; $('#coQKind').value = ''; $('#coQDays').value = '0'; $('#coQSource').value = id; $('#coQUse').value = '';
+    $('#coBrowse').scrollIntoView({ behavior: 'smooth', block: 'start' }); return loadCollectItems();
+  }
+  b.disabled = true; coSource(id, a);
+});
+$('#collection').addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.matches('[data-copin]')) return t.value ? coSource(t.dataset.copin, 'pin', { intervalSec: +t.value }) : coSource(t.dataset.copin, 'unpin');
+  if (t.matches('#coFKind, #coFState, #coFUse')) return renderCoSources();
+  if (t.name === 'comode') {
+    const prev = CO.ov.mode;
+    post('/collect/settings', { mode: t.value }).then((r) => { CO.ov = { ...r, drift: CO.ov.drift }; renderCollection(); toast('Saved'); }).catch((err) => { toast(err.message); document.querySelectorAll('input[name=comode]').forEach((r) => { r.checked = r.value === prev; }); });
+    return;
+  }
+  const map = { coQSource: 'source', coQKind: 'kind', coQDays: 'days', coQUse: 'consumer' };
+  if (map[t.id]) { CO.q[map[t.id]] = t.value; CO.q.offset = 0; loadCollectItems(); }
+});
+$('#coQ').addEventListener('input', (e) => { clearTimeout(CO.timer); CO.timer = setTimeout(() => { CO.q.q = e.target.value.trim(); CO.q.offset = 0; loadCollectItems(); }, 350); });
+$('#coPrev').addEventListener('click', () => { CO.q.offset = Math.max(0, CO.q.offset - 50); loadCollectItems(); $('#coBrowse').scrollIntoView({ block: 'start' }); });
+$('#coNext').addEventListener('click', () => { CO.q.offset += 50; loadCollectItems(); $('#coBrowse').scrollIntoView({ block: 'start' }); });
+$('#coItems').addEventListener('click', (e) => {
+  const c = e.target.closest('[data-cosrc]'); if (!c) return;
+  CO.q.source = c.dataset.cosrc; CO.q.offset = 0; $('#coQSource').value = CO.q.source; loadCollectItems();
+});
+
+async function loadCollectItems() {
+  const box = $('#coItems'), my = ++CO.seq, q = CO.q;
+  box.dataset.loaded = '1'; box.innerHTML = '<div class="note" style="padding:14px 0">Loading…</div>';
+  const p = new URLSearchParams({ limit: '50', offset: String(q.offset) });
+  for (const k of ['source', 'kind', 'consumer', 'q']) if (q[k]) p.set(k, q[k]);
+  if (+q.days) p.set('days', q.days);
+  try {
+    const r = await fetch('/collect/items?' + p), d = await r.json().catch(() => ({}));
+    if (my !== CO.seq) return;
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    box.innerHTML = d.items.length ? d.items.map((i) => {
+      const nums = [[i.likes, 'like'], [i.replies, 'repl'], [i.retweets, 'repost'], [i.views, 'view']].filter(([n]) => n > 0).map(([n, w]) => w === 'repl' ? `${fmt(n)} ${n === 1 ? 'reply' : 'replies'}` : `${fmt(n)} ${w}${n === 1 ? '' : 's'}`);
+      const u = safeUrl(i.url), du = safeUrl(i.discussionUrl);
+      return `<div class="co-item"><div class="meta"><span class="badge">${esc(CO_ITEM[i.kind] ?? i.kind)}</span>${i.by ? `<span>${esc(i.by)}</span>` : ''}<span title="${esc(new Date(i.publishedAt).toLocaleString())}">${esc(coWhen(i.publishedAt))}</span>${nums.length ? `<span>${esc(nums.join(' · '))}</span>` : ''}</div>
+        ${i.title ? `<div class="tx"><b>${esc(i.title)}</b></div>` : ''}${i.text ? `<div class="tx">${esc(i.text)}</div>` : ''}
+        <div class="meta">${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${i.kind === 'x' ? 'Open the post' : i.kind === 'youtube' ? 'Open the video' : 'Open the article'}</a>` : ''}${du ? `<a href="${esc(du)}" target="_blank" rel="noopener noreferrer">Discussion</a>` : ''}
+          <span class="co-chips">${(i.sources ?? []).map((s) => `<button type="button" class="badge sigchip" data-cosrc="${esc(s.id)}" title="Show only this source">${esc(s.label)}</button>`).join('')}</span></div></div>`;
+    }).join('') : '<div class="empty" style="padding:24px 0">Nothing collected matches this.</div>';
+    const from = d.total ? d.offset + 1 : 0, to = d.offset + d.items.length;
+    $('#coPager').hidden = !d.total; $('#coPageInfo').textContent = `showing ${fmt(from)}-${fmt(to)} of ${fmt(d.total)}`;
+    $('#coPrev').disabled = d.offset <= 0; $('#coNext').disabled = to >= d.total;
+  } catch (e) { if (my === CO.seq) { box.innerHTML = `<div class="err">Could not load the data: ${esc(e.message)}</div>`; $('#coPager').hidden = true; } }
+}
+
 function show(tab) {
   if (tab === 'library') tab = 'lists';
   document.querySelectorAll('main > section').forEach((s) => (s.hidden = s.id !== tab));
@@ -3291,6 +3481,7 @@ function show(tab) {
   if (tab === 'signal' || tab === 'signalsetup') loadSignal();
   if (tab === 'sources') { renderWatches(); if (features.signal && !sig) loadSignal(); }
   if (tab === 'budgets') loadBudgets();
+  if (tab === 'collection') loadCollection();
   if (tab === 'views') loadViews();
   // Briefings and Briefing setup share one topic list: it moves to the tab that is open, which says whether issues or settings show.
   if (tab === 'publish' || tab === 'pubsetup') { window.pubMode = tab === 'pubsetup' ? 'setup' : 'issues'; (tab === 'pubsetup' ? $('#pubSetupHost') : $('#publish')).appendChild($('#pubLayout')); window.loadPublish?.(); }
@@ -3739,7 +3930,24 @@ function syncEstimate(form) {
     <span class="muted">X data up to ${usd(e.twitter)} for at most ${e.tweets.toLocaleString()} tweets${e.cap && e.uncapped > e.cap ? ` (the budget of ${usd(e.cap)} limits it; without it up to ${usd(e.uncapped)})` : ''}${e.covers != null ? ` <span class="perr">The budget is less than one page per list, so only about ${e.covers} of ${e.lists} lists get read.</span>` : ''}${e.llm == null ? '; the model price is unknown, so it is not included' : ` + model ${usd(e.llm)}`}. Real runs usually cost less, since not every page is full.${e.perRun > 0.25 && !e.cap ? ' That is a lot for one run: lower the posts per list, use Best posts, or set a data budget.' : ''}</span>
     ${st ? `<br><b>Actual</b>: ${usd(st.avg)} per run on average over ${st.runs} run${st.runs === 1 ? '' : 's'}; ${usd(st.total30)} in the last 30 days.` : ''}`;
 }
-const refreshEstimate = () => { const f = $('#pubDetail form'); if (f) syncEstimate(f); };
+const refreshEstimate = () => { const f = $('#pubDetail form'); if (f) { syncEstimate(f); syncCollect(f); } };
+// What this briefing's sources add to the collection: which are already collected for someone else, and what the rest cost. Never blocks saving.
+let collectTimer, collectSeq = 0;
+function syncCollect(form) {
+  clearTimeout(collectTimer);
+  if (!features.collection) return;
+  collectTimer = setTimeout(async () => {
+    const my = ++collectSeq, f = readForm(form), el = $('#pubCollect');
+    if (!el) return;
+    try {
+      const r = await post('/collect/estimate', { slug: sel === '+new' ? '' : sel, sources: f.sources, intervalHours: f.intervalHours, maxCost: +f.maxCost || 0 });
+      const box = $('#pubCollect'); if (my !== collectSeq || !box) return;
+      const have = (r.rows ?? []).filter((x) => x.collected);
+      box.hidden = !(r.rows ?? []).length;
+      box.innerHTML = `${have.length ? `Already collected: ${have.map((x) => `<b>${esc(x.label)}</b>${x.usedBy?.length ? ` (for ${esc(x.usedBy.join(', '))})` : ''}`).join('; ')}. ` : ''}${r.addedPerDay > 0 ? `This briefing adds about <b>${usd(r.addedPerDay)}</b> a day of X data to collect.` : 'This briefing adds nothing to collect.'} <a href="#collection" data-tabgo="collection">Collection</a>`;
+    } catch { const box = $('#pubCollect'); if (box) box.hidden = true; }
+  }, 500);
+}
 
 // What the audio costs, so the choice of template shows its price. Gemini TTS is billed per token on Replicate (about 25 audio tokens
 // per second of speech, roughly 15 characters a second); the per-character figure per model comes from the server (usdPerChar in src/replicate.ts).
@@ -3777,7 +3985,8 @@ function renderDetail(resetForm) {
     <details class="fold" data-fold="topic:sources" open><summary>Sources<span class="hint">what the briefing is written from</span></summary><div class="foldbody">
       <p class="muted" style="margin:0">Items from the last run interval are fetched from each source and merged.</p>
       <div id="pubSources" style="display:grid;gap:8px">${t.sources.map(srcRow).join('')}</div>
-      <p style="margin:0"><button type="button" class="sec" id="pubAddSrc">Add source</button></p></div></details>
+      <p style="margin:0"><button type="button" class="sec" id="pubAddSrc">Add source</button></p>
+      <p class="muted" id="pubCollect" style="margin:0" hidden></p></div></details>
     <details class="fold" data-fold="topic:instruction"${t.instruction ? ' open' : ''}><summary>Instruction for the summarizer<span class="hint">${t.instruction ? esc(t.instruction.slice(0, 60)) : 'optional'}</span></summary><div class="foldbody">
       <textarea name="instruction" rows="8" maxlength="8000" style="min-height:180px" placeholder="Write in Swedish. Focus on party leaders and policy announcements.">${esc(t.instruction)}</textarea></div></details>
     <details class="fold" data-fold="topic:schedule" open><summary>Schedule and model<span class="hint">when it runs, length, cost limit</span></summary><div class="foldbody">
@@ -3822,7 +4031,7 @@ function renderDetail(resetForm) {
       ${isNew ? '' : `<a href="#publish" data-tabgo="publish">See what it has written &rarr;</a><a href="/${esc(t.slug)}" target="_blank">Public page</a><button type="button" class="danger" id="pubDel" style="margin-left:auto">Delete topic</button>`}</div>
     ${isNew ? '' : `<p class="muted" style="margin:0">Last run: ${when(t.lastRun)}${t.lastError ? ` · <span class="perr">${esc(t.lastError)}</span>` : ''} · Next: ${t.enabled ? when(t.nextRun) : 'paused'}</p>`}
   </form></div>`;
-  syncModel($('form', d)); syncEstimate($('form', d)); syncAudioNote($('form', d)); syncImageNote($('form', d)); window.restoreFolds?.(d);
+  syncModel($('form', d)); syncEstimate($('form', d)); syncCollect($('form', d)); syncAudioNote($('form', d)); syncImageNote($('form', d)); window.restoreFolds?.(d);
 }
 // The top of a topic on Briefings: its state and what can be done now. Its settings are on Briefing setup.
 function renderPubHead(t) {
@@ -3881,6 +4090,7 @@ function readForm(f) {
   return { ...v, fallback, sources, intervalHours: +v.intervalHours, hourUtc: +v.hourUtc, enabled: !!v.enabled, autoPublish: !!v.autoPublish, listed: !!v.listed, toSignal: !!v.toSignal, audioAuto: !!v.audioAuto, imageAuto: !!v.imageAuto, isNew: sel === '+new', slug: sel === '+new' ? v.slug : sel };
 }
 
+$('#pubDetail').addEventListener('input', (e) => { if (e.target.closest('form') && e.target.closest('.src')) refreshEstimate(); });
 $('#pubDetail').addEventListener('change', (e) => {
   if (e.target.closest('#pubTplForm') || e.target.closest('#pubImgForm')) return;      // the template forms have their own handlers (and their own `model` field)
   if (e.target.closest('form')) queueMicrotask(refreshEstimate);

@@ -5,11 +5,13 @@
 import { DurableObject } from 'cloudflare:workers';
 import { llmCost } from '../summarize/pricing';
 
-export type CostKind = 'explore' | 'history' | 'monitor' | 'summarize' | 'publish' | 'audio' | 'image' | 'analysis' | 'signal';
+export type CostKind = 'explore' | 'history' | 'monitor' | 'summarize' | 'publish' | 'audio' | 'image' | 'analysis' | 'signal' | 'collect';
 export interface CostEntry {
   kind: CostKind; ref?: string; label?: string;
   twitter?: number; llm?: number; tweets?: number; calls?: number; tokensIn?: number; tokensOut?: number; model?: string;
   run?: { ok: boolean; note?: string };      // a single report/summary: also kept as its own row
+  /** A briefing's share of what collecting its data cost. Already in the ledger under 'collect', so it only counts in what a run is said to cost. */
+  allocated?: number;
 }
 
 const DAY = 86_400_000;
@@ -26,6 +28,7 @@ export class CostDO extends DurableObject<Env> {
     sql.exec(`CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL, label TEXT NOT NULL,
       twitter REAL NOT NULL, llm REAL NOT NULL, tweets INTEGER NOT NULL, tin INTEGER NOT NULL, tout INTEGER NOT NULL, model TEXT NOT NULL, ok INTEGER NOT NULL, note TEXT NOT NULL)`);
     sql.exec('CREATE INDEX IF NOT EXISTS runs_by_ref ON runs (kind, ref, ts)');
+    try { sql.exec('ALTER TABLE runs ADD COLUMN allocated REAL NOT NULL DEFAULT 0'); } catch { /* already there */ }
     // Entries that used a model but could not be priced (a model missing from the price tables): counted, so the Costs tab can say its numbers are low.
     try { sql.exec('ALTER TABLE daily ADD COLUMN unpriced INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
     this.repriceOld();
@@ -61,8 +64,8 @@ export class CostDO extends DurableObject<Env> {
          tweets = tweets + excluded.tweets, calls = calls + excluded.calls, tin = tin + excluded.tin, tout = tout + excluded.tout, n = n + 1, unpriced = unpriced + excluded.unpriced`,
       day(now), e.kind, ref, label, twitter, llm, tweets, calls, tin, tout, unpriced);
     if (e.run) {
-      this.ctx.storage.sql.exec('INSERT INTO runs (ts, kind, ref, label, twitter, llm, tweets, tin, tout, model, ok, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        now, e.kind, ref, label, twitter, llm, tweets, tin, tout, String(e.model ?? '').slice(0, 120), e.run.ok ? 1 : 0, String(e.run.note ?? '').slice(0, 200));
+      this.ctx.storage.sql.exec('INSERT INTO runs (ts, kind, ref, label, twitter, llm, tweets, tin, tout, model, ok, note, allocated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        now, e.kind, ref, label, twitter, llm, tweets, tin, tout, String(e.model ?? '').slice(0, 120), e.run.ok ? 1 : 0, String(e.run.note ?? '').slice(0, 200), num(e.allocated));
     }
   }
 
@@ -88,7 +91,7 @@ export class CostDO extends DurableObject<Env> {
   topicStats(): Record<string, { runs: number; avg: number; total30: number; last: number }> {
     const out: Record<string, { runs: number; avg: number; total30: number; last: number }> = {};
     const r = this.ctx.storage.sql.exec<{ ref: string; runs: number; avg: number; total30: number; last: number }>(
-      `SELECT ref, COUNT(*) AS runs, AVG(twitter + llm) AS avg, SUM(CASE WHEN ts >= ? THEN twitter + llm ELSE 0 END) AS total30, MAX(ts) AS last FROM runs WHERE kind = 'publish' AND ok = 1 GROUP BY ref`, Date.now() - 30 * DAY).toArray();
+      `SELECT ref, COUNT(*) AS runs, AVG(twitter + llm + allocated) AS avg, SUM(CASE WHEN ts >= ? THEN twitter + llm + allocated ELSE 0 END) AS total30, MAX(ts) AS last FROM runs WHERE kind = 'publish' AND ok = 1 GROUP BY ref`, Date.now() - 30 * DAY).toArray();
     for (const x of r) out[x.ref] = { runs: x.runs, avg: x.avg, total30: x.total30, last: x.last };
     return out;
   }

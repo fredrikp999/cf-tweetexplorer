@@ -1,14 +1,13 @@
-// Monitor: polling watches stored in the Durable Object's SQLite, checked from alarms.
-// Same behaviour as the local server: persisted checkpoint + seen ids, overlap window, backoff,
-// daily spend cap. The browser polls /mon/state and /mon/feed (no long-lived streams to pay for).
+// Monitor: what is watched, the Live feed and Signal's counts. The fetching itself is done by the collection layer (collect.ts): this object tells it what
+// is watched, and it delivers new items and each watch's status to /mon/collected. The browser polls /mon/state and /mon/feed (no long-lived streams to pay for).
 import { DurableObject } from 'cloudflare:workers';
-import { COST_PER_TWEET, OutOfCredits, json, search, slim, type Tweet } from '../lib/twitterapi';
+import { json } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
-import { fetchHn, HN_TAGS, type HnTag } from '../sources/hn';
+import { HN_TAGS, type HnTag } from '../sources/hn';
 import { expandShorthand } from '../sources/presets';
-import { checkFeedUrl, fetchRss } from '../sources/rss';
+import { checkFeedUrl } from '../sources/rss';
 import { isYoutubeFeed, resolveYoutubeFeed } from '../sources/youtube';
-import { isSource, toFeedShape, type FetchResult, type SourceKind } from '../sources/types';
+import { isSource, type SourceKind } from '../sources/types';
 import { extractTerms } from '../signal/terms';
 import { distinctive, findEvergreen, notSteady, rising, scoreTerms, type Counts, type GroupInfo, type ScoredTerm } from '../signal/score';
 import { boostByEngagement, indexItems, mergeTopics, REACTION_CAP, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
@@ -22,14 +21,10 @@ import { STOP } from '../history/stats';
 import { complete, defaultTiers, modelOptions } from '../llm/analysis';
 import { useGateway } from '../llm/gateway.ts';
 
-const OVERLAP = 90;        // seconds re-read before the checkpoint; duplicates removed by id
-const MAX_PAGES = 5;
 const SEEN_KEEP = 1000;
 const FEED_KEEP = 500;
 const MAX_WATCHES = 50;
-const FIRST_CHECK_ITEMS = 10; // a new RSS or Hacker News watch shows the latest few items, not nothing until the next post
 const MIN_INTERVAL = 15, MAX_INTERVAL = 86_400;
-const MAX_INFLIGHT = 3;
 const SIGNAL_KEEP_DAYS = 30;   // Signal keeps daily term counts this long: two windows of at most SIGNAL_MAX_DAYS, with room to spare
 const SIGNAL_MAX_DAYS = 14;
 const FIRST_MAX_ITEMS = 8000;   // the newest items Who Said It First reads; anything older is not judged
@@ -37,6 +32,8 @@ const BRIEF_WEIGHT = 2;    // the starting weight of a group that only holds bri
 const BRIEF_KEEP = 3000;   // posts from briefings kept for Signal's headlines, apart from the live feed so they never push its items out
 const AI_QUEUE_MAX = 3000, AI_BACKLOG_DAYS = 14, AI_RETRY_MS = 10 * 60_000;
 interface SignalAi { enabled: boolean; model: string; dailyCap: number }
+/** Requests that change what is watched or who uses it: the collection layer's plan follows from these. */
+const COLLECT_SYNC = new Set(['add', 'update', 'delete', 'settings', 'signal-regroup', 'signal-delete-group', 'view-save', 'view-delete', 'signal-board-save', 'signal-board-delete']);
 const SOURCE_NAME: Record<SourceKind, string> = { x: 'X', rss: 'RSS and blogs', hn: 'Hacker News', youtube: 'YouTube' };
 
 interface Watch {
@@ -87,7 +84,6 @@ function cleanAliases(raw: unknown): Record<string, string> {
 const cleanGroup = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
 
 export class MonitorDO extends DurableObject<Env> {
-  private running = new Set<string>();
   private pubCache = new Map<string, { at: number; v: unknown }>();   // public Signal answers, cleared by any change
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -138,42 +134,28 @@ export class MonitorDO extends DurableObject<Env> {
     const s = this.getMeta<Spend>('spend', { day: today(), cost: 0 });
     return s.day === today() ? s : { day: today(), cost: 0 };
   }
-  private addSpend(c: number): void { const s = this.spend(); this.setMeta('spend', { day: s.day, cost: s.cost + c }); }
   private cap(): number { return this.getMeta<{ dailyCap: number }>('settings', { dailyCap: 2 }).dailyCap; }
 
   private view(w: Watch) {
     const base = sourceOf(w) === 'x' ? [w.query, w.originalsOnly && '-filter:replies', w.includeRetweets && 'include:nativeretweets'].filter(Boolean).join(' ') : w.query;
-    return { ...w, source: sourceOf(w), running: this.running.has(w.id), fullQuery: base };
+    return { ...w, source: sourceOf(w), running: false, fullQuery: base };
   }
   private snapshot() {
     const spend = this.spend(), dailyCap = this.cap();
     return { watches: this.watches().map((w) => this.view(w)), settings: { dailyCap }, spend, capped: spend.cost >= dailyCap, youtubeApi: !!this.env.YOUTUBE_API_KEY };
   }
 
-  // ---- scheduling
+  // ---- scheduling: this object only wakes for Signal's model and its daily tidying, or until the collection layer has taken over its watches
+  private collectReady(): boolean { return this.getMeta('collectReady', false); }
   private async reschedule(): Promise<void> {
-    const active = this.watches().filter((w) => w.enabled && !w.briefing), wake = this.aiWake();
-    if (!active.length) { if (wake) await this.ctx.storage.setAlarm(wake); else await this.ctx.storage.deleteAlarm(); return; }
-    let next = Math.min(...active.map((w) => w.nextRun));
-    // Capped: X watches wait, free sources carry on. If only X watches are left, look again in 10 min.
-    if (this.spend().cost >= this.cap()) {
-      const free = active.filter((w) => sourceOf(w) !== 'x').map((w) => w.nextRun);
-      next = free.length ? Math.min(...free) : Math.max(next, Date.now() + 600_000);
-    }
-    if (wake) next = Math.min(next, wake);   // items are waiting for the model
-    await this.ctx.storage.setAlarm(Math.max(next, Date.now() + 1000));
+    const wake = this.aiWake(), now = Date.now(), tidy = Date.parse(today() + 'T00:00:00Z') + 86_400_000 + 60_000;
+    let next = wake ? Math.min(wake, tidy) : tidy;
+    if (!this.collectReady()) next = Math.min(next, now + 60_000);
+    await this.ctx.storage.setAlarm(Math.max(next, now + 1000));
   }
 
   async alarm(): Promise<void> {
-    try {
-      const capped = this.spend().cost >= this.cap(), now = Date.now();
-      const due = this.watches().filter((w) => w.enabled && w.nextRun <= now && !this.running.has(w.id) && (!capped || sourceOf(w) !== 'x'));
-      for (let i = 0; i < due.length; i += MAX_INFLIGHT) {
-        await Promise.all(due.slice(i, i + MAX_INFLIGHT).map((w) => this.check(w.id)));
-      }
-    } catch (err) {
-      console.error('monitor alarm failed', err instanceof Error ? err.message : String(err));
-    }
+    if (!this.collectReady()) await this.syncCollect();
     try { await this.processAi(Date.now() + 20_000); } catch (err) { console.error('signal topics failed', err instanceof Error ? err.message : String(err)); }
     this.pruneSignal();
     await this.reschedule();
@@ -186,90 +168,43 @@ export class MonitorDO extends DurableObject<Env> {
     this.ctx.storage.sql.exec('INSERT OR IGNORE INTO seen (watch, tweet, at) VALUES (?, ?, ?)', watch, item, Date.now());
   }
 
-  // X: pages of advanced_search since the checkpoint, billed per tweet.
-  private async checkX(w: Watch, since: number, out: { found: Found[]; cost: number; error: string }): Promise<void> {
-    const base = [w.query, w.originalsOnly && '-filter:replies', w.includeRetweets && 'include:nativeretweets'].filter(Boolean).join(' ');
-    let cursor = '', pages = 0, truncated = false;
-    while (pages < MAX_PAGES) {
-      const r = await search({ key: this.env.TWITTERAPI_IO_KEY, query: `${base} since_time:${since}`, cursor });
-      const tweets = r.tweets ?? []; pages++;
-      const c = Math.max(1, tweets.length) * COST_PER_TWEET; out.cost += c; this.addSpend(c);
-      await recordCost(this.env, { kind: 'monitor', ref: w.id, label: w.label, twitter: c, tweets: tweets.length, calls: 1 });
-      for (const t of tweets) {
-        if (this.isSeen(w.id, t.id)) continue;
-        this.markSeen(w.id, t.id);
-        out.found.push({ id: t.id, ts: Date.parse(t.createdAt), json: slim(t) });
-      }
-      if (!r.has_next_page || !r.next_cursor || !tweets.length) break;
-      if (pages === MAX_PAGES) truncated = true;
-      cursor = r.next_cursor;
-    }
-    if (truncated) out.error = `burst larger than ${MAX_PAGES * 20} tweets; some may be missed`;
-  }
-
-  // RSS and Hacker News: free, so nothing is added to the spend. Everything on the first check is marked seen,
-  // but only the newest few are shown, so a new watch is not empty.
-  private async checkOther(w: Watch, since: number, out: { found: Found[]; cache?: FetchResult['cache']; title?: string }): Promise<void> {
-    let r: FetchResult & { title?: string };
-    if (sourceOf(w) === 'rss' || sourceOf(w) === 'youtube') r = await fetchRss({ url: w.query, etag: w.etag, lastModified: w.lastModified });
-    else r = await fetchHn({ tag: w.hnTag ?? 'front_page', query: w.query || undefined, minPoints: w.minPoints, since });
-    out.cache = r.cache; out.title = r.title;
-    const fresh = r.items.filter((i) => !this.isSeen(w.id, i.id));
-    for (const i of fresh) this.markSeen(w.id, i.id);
-    fresh.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-    for (const i of w.checks === 0 ? fresh.slice(0, FIRST_CHECK_ITEMS) : fresh) out.found.push({ id: i.id, ts: Date.parse(i.at), json: toFeedShape(i) });
-  }
-
-  private async check(id: string): Promise<void> {
-    const w0 = this.watch(id);
-    if (!w0 || w0.briefing) return;
-    this.running.add(id);
-    const sql = this.ctx.storage.sql;
-    const source = sourceOf(w0);
-    const startTs = Math.floor(Date.now() / 1000);
-    const since = Math.max(w0.lastCheckedTs - OVERLAP, w0.created - 1);
-    const out: { found: Found[]; cost: number; error: string; cache?: FetchResult['cache']; title?: string } = { found: [], cost: 0, error: '' };
-    let fatal = false;
+  // ---- the collection layer
+  /** Tells it every watch and who uses it. The first successful call also hands over their checkpoints, and from then on it does the fetching. Never throws: a watch keeps its data here either way. */
+  private async syncCollect(): Promise<void> {
     try {
-      if (source === 'x') await this.checkX(w0, since, out);
-      else await this.checkOther(w0, since, out);
-    } catch (err) {
-      out.error = err instanceof Error ? err.message : String(err);
-      fatal = true; // checkpoint stays put so the same window is retried
-      if (err instanceof OutOfCredits) out.error = err.message;
-    }
-    const { found, cost, error } = out;
-
-    // Merge onto the latest copy: the user may have paused or edited the watch while we were fetching.
-    const w = this.watch(id);
-    if (w) {
-      w.cost += cost; w.lastRun = Date.now(); w.lastError = error;
-      if (fatal) {
-        w.errors++;
-        if (error.startsWith('Out of credits')) w.enabled = false;
-        else w.nextRun = Date.now() + Math.min(600, w.intervalSec * 2 ** Math.min(w.errors, 6)) * 1000;
-      } else {
-        w.lastCheckedTs = startTs; w.checks++; w.errors = 0; w.nextRun = Date.now() + w.intervalSec * 1000;
-        if (out.cache) { w.etag = out.cache.etag; w.lastModified = out.cache.lastModified; }
-        if (w.autoLabel && out.title) { w.label = out.title.slice(0, 60); w.autoLabel = false; }
-      }
-      found.sort((a, b) => a.ts - b.ts); // oldest first, feed ends newest
-      w.found += found.length;
-      this.ctx.storage.transactionSync(() => {
-        for (const f of found) {
-          // Items that are not tweets remember which feed they came from, so a briefing can say what it drew on.
-          const json = source === 'x' ? f.json : { ...(f.json as object), feed: w.label, feedUrl: source === 'hn' ? 'https://news.ycombinator.com/' : w.query };
-          sql.exec('INSERT INTO feed (watch, label, seen_at, json, source) VALUES (?, ?, ?, ?, ?)', id, w.label, Date.now(), JSON.stringify(json), source);
-        }
-        this.countTerms(id, found);
-        if (this.aiConfig().enabled) this.enqueueAi(id, found);
-        // Each source keeps its own FEED_KEEP items, so a busy one cannot push the others out.
-        sql.exec("DELETE FROM feed WHERE source = ?1 AND watch NOT LIKE 'brief:%' AND seq <= (SELECT MAX(seq) FROM feed WHERE source = ?1 AND watch NOT LIKE 'brief:%') - ?2", source, FEED_KEEP);
-        sql.exec('DELETE FROM seen WHERE watch = ?1 AND rowid NOT IN (SELECT rowid FROM seen WHERE watch = ?1 ORDER BY at DESC LIMIT ?2)', id, SEEN_KEEP);
-        this.saveWatch(w);
+      const names = await this.listNames(), views = this.views(), boards = this.boards();
+      const watches = this.watches().filter((w) => !w.briefing).map((w) => {
+        const g = this.groupOf(w, names), uses: Array<{ kind: string; id: string; label: string }> = [{ kind: 'live', id: 'feed', label: 'Live feed' }];
+        if (!w.noSignal) uses.push({ kind: 'signal', id: g.key, label: boards.filter((b) => b.groups.includes(g.key)).map((b) => b.title)[0] ?? g.name });
+        for (const v of views) if (v.source === 'all' || (v.source.startsWith('src:') ? sourceOf(w) === v.source.slice(4) : this.listKey(w) === v.source)) if (!v.kind || sourceOf(w) === v.kind) uses.push({ kind: 'feedpage', id: v.slug, label: v.title });
+        return { ...w, source: sourceOf(w), uses };
       });
-    }
-    this.running.delete(id);
+      const res = await this.env.COLLECT.getByName('main').fetch(new Request('https://internal/collect/sync-monitor', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ watches, dailyCap: this.cap(), import: !this.collectReady() }) }));
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      this.setMeta('collectReady', true);
+    } catch (err) { console.error('collection sync failed', err instanceof Error ? err.message : String(err)); }
+  }
+  /** What was collected for a watch, and how its last check went. The status lives here too, so these pages work if the collection layer does not answer. */
+  private ingestCollected(id: string, found: Found[], status: Partial<Watch>): void {
+    const w = this.watch(id);
+    if (!w) return;
+    Object.assign(w, status);
+    const source = sourceOf(w), sql = this.ctx.storage.sql;
+    // Deliveries can repeat, and the first one after taking over re-reads what the feed already holds: the seen ids drop those.
+    const fresh = found.filter((f) => f.id && !this.isSeen(id, f.id));
+    this.ctx.storage.transactionSync(() => {
+      for (const f of fresh) {
+        this.markSeen(id, f.id);
+        sql.exec('INSERT INTO feed (watch, label, seen_at, json, source) VALUES (?, ?, ?, ?, ?)', id, w.label, Date.now(), JSON.stringify(f.json), source);
+      }
+      this.countTerms(id, fresh);
+      if (this.aiConfig().enabled) this.enqueueAi(id, fresh);
+      // Each source keeps its own FEED_KEEP items, so a busy one cannot push the others out.
+      sql.exec("DELETE FROM feed WHERE source = ?1 AND watch NOT LIKE 'brief:%' AND seq <= (SELECT MAX(seq) FROM feed WHERE source = ?1 AND watch NOT LIKE 'brief:%') - ?2", source, FEED_KEEP);
+      sql.exec('DELETE FROM seen WHERE watch = ?1 AND rowid NOT IN (SELECT rowid FROM seen WHERE watch = ?1 ORDER BY at DESC LIMIT ?2)', id, SEEN_KEEP);
+      this.saveWatch(w);
+    });
   }
 
   /**
@@ -921,6 +856,11 @@ export class MonitorDO extends DurableObject<Env> {
 
   // ---- HTTP API (same routes and JSON as the local server)
   async fetch(request: Request): Promise<Response> {
+    const res = await this.handle(request), name = new URL(request.url).pathname.replace(/^\/mon\//, '');
+    if (request.method === 'POST' && res.ok && COLLECT_SYNC.has(name)) await this.syncCollect();   // what is watched, or who uses it, changed
+    return res;
+  }
+  private async handle(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const name = url.pathname.replace(/^\/mon\//, '');
     try {
@@ -1078,6 +1018,16 @@ export class MonitorDO extends DurableObject<Env> {
         this.setMeta('signalFilter', cleanFilter(b.words));
         return json(this.filterInfo());
       }
+      if (name === 'collected') {   // from the collection layer: new items and statuses, for watches and for briefings that count in Signal
+        if (b.spend && typeof b.spend === 'object') this.setMeta('spend', b.spend);
+        const deliveries = (Array.isArray(b.deliveries) ? b.deliveries : []) as Array<{ watch?: string; found?: Found[]; status?: Partial<Watch>; briefing?: { slug: string; title: string; group: string }; posts?: Array<Record<string, unknown>> }>;
+        for (const d of deliveries) {
+          if (d.briefing) this.ingestBriefing(String(d.briefing.slug).slice(0, 40), String(d.briefing.title ?? d.briefing.slug).slice(0, 50), String(d.briefing.group ?? ''), d.posts ?? []);
+          else if (d.watch) this.ingestCollected(d.watch, d.found ?? [], d.status ?? {});
+        }
+        await this.reschedule();
+        return json({ ok: true });
+      }
       if (name === 'signal-ingest') {   // a briefing hands over the posts it fetched
         const posts = (Array.isArray(b.posts) ? b.posts : []).filter((p): p is Record<string, unknown> => !!p && typeof p === 'object');
         const slug = String(b.slug ?? '').slice(0, 40);
@@ -1183,7 +1133,10 @@ export class MonitorDO extends DurableObject<Env> {
         await this.reschedule();
         return json({ ok: true });
       }
-      if (name === 'check') { w.nextRun = 0; this.saveWatch(w); await this.reschedule(); return json({ ok: true }); }
+      if (name === 'check') {
+        await this.env.COLLECT.getByName('main').fetch(new Request('https://internal/collect/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ watch: w.id }) }));
+        return json({ ok: true });
+      }
       return json({ error: 'unknown monitor route' }, 404);
     } catch (err) {
       console.error('monitor request failed', name, err instanceof Error ? err.message : String(err));

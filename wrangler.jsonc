@@ -19,14 +19,16 @@
       { "name": "HISTORY", "class_name": "HistoryDO" },
       { "name": "LISTS", "class_name": "ListsDO" },
       { "name": "PUBLISH", "class_name": "PublishDO" },
-      { "name": "COST", "class_name": "CostDO" }
+      { "name": "COST", "class_name": "CostDO" },
+      { "name": "COLLECT", "class_name": "CollectDO" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["MonitorDO", "HistoryDO"] },
     { "tag": "v2", "new_sqlite_classes": ["ListsDO"] },
     { "tag": "v3", "new_sqlite_classes": ["PublishDO"] },
-    { "tag": "v4", "new_sqlite_classes": ["CostDO"] }
+    { "tag": "v4", "new_sqlite_classes": ["CostDO"] },
+    { "tag": "v5", "new_sqlite_classes": ["CollectDO"] }
   ],
 
   // Audio versions of briefings (text to speech with Gemini on Replicate): the MP3 files. Create once: `npx wrangler r2 bucket create tweet-explorer-audio`.
@@ -67,7 +69,8 @@
           { "name": "HISTORY", "class_name": "HistoryDO" },
           { "name": "LISTS", "class_name": "ListsDO" },
           { "name": "PUBLISH", "class_name": "PublishDO" },
-          { "name": "COST", "class_name": "CostDO" }
+          { "name": "COST", "class_name": "CostDO" },
+          { "name": "COLLECT", "class_name": "CollectDO" }
         ]
       },
       "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "tweet-explorer-audio-staging" }],

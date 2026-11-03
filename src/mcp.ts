@@ -76,6 +76,17 @@ function buildServer(env: Env): McpServer {
     annotations: readOnly,
   }, ({ slug, id }) => ask(env.PUBLISH, '/adm/issue', { slug, id }));
 
+  server.registerTool('list_collection_sources', {
+    description: 'The data collection layer: every source that is collected, how often, its health and limits hit, what it cost in the last 7 days, and which briefings, Signals and feed pages use it. Also shows the collection mode and how live fetches compare with the store.',
+    annotations: readOnly,
+  }, () => ask(env.COLLECT, '/collect/overview'));
+
+  server.registerTool('get_collected_items', {
+    description: `Items the collection layer has stored, newest first (at most 100 per call; page with offset). Filter by source id, kind, consumer ("briefing:<slug>"), words or days.`,
+    inputSchema: { source: z.string().optional(), kind: z.enum(['x', 'rss', 'hn', 'youtube']).optional(), consumer: z.string().optional(), q: z.string().optional(), days: z.number().int().min(1).max(90).optional(), limit: z.number().int().min(1).max(100).default(50), offset: z.number().int().min(0).default(0) },
+    annotations: readOnly,
+  }, (a) => ask(env.COLLECT, '/collect/items', a));
+
   server.registerTool('list_user_lists', {
     description: 'Your curated lists of accounts.',
     annotations: readOnly,
