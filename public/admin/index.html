@@ -626,7 +626,8 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
         <label><input type="radio" name="monSrc" value="x"><span>X <small data-n="x"></small></span></label>
         <label><input type="radio" name="monSrc" value="rss"><span>RSS <small data-n="rss"></small></span></label>
         <label><input type="radio" name="monSrc" value="hn"><span>Hacker News <small data-n="hn"></small></span></label>
-        <label><input type="radio" name="monSrc" value="youtube"><span>YouTube <small data-n="youtube"></small></span></label></div>
+        <label><input type="radio" name="monSrc" value="youtube"><span>YouTube <small data-n="youtube"></small></span></label>
+        <label><input type="radio" name="monSrc" value="arxiv"><span>arXiv <small data-n="arxiv"></small></span></label></div>
       <select id="monListFilter" data-feature="sources" hidden style="padding:2px 6px;font-size:12px"><option value="">all feed lists</option></select>
       <select id="monFilter" style="padding:2px 6px;font-size:12px"><option value="">all watches</option></select></h3>
       <div id="monFeed"><div class="empty">Nothing yet. New items appear here as they are posted.</div></div></div>
@@ -725,7 +726,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <h2 class="ssh">Add a source</h2>
     <form id="monForm">
       <label data-feature="sources" hidden>Source
-        <select name="source"><option value="x">X (Twitter)</option><option value="rss">RSS / Atom feed</option><option value="hn">Hacker News</option><option value="youtube">YouTube channel</option><option value="flist">A list</option></select></label>
+        <select name="source"><option value="x">X (Twitter)</option><option value="rss">RSS / Atom feed</option><option value="hn">Hacker News</option><option value="youtube">YouTube channel</option><option value="arxiv">arXiv papers</option><option value="flist">A list</option></select></label>
       <label data-src="rss" hidden>Kind of feed <select name="tpl" id="monTpl"></select></label>
       <label class="grow" data-src="flist" hidden>List <select name="flist" id="monFLSel"></select></label>
       <label data-src="x">Watch
@@ -906,7 +907,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
           <div class="optrow"><input name="q" placeholder='e.g. "claude code" min_faves:50 lang:en' style="min-width:260px;flex:1" aria-label="Search">
             <div class="seg" role="radiogroup"><label><input type="radio" name="sort" value="Latest" checked><span>Newest</span></label><label><input type="radio" name="sort" value="Top"><span>Popular</span></label></div><div class="seg" role="radiogroup"><label><input type="radio" name="swin" value="0"><span>Any time</span></label><label><input type="radio" name="swin" value="24"><span>24 hours</span></label><label><input type="radio" name="swin" value="168" checked><span>7 days</span></label><label><input type="radio" name="swin" value="720"><span>30 days</span></label></div></div></div>
         <div class="opt" data-srcrow="feed"><span class="ol">Watch</span>
-          <div class="optrow"><select name="feedSource" aria-label="Source" data-feature="sources" hidden><option value="">All sources combined</option><option value="x">X only</option><option value="rss">RSS only</option><option value="hn">Hacker News only</option><option value="youtube">YouTube only</option></select><select name="watch" aria-label="Watch"><option value="">All watches</option></select><span class="note">the last 100 items captured</span></div></div>
+          <div class="optrow"><select name="feedSource" aria-label="Source" data-feature="sources" hidden><option value="">All sources combined</option><option value="x">X only</option><option value="rss">RSS only</option><option value="hn">Hacker News only</option><option value="youtube">YouTube only</option><option value="arxiv">arXiv only</option></select><select name="watch" aria-label="Watch"><option value="">All watches</option></select><span class="note">the last 100 items captured</span></div></div>
         <div class="opt"><span class="ol" id="sumFocusLabel">Focus (optional)</span>
           <input name="topic" maxlength="8000" placeholder="e.g. product launches, or who disagrees with whom" style="width:100%" aria-label="Focus"></div>
         <div class="opt"><span class="ol">Length</span><div class="seg" role="radiogroup"><label><input type="radio" name="len" value="brief"><span>Brief</span></label><label><input type="radio" name="len" value="standard" checked><span>Standard</span></label><label><input type="radio" name="len" value="detailed"><span>Detailed</span></label></div></div>
@@ -1524,7 +1525,7 @@ const mf = $('#monForm');
 const money = (n) => '$' + (n < 0.1 ? n.toFixed(4) : n.toFixed(2));
 let mon = { watches: [], settings: { dailyCap: 2 }, spend: { cost: 0 }, capped: false };
 let feedItems = [], monUnseen = 0, monFilter = '', monSrc = '', monList = '';
-const SRC_NAME = { x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube' };
+const SRC_NAME = { x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube', arxiv: 'arXiv' };
 const srcOf = (o) => o.source || 'x';
 const safeUrl = (u) => (/^https?:\/\//i.test(u ?? '') ? u : '');
 const monVisible = () => !$('#monitor').hidden && !document.hidden;
@@ -1614,8 +1615,8 @@ function applyMonSource() {
   $('#monQWrap').hidden = isList || isXList || src === 'flist'; $('#monListWrap').hidden = !isList; $('#monXListWrap').hidden = !isXList;
   if (isXList) fillMonXLists();
   if (src === 'flist') fillMonLists();
-  $('#monQLabel').textContent = src === 'rss' ? 'Feed address or shorthand' : src === 'youtube' ? 'Channel, @handle or playlist' : src === 'hn' ? 'Keywords (optional)' : acc ? 'Handle' : 'Search query (X operators work)';
-  mf.query.placeholder = src === 'rss' ? 'https://example.com/feed.xml, r/rust, github:owner/repo, news: climate' : src === 'youtube' ? '@Fireship or https://www.youtube.com/@Fireship' : src === 'hn' ? 'rust, "open source"' : acc ? 'anthropicai' : '"claude code" lang:en min_faves:5';
+  $('#monQLabel').textContent = src === 'rss' ? 'Feed address or shorthand' : src === 'youtube' ? 'Channel, @handle or playlist' : src === 'hn' ? 'Keywords (optional)' : src === 'arxiv' ? 'Categories or a search' : acc ? 'Handle' : 'Search query (X operators work)';
+  mf.query.placeholder = src === 'rss' ? 'https://example.com/feed.xml, r/rust, github:owner/repo, news: climate' : src === 'youtube' ? '@Fireship or https://www.youtube.com/@Fireship' : src === 'hn' ? 'rust, "open source"' : src === 'arxiv' ? 'cs.CL, cs.LG  or  au:"Hinton" AND cat:cs.LG  or  diffusion models' : acc ? 'anthropicai' : '"claude code" lang:en min_faves:5';
   if (src === 'rss') { const t = tplField(mf.tpl, mf.query, $('#monQLabel')); if (t) $('#monQWrap').hidden = t === 'none'; }
   monCostText();
 }
@@ -1639,7 +1640,7 @@ mf.addEventListener('submit', async (e) => {
   if (src !== 'x') {
     let address = mf.query.value;
     if (src === 'rss' && mf.tpl.value) { try { address = tplLine(mf.tpl.value, address); } catch (err) { return toast(err.message); } }
-    else if ((src === 'rss' || src === 'youtube') && !mf.query.value.trim()) return toast(src === 'youtube' ? 'Enter a channel, an @handle or a playlist' : 'Enter the address of the feed');
+    else if ((src === 'rss' || src === 'youtube' || src === 'arxiv') && !mf.query.value.trim()) return toast(src === 'youtube' ? 'Enter a channel, an @handle or a playlist' : src === 'arxiv' ? 'Enter categories (cs.CL, cs.LG) or a search' : 'Enter the address of the feed');
     try {
       await post('/mon/add', { source: src, query: address, intervalSec: sec, hnTag: mf.hnTag.value, minPoints: +mf.minPoints.value || 0, group: mf.group.value });
       mf.query.value = ''; toast('Watch added; the first check runs now');
@@ -1689,7 +1690,7 @@ function listKeyOf(w) {
   const a = /^List: (.+?)(?: \(\d+\/\d+\))?$/.exec(w.label || ''); if (a) { const l = lists.find((y) => y.name === a[1]); if (l) return 'a:' + l.id; }
   return 'src:' + srcOf(w);
 }
-const SRC_GROUP = { x: 'X accounts and searches', rss: 'RSS feeds', youtube: 'YouTube channels', hn: 'Hacker News searches' };
+const SRC_GROUP = { x: 'X accounts and searches', rss: 'RSS feeds', youtube: 'YouTube channels', hn: 'Hacker News searches', arxiv: 'arXiv searches' };
 function listInfo(key) {
   const [t, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
   if (key === 'brief') return { name: 'Briefing hand-overs', kind: 'Posts from briefings (not checked)', list: null };
@@ -1775,7 +1776,7 @@ function renderFeed() {
     const listOf = new Map((mon.watches ?? []).map((w) => [w.id, w.list]));
     const inSrc = feedItems.filter((i) => (!monSrc || srcOf(i) === monSrc) && (!monList || listOf.get(i.watchId) === monList));
     const items = inSrc.filter((i) => !monFilter || i.watchId === monFilter).slice(0, 100);
-    const n = { '': feedItems.length, x: 0, rss: 0, hn: 0, youtube: 0 }; for (const i of feedItems) n[srcOf(i)]++;
+    const n = { '': feedItems.length, x: 0, rss: 0, hn: 0, youtube: 0, arxiv: 0 }; for (const i of feedItems) n[srcOf(i)]++;
     document.querySelectorAll('#monSrc [data-n]').forEach((el) => { el.textContent = n[el.dataset.n] || ''; });
     $('#monFeed').innerHTML = items.length ? items.map((i) => {
       const fresh = Date.now() - i.seenAt < 6000 ? 'fresh' : '', src = srcOf(i);
@@ -1798,6 +1799,7 @@ function itemBlock(t, src, { cls = '', extra = '' } = {}) {
     <p>${url ? `<a class="tlink" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><b>${esc(title)}</b></a>` : `<b>${esc(title)}</b>`}${rest ? `\n${esc(rest)}` : ''}</p>
     ${src === 'youtube' ? `<div class="ts"><span title="Views">${cmp(t.viewCount)} views</span></div>` : ''}
     ${src === 'rss' && (t.likeCount || t.replyCount) ? `<div class="ts"><span title="Stars, upvotes, likes">▲ ${cmp(t.likeCount)}</span><span>${cmp(t.replyCount)} comments</span></div>` : ''}
+    ${src === 'arxiv' && safeUrl(t.pdfUrl) ? `<div class="ts"><a href="${esc(safeUrl(t.pdfUrl))}" target="_blank" rel="noopener noreferrer">PDF</a>${t.categories?.length ? `<span>${esc(t.categories.slice(0, 4).join(' '))}</span>` : ''}</div>` : ''}
     ${src === 'hn' ? `<div class="ts"><span title="Points">▲ ${cmp(t.likeCount)}</span>${talk ? `<a href="${esc(talk)}" target="_blank" rel="noopener noreferrer">${cmp(t.replyCount)} comments</a>` : `<span>${cmp(t.replyCount)} comments</span>`}</div>` : ''}
     ${extra}</div></article>`;
 }
@@ -1942,7 +1944,7 @@ initFeatures();
 
 // ---------- feed lists: curated sets of RSS feeds, YouTube channels and Hacker News searches ----------
 const curFL = () => flists.find((l) => l.id === flSel);
-const FL_KIND = { rss: 'RSS', youtube: 'YouTube', hn: 'Hacker News' };
+const FL_KIND = { rss: 'RSS', youtube: 'YouTube', hn: 'Hacker News', arxiv: 'arXiv' };
 const HN_TAG_NAME = { front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' };
 const flKey = (m) => (m.source === 'hn' ? `hn\n${m.hnTag ?? 'front_page'}\n${(m.query || '').toLowerCase()}\n${m.minPoints ?? 0}` : `${m.source === 'youtube' ? 'rss' : m.source}\n${m.query}`);
 async function loadFLists() {
@@ -1980,7 +1982,7 @@ function renderFLists() {
   renderFSLists();
   fillMonLists();
   $('#flCards').innerHTML = flists.length ? flists.map((l) => {
-    const n = { rss: 0, youtube: 0, hn: 0 }; for (const m of l.members) n[m.source]++;
+    const n = { rss: 0, youtube: 0, hn: 0, arxiv: 0 }; for (const m of l.members) n[m.source]++;
     const parts = Object.entries(n).filter(([, v]) => v).map(([k, v]) => `${v} ${FL_KIND[k]}`).join(' · ');
     return `<div class="card job listcard ${l.id === flSel ? 'sel' : ''}" data-flid="${esc(l.id)}" role="button" tabindex="0"><div class="top"><b>${esc(l.name)}</b></div>${l.topic ? `<div class="meta2">${esc(l.topic)}</div>` : ''}<div class="meta2">${parts || 'empty'}</div></div>`;
   }).join('') : '<div class="empty" style="grid-column:1/-1">No feed lists yet. Create one above, then paste the channels and feeds you want to follow.</div>';
@@ -1990,7 +1992,7 @@ function renderFLists() {
 function flMemberRow(m, i) {
   const addr = m.source === 'hn' ? [HN_TAG_NAME[m.hnTag] ?? 'front page', m.query, m.minPoints && `${m.minPoints}+ points`].filter(Boolean).join(' · ') : m.query;
   return `<div class="mrow" data-i="${i}"><span class="av" style="background:hsl(${hueOf(m.source)} 38% 36%)">${esc(FL_KIND[m.source].charAt(0))}</span>
-    <div class="mi"><div><b>${esc(m.label)}</b> <span class="badge">${esc(FL_KIND[m.source])}</span></div><div class="meta2" style="overflow-wrap:anywhere">${m.source !== 'hn' && safeUrl(m.query) ? `<a href="${esc(m.query)}" target="_blank" rel="noopener noreferrer">${esc(addr)}</a>` : esc(addr)}</div></div>
+    <div class="mi"><div><b>${esc(m.label)}</b> <span class="badge">${esc(FL_KIND[m.source])}</span></div><div class="meta2" style="overflow-wrap:anywhere">${m.source !== 'hn' && m.source !== 'arxiv' && safeUrl(m.query) ? `<a href="${esc(m.query)}" target="_blank" rel="noopener noreferrer">${esc(addr)}</a>` : esc(addr)}</div></div>
     <input class="mnote" data-flnote placeholder="Note" value="${esc(m.note)}" maxlength="200" aria-label="Note for ${esc(m.label)}">
     <button class="link" data-flact="remove" title="Remove from this list">Remove</button></div>`;
 }
@@ -2010,7 +2012,7 @@ function renderFLDetail() {
       <label class="grow" data-tplwrap hidden><span data-tpllabel></span><input name="v" maxlength="200" autocomplete="off"></label><button class="go">Add</button></form>
     <details><summary>Add channels and feeds by address</summary>
     <form id="flAdd" class="addrow"><label class="grow"><span>One per line</span>
-      <textarea name="lines" rows="3" placeholder="@Fireship, https://www.youtube.com/@TED, a playlist link, an RSS / Atom address, or a shorthand such as r/rust or github:owner/repo"></textarea></label><button class="go">Add</button></form></details>
+      <textarea name="lines" rows="3" placeholder="@Fireship, https://www.youtube.com/@TED, a playlist link, an RSS / Atom address, or a shorthand such as r/rust, github:owner/repo or arxiv:cs.CL, cs.LG"></textarea></label><button class="go">Add</button></form></details>
     <details><summary>Add a Hacker News search</summary>
       <form id="flAddHn" class="addrow"><label>Stories<select name="tag"><option value="front_page">Front page</option><option value="story">New stories</option><option value="show_hn">Show HN</option><option value="ask_hn">Ask HN</option></select></label>
         <label class="grow"><span>Keywords (optional)</span><input name="q" maxlength="200" placeholder='rust, "open source"' autocomplete="off"></label>
@@ -2192,16 +2194,16 @@ $('#sumStop').onclick = () => sumAbort?.abort();
 const shortArgs = (input) => Object.entries(input ?? {}).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ').slice(0, 110);
 
 // Which feeds a summary read, and which of their items it cited: the references behind a summary of RSS, YouTube and Hacker News items.
-const REF_KIND = { rss: 'RSS feed', youtube: 'YouTube', hn: 'Hacker News' };
+const REF_KIND = { rss: 'RSS feed', youtube: 'YouTube', hn: 'Hacker News', arxiv: 'arXiv' };
 const itemsWord = (n) => `${fmt(n)} item${n === 1 ? '' : 's'}`;
 function sourcesCard(r) {
   const feeds = r.feeds.map((f) => `<li>${safeUrl(f.page) ? `<a href="${esc(f.page)}" target="_blank" rel="noopener noreferrer">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`} <span class="badge">${esc(REF_KIND[f.source] ?? f.source)}</span>
-    ${f.source !== 'hn' && safeUrl(f.url) ? `<a class="meta2" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"><code style="overflow-wrap:anywhere">${esc(f.url)}</code></a>` : ''}
+    ${f.source !== 'hn' && f.source !== 'arxiv' && safeUrl(f.url) ? `<a class="meta2" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer"><code style="overflow-wrap:anywhere">${esc(f.url)}</code></a>` : ''}
     <span class="meta2">· ${itemsWord(f.count)} read${f.cited ? `, ${f.cited} cited` : ''}</span></li>`).join('');
   const cited = r.cited.length ? `<details style="margin-top:8px"><summary>Cited items (${r.cited.length})</summary><ol>${r.cited.map((c) => `<li>${safeUrl(c.url) ? `<a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">${esc(c.title)}</a>` : esc(c.title)} <span class="meta2">· ${esc(c.feed)}</span></li>`).join('')}</ol></details>` : '';
   return `<div class="card" style="margin-top:12px"><h3>Sources</h3><p class="meta2" style="margin:0 0 8px">Based on ${itemsWord(r.items)} from ${fmt(r.feeds.length)} feed${r.feeds.length === 1 ? '' : 's'}${r.xPosts ? ` and ${fmt(r.xPosts)} tweets` : ''}.</p><ul style="margin:0;padding-left:20px">${feeds}</ul>${cited}</div>`;
 }
-const sourcesText = (r) => ['Sources:', ...r.feeds.map((f) => `- ${f.label} (${REF_KIND[f.source] ?? f.source})${f.source !== 'hn' && f.url ? ' ' + f.url : ''}: ${itemsWord(f.count)} read${f.cited ? `, ${f.cited} cited` : ''}`),
+const sourcesText = (r) => ['Sources:', ...r.feeds.map((f) => `- ${f.label} (${REF_KIND[f.source] ?? f.source})${f.source !== 'hn' && f.source !== 'arxiv' && f.url ? ' ' + f.url : ''}: ${itemsWord(f.count)} read${f.cited ? `, ${f.cited} cited` : ''}`),
   ...(r.cited.length ? ['', 'Cited:', ...r.cited.map((c) => `- ${c.title} ${c.url}`)] : [])].join('\n');
 
 async function runSummary(body) {
@@ -3148,7 +3150,7 @@ restoreFolds();
 
 // Feed pages: what each shows (a list or a kind of source, newest or most reacted, one per source), how (player, cards, list), and whether it is public.
 let views = [];
-const viewSources = () => [['all', 'Everything watched'], ...['youtube', 'rss', 'hn', 'x'].map((k) => ['src:' + k, `All ${SRC_NAME[k]} sources`]),
+const viewSources = () => [['all', 'Everything watched'], ...['youtube', 'rss', 'hn', 'arxiv', 'x'].map((k) => ['src:' + k, `All ${SRC_NAME[k]} sources`]),
   ...flists.map((l) => ['f:' + l.id, `Feed list: ${l.name}`]), ...lists.map((l) => ['a:' + l.id, `Account list: ${l.name}`]), ...xlists.map((l) => ['x:' + l.id, `X List: ${l.name}`])];
 async function loadViews() {
   try { views = await (await fetch('/mon/views')).json(); } catch { views = []; }
@@ -3166,7 +3168,7 @@ function viewForm(v) {
       <label>Address <input name="slug" value="${esc(v.slug)}" maxlength="40" placeholder="from the name" style="width:170px" title="The page is /feeds/address"></label></div>
     <label style="display:block;margin-bottom:10px">Shown under the name <input name="description" value="${esc(v.description)}" maxlength="300" style="width:100%"></label>
     <div class="optrow" style="margin-bottom:8px"><label>From <select name="source">${o(viewSources(), v.source)}</select></label>
-      <label>Only <select name="kind">${o([['', 'every kind'], ['youtube', 'YouTube videos'], ['rss', 'RSS articles'], ['hn', 'Hacker News stories'], ['x', 'X posts']], v.kind)}</select></label></div>
+      <label>Only <select name="kind">${o([['', 'every kind'], ['youtube', 'YouTube videos'], ['rss', 'RSS articles'], ['hn', 'Hacker News stories'], ['arxiv', 'arXiv papers'], ['x', 'X posts']], v.kind)}</select></label></div>
     <div class="optrow" style="margin-bottom:8px"><label>Show <select name="show">${o([['latest', 'the newest'], ['top', 'the most reacted']], v.show)}</select></label>
       <label><input type="number" name="count" min="1" max="50" value="${v.count}" style="width:70px"> items</label>
       <label>from the last <input type="number" name="days" min="1" max="30" value="${v.days}" style="width:60px"> days</label>
@@ -3330,8 +3332,8 @@ async function loadOverview() {
 }
 // ---------- Collection: what is collected, how often, what it costs, who uses it, and the data itself ----------
 var CO = { ov: null, sure: '', q: { source: '', kind: '', consumer: '', q: '', days: '30', offset: 0 }, seq: 0, timer: 0 };
-const CO_KIND = { x_list: 'X list', x_accounts: 'X accounts', x_search: 'X search', x_watch: 'X watch', rss: 'RSS', youtube: 'YouTube', hn: 'Hacker News' };
-const CO_ITEM = { x: 'X post', rss: 'Article', hn: 'Hacker News', youtube: 'Video' };
+const CO_KIND = { x_list: 'X list', x_accounts: 'X accounts', x_search: 'X search', x_watch: 'X watch', rss: 'RSS', youtube: 'YouTube', hn: 'Hacker News', arxiv: 'arXiv' };
+const CO_ITEM = { x: 'X post', rss: 'Article', hn: 'Hacker News', youtube: 'Video', arxiv: 'Paper' };
 const coUse = (u) => u.kind === 'live' ? 'Live feed' : `${{ briefing: 'Briefing', signal: 'Signal', feedpage: 'Feed page' }[u.kind] ?? 'Used'}: ${u.label}`;
 const coEvery = (s) => `every ${s < 60 ? s + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : +(s / 3600).toFixed(1) + ' h'}`;
 const coWhen = (ms) => !ms ? 'never' : Date.now() - ms < 36 * 3600000 ? ago(ms) : new Date(ms).toLocaleDateString([], { dateStyle: 'medium' });
@@ -3527,7 +3529,7 @@ async function loadSignal() {
   renderSignal();
   if (sigPick) openSigPick();
 }
-const SIG_SRC = { x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube' };
+const SIG_SRC = { x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube', arxiv: 'arXiv' };
 // One watch, with what can be done to it here. `def` is the group it is in by default; `out` marks one left out of Signal.
 function sigWatchRow(w, def, out) {
   const brief = !!w.briefing, kind = `<span class="note">${brief ? 'Briefing' : esc(SIG_SRC[w.source] ?? w.source)}${w.enabled || brief ? '' : ' · paused'}</span>${w.error ? `<span class="badge" style="color:var(--err)" title="${esc(w.error)}">error</span>` : ''}`;
@@ -3983,7 +3985,7 @@ const srcRow = (s = { type: 'search' }) => `<div class="src"><select data-f="typ
     : s.type === 'xgroup' ? `<select data-f="group">${xgroups().map((g) => `<option value="${esc(g)}" ${s.group === g ? 'selected' : ''}>${esc(g)} (${xlists.filter((l) => l.groups.includes(g)).length} lists, read together)</option>`).join('')}</select>`
     : s.type === 'flist' ? `<select data-f="listId">${flists.length ? flists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)} (${l.members.length} feeds)</option>`).join('') : '<option value="">No feed lists yet (Lists tab)</option>'}</select>`
     : s.type === 'list' ? `<select data-f="listId">${lists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)} (${l.members.length})</option>`).join('')}</select>`
-    : s.type === 'feed' ? `${features.sources ? `<select data-f="source" aria-label="Source" style="width:auto">${[['', 'All sources combined'], ['x', 'X only'], ['rss', 'RSS only'], ['hn', 'Hacker News only'], ['youtube', 'YouTube only']].map(([v, l]) => `<option value="${v}" ${(s.source ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}<input type="text" data-f="watch" placeholder="only this watch (optional)" value="${esc(s.watch)}">`
+    : s.type === 'feed' ? `${features.sources ? `<select data-f="source" aria-label="Source" style="width:auto">${[['', 'All sources combined'], ['x', 'X only'], ['rss', 'RSS only'], ['hn', 'Hacker News only'], ['youtube', 'YouTube only'], ['arxiv', 'arXiv only']].map(([v, l]) => `<option value="${v}" ${(s.source ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}<input type="text" data-f="watch" placeholder="only this watch (optional)" value="${esc(s.watch)}">`
     : `<input type="text" data-f="query" placeholder="e.g. (Kristersson OR Andersson) lang:sv -filter:replies" value="${esc(s.query)}">`}
   <button type="button" class="sec" data-rm>×</button>${s.type === 'xlist' || s.type === 'xgroup' ? srcOpts(s) : ''}</div>`;
 

@@ -6,6 +6,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { json, OutOfCredits, search, slim, type Tweet } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
+import { fetchArxivQuery } from '../sources/arxiv';
 import { fetchHn, type HnTag } from '../sources/hn';
 import { fetchRss } from '../sources/rss';
 import { setYoutubeKey } from '../sources/youtube';
@@ -27,7 +28,7 @@ const FIRST_CHECK_ITEMS = 10;      // a new watch shows the latest few items in 
 const OVERLAP = 90, WATCH_PAGES = 5, WIDTH = 3, POLLS_PER_ALARM = 60, OUTBOX_BATCH = 40, ITEMS_PER_FLIST = 400, BROWSE_MAX = 100;
 const MAX_ITEMS_TO_MONITOR = 2000;
 const today = () => new Date().toISOString().slice(0, 10);
-const itemKind = (k: CollectKind) => (k === 'rss' || k === 'hn' || k === 'youtube' ? k : 'x');
+const itemKind = (k: CollectKind) => (k === 'rss' || k === 'hn' || k === 'youtube' || k === 'arxiv' ? k : 'x');
 
 export interface CollectSource {
   id: string; key: string; kind: CollectKind; spec: SourceSpec; label: string; autoLabel?: boolean; created: number;
@@ -43,7 +44,7 @@ interface Use { consumer_kind: string; consumer_id: string; source: string; data
 interface UseData { label: string; part?: number; pages?: number; minFaves?: number; display?: boolean; intervalSec?: number }
 type Consumer = TopicLike & { collectedFor?: number };
 export interface WatchSync {
-  id: string; source: 'x' | 'rss' | 'hn' | 'youtube'; query: string; label: string; autoLabel?: boolean; list?: string; hnTag?: string; minPoints?: number; originalsOnly?: boolean; includeRetweets?: boolean;
+  id: string; source: 'x' | 'rss' | 'hn' | 'youtube' | 'arxiv'; query: string; label: string; autoLabel?: boolean; list?: string; hnTag?: string; minPoints?: number; originalsOnly?: boolean; includeRetweets?: boolean;
   intervalSec: number; enabled: boolean; created: number; lastCheckedTs: number; checks: number; found: number; cost: number; lastRun: number; lastError: string; errors: number; nextRun: number; etag?: string; lastModified?: string;
   uses: Array<{ kind: string; id: string; label: string }>;
 }
@@ -208,6 +209,7 @@ export class CollectDO extends DurableObject<Env> {
   private async fetchPoll(s: CollectSource, since: number): Promise<{ items: Fetched[]; cache?: { etag?: string; lastModified?: string }; title?: string }> {
     const r: { items: Parameters<typeof toFeedShape>[0][]; cache?: { etag?: string; lastModified?: string }; title?: string } = s.kind === 'hn'
       ? await fetchHn({ tag: (s.spec.hnTag ?? 'front_page') as HnTag, query: s.spec.query || undefined, minPoints: s.spec.minPoints, since })
+      : s.kind === 'arxiv' ? await fetchArxivQuery({ query: s.spec.query ?? '', since })
       : await fetchRss({ url: s.spec.query ?? '', etag: s.etag, lastModified: s.lastModified, since });
     return { items: r.items.map((i) => ({ id: i.id, ts: Date.parse(i.at), json: toFeedShape(i) as unknown as Record<string, unknown> })), cache: r.cache, title: r.title };
   }
@@ -293,7 +295,7 @@ export class CollectDO extends DurableObject<Env> {
 
   // ---- handing items on
   private annotate(s: CollectSource, j: Record<string, unknown>): Record<string, unknown> {
-    return itemKind(s.kind) === 'x' ? j : { ...j, feed: s.label, feedUrl: s.kind === 'hn' ? 'https://news.ycombinator.com/' : s.spec.query };
+    return itemKind(s.kind) === 'x' ? j : { ...j, feed: s.label, feedUrl: s.kind === 'hn' ? 'https://news.ycombinator.com/' : s.kind === 'arxiv' ? 'https://arxiv.org/' : s.spec.query };
   }
   private statusOf(s: CollectSource) {
     return { enabled: !s.paused, label: s.label, autoLabel: !!s.autoLabel, checks: s.checks, found: s.found, cost: s.cost, lastRun: s.lastRun, lastError: s.lastError, errors: s.errors, nextRun: s.nextRun, lastCheckedTs: s.lastCheckedTs };

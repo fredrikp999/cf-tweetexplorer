@@ -1,6 +1,6 @@
 // The neutral shape every non-X source (RSS, Hacker News, …) is turned into before it reaches the Monitor feed.
-export type SourceKind = 'x' | 'rss' | 'hn' | 'youtube';
-export const SOURCES: SourceKind[] = ['x', 'rss', 'hn', 'youtube'];
+export type SourceKind = 'x' | 'rss' | 'hn' | 'youtube' | 'arxiv';
+export const SOURCES: SourceKind[] = ['x', 'rss', 'hn', 'youtube', 'arxiv'];
 export const isSource = (s: unknown): s is SourceKind => SOURCES.includes(s as SourceKind);
 
 export interface SourceItem {

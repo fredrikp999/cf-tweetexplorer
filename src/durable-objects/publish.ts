@@ -33,7 +33,7 @@ export type TopicSource =
   | { type: 'search'; query: string; sort: 'Latest' | 'Top' }
   | { type: 'list'; listId: string }
   | { type: 'flist'; listId: string }     // a feed list (RSS, YouTube, Hacker News), read when the briefing runs
-  | { type: 'feed'; watch?: string; source?: 'x' | 'rss' | 'hn' | 'youtube' }
+  | { type: 'feed'; watch?: string; source?: 'x' | 'rss' | 'hn' | 'youtube' | 'arxiv' }
   | { type: 'xlist'; listId: string; mode?: XMode; minFaves?: number; pages?: number }     // one list on x.com
   | { type: 'xgroup'; group: string; mode?: XMode; minFaves?: number; pages?: number };    // every X list in a group, read together; membership is looked up at run time
 // mode: 'best' (default) = the period's top posts per list, cheap; 'latest' = timeline, newest first. pages: per list (20 posts a page in best, 80 in latest).
@@ -86,7 +86,7 @@ export interface Provenance { from: number; to: number; fetched: number; used: n
   /** Read from the collection layer: when its oldest X read was made, and the sources that failed last time, so a thin briefing can be explained. */
   collected?: { at: number; failed: string[] };
   /** RSS feeds and Hacker News watches the posts came from, with how many items each gave. Absent on issues that used none. */
-  feeds?: Array<{ source: 'rss' | 'hn' | 'youtube'; label: string; url?: string; count: number }> }
+  feeds?: Array<{ source: 'rss' | 'hn' | 'youtube' | 'arxiv'; label: string; url?: string; count: number }> }
 /** What the collection layer answers when a briefing is about to run. */
 interface Collected { mode: 'off' | 'shadow' | 'store'; since?: number; items?: RawTweet[]; infos?: SourceInfo[]; failed?: string[]; allocated?: number; collectedAt?: number; capped?: boolean; tweets?: number }
 interface Spend { /** This run's share of what the collection layer spent, and how many tweets it bought just now. The ledger has them under 'collect'. */ allocated?: number; collectedTweets?: number; meter: Meter; tokensIn: number; tokensOut: number; model: string; screen: number; /** Dollars for the briefing model, priced per call: a retry on a stronger model is not priced at the first model's rate. */ text: number; priced: boolean }     // screen: dollars spent by the decision model that screens the tweets
@@ -151,7 +151,7 @@ function cleanSources(raw: unknown): TopicSource[] {
       if (!group) throw new Error('pick an X list group');
       return { type: 'xgroup', group, ...xopts() };
     }
-    if (s.type === 'feed') return { type: 'feed', ...(str(s.watch, 60) ? { watch: str(s.watch, 60) } : {}), ...(s.source === 'x' || s.source === 'rss' || s.source === 'hn' || s.source === 'youtube' ? { source: s.source } : {}) };
+    if (s.type === 'feed') return { type: 'feed', ...(str(s.watch, 60) ? { watch: str(s.watch, 60) } : {}), ...(s.source === 'x' || s.source === 'rss' || s.source === 'hn' || s.source === 'youtube' || s.source === 'arxiv' ? { source: s.source } : {}) };
     throw new Error('unknown source type');
   });
 }
@@ -632,11 +632,11 @@ export class PublishDO extends DurableObject<Env> {
     // A replaced issue that was published stays published: replacing it was asked for by hand.
     const now = Date.now(), live = t.autoPublish || old?.status === 'published';
     const byAccount = new Map<string, { handle: string; count: number }>();
-    const byFeed = new Map<string, { source: 'rss' | 'hn' | 'youtube'; label: string; url?: string; count: number }>();
+    const byFeed = new Map<string, { source: 'rss' | 'hn' | 'youtube' | 'arxiv'; label: string; url?: string; count: number }>();
     for (const x of used) {
-      if (x.source === 'rss' || x.source === 'hn' || x.source === 'youtube') {   // not an X account: counted per feed instead
+      if (x.source === 'rss' || x.source === 'hn' || x.source === 'youtube' || x.source === 'arxiv') {   // not an X account: counted per feed instead
         // Items stored before feeds were named share one entry, not one per author.
-        const label = x.feed || (x.source === 'hn' ? 'Hacker News' : 'RSS items'), k = `${x.source}\n${x.feedUrl ?? ''}\n${label}`;
+        const label = x.feed || (x.source === 'hn' ? 'Hacker News' : x.source === 'arxiv' ? 'arXiv' : 'RSS items'), k = `${x.source}\n${x.feedUrl ?? ''}\n${label}`;
         const e = byFeed.get(k) ?? { source: x.source, label, ...(x.feedUrl ? { url: x.feedUrl } : {}), count: 0 }; e.count++; byFeed.set(k, e);
         continue;
       }

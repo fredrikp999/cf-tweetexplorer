@@ -2,7 +2,7 @@
 // reused instead of bought again, how often a free feed is polled, and what a briefing reads from what was collected.
 // Imported by the Durable Object and by the tests, so: `.ts` extensions, and no TypeScript-only runtime syntax.
 
-export type CollectKind = 'x_list' | 'x_accounts' | 'x_search' | 'x_watch' | 'rss' | 'youtube' | 'hn';
+export type CollectKind = 'x_list' | 'x_accounts' | 'x_search' | 'x_watch' | 'rss' | 'youtube' | 'hn' | 'arxiv';
 /** poll: free feeds, on a schedule that backs off. window: paid X reads, once per period, just before the briefing. incremental: an X search from a checkpoint. */
 export type Strategy = 'poll' | 'window' | 'incremental';
 export type CollectMode = 'off' | 'shadow' | 'store';
@@ -10,7 +10,7 @@ export const MODES: CollectMode[] = ['off', 'shadow', 'store'];
 
 export interface SourceSpec {
   listId?: string; mode?: 'best' | 'latest';        // x_list, x_accounts
-  query?: string; sort?: 'Latest' | 'Top';          // x_search, x_watch, rss, youtube, hn
+  query?: string; sort?: 'Latest' | 'Top';          // x_search, x_watch, rss, youtube, hn, arxiv
   originalsOnly?: boolean; includeRetweets?: boolean;   // x_watch
   hnTag?: string; minPoints?: number;               // hn
 }
@@ -25,6 +25,7 @@ export function sourceKey(kind: CollectKind, s: SourceSpec): string {
   if (kind === 'x_search') return `x_search\n${s.query}\n${s.sort ?? 'Latest'}`;
   if (kind === 'x_watch') return `x_watch\n${s.query}\n${s.originalsOnly ? 1 : 0}${s.includeRetweets ? 1 : 0}`;
   if (kind === 'hn') return `hn\n${s.hnTag ?? 'front_page'}\n${String(s.query ?? '').toLowerCase()}\n${s.minPoints ?? 0}`;
+  if (kind === 'arxiv') return `arxiv\n${String(s.query ?? '').trim().toLowerCase()}`;
   return `rss\n${s.query}`;   // a YouTube feed is a feed: the same address is the same source
 }
 
@@ -40,7 +41,7 @@ export interface TopicLike { slug: string; title: string; enabled: boolean; toSi
 export interface Lookups {
   xlists: Array<{ id: string; name: string; groups: string[] }>;
   lists: Array<{ id: string; name: string }>;
-  flists: Array<{ id: string; name: string; members: Array<{ source: 'rss' | 'youtube' | 'hn'; query: string; hnTag?: string; minPoints?: number; label: string }> }>;
+  flists: Array<{ id: string; name: string; members: Array<{ source: 'rss' | 'youtube' | 'hn' | 'arxiv'; query: string; hnTag?: string; minPoints?: number; label: string }> }>;
 }
 /** One thing a briefing asks the collection layer for. `part` is the index of the topic source it came from, so its results can be reported per source. */
 export interface Demand { key: string; kind: CollectKind; spec: SourceSpec; label: string; part: number; pages: number; minFaves: number }

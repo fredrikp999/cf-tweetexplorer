@@ -4,6 +4,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { json } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
 import { HN_TAGS, type HnTag } from '../sources/hn';
+import { arxivSearchQuery, isArxivApi, queryOfArxivUrl } from '../sources/arxiv';
 import { expandShorthand } from '../sources/presets';
 import { checkFeedUrl } from '../sources/rss';
 import { isYoutubeFeed, resolveYoutubeFeed } from '../sources/youtube';
@@ -34,7 +35,7 @@ const AI_QUEUE_MAX = 3000, AI_BACKLOG_DAYS = 14, AI_RETRY_MS = 10 * 60_000;
 interface SignalAi { enabled: boolean; model: string; dailyCap: number }
 /** Requests that change what is watched or who uses it: the collection layer's plan follows from these. */
 const COLLECT_SYNC = new Set(['add', 'update', 'delete', 'settings', 'signal-regroup', 'signal-delete-group', 'view-save', 'view-delete', 'signal-board-save', 'signal-board-delete']);
-const SOURCE_NAME: Record<SourceKind, string> = { x: 'X', rss: 'RSS and blogs', hn: 'Hacker News', youtube: 'YouTube' };
+const SOURCE_NAME: Record<SourceKind, string> = { x: 'X', rss: 'RSS and blogs', hn: 'Hacker News', youtube: 'YouTube', arxiv: 'arXiv' };
 
 interface Watch {
   id: string; label: string; query: string; originalsOnly: boolean; includeRetweets: boolean;
@@ -228,7 +229,7 @@ export class MonitorDO extends DurableObject<Env> {
       for (const f of found) {
         this.markSeen(id, f.id);
         const j = f.json as { source?: string };
-        this.ctx.storage.sql.exec('INSERT INTO feed (watch, label, seen_at, json, source) VALUES (?, ?, ?, ?, ?)', id, label, now, JSON.stringify(f.json), j.source === 'rss' || j.source === 'hn' || j.source === 'youtube' ? j.source : 'x');
+        this.ctx.storage.sql.exec('INSERT INTO feed (watch, label, seen_at, json, source) VALUES (?, ?, ?, ?, ?)', id, label, now, JSON.stringify(f.json), j.source === 'rss' || j.source === 'hn' || j.source === 'youtube' || j.source === 'arxiv' ? j.source : 'x');
       }
       this.countTerms(id, found);
       if (this.aiConfig().enabled) this.enqueueAi(id, found);
@@ -878,7 +879,7 @@ export class MonitorDO extends DurableObject<Env> {
           const queries = new Map(this.watches().map((w) => [w.id, w] as const));
           return json(rows.map((r) => {
             const tweet = JSON.parse(r.json) as Record<string, unknown>;
-            if (r.source !== 'x') { tweet.feed ??= r.label; tweet.feedUrl ??= r.source === 'hn' ? 'https://news.ycombinator.com/' : queries.get(r.watch)?.query; }
+            if (r.source !== 'x') { tweet.feed ??= r.label; tweet.feedUrl ??= r.source === 'hn' ? 'https://news.ycombinator.com/' : r.source === 'arxiv' ? 'https://arxiv.org/' : queries.get(r.watch)?.query; }
             return { watchId: r.watch, label: r.label, seenAt: r.seen_at, source: r.source, tweet };
           }));
         }
@@ -957,6 +958,7 @@ export class MonitorDO extends DurableObject<Env> {
         if (this.watches().length >= MAX_WATCHES) throw new Error(`at most ${MAX_WATCHES} watches`);
         let source = isSource(b.source) ? b.source : 'x';
         if (source === 'rss') b.query = expandShorthand(String(b.query ?? '')) ?? b.query;   // r/rust, github:owner/repo, … → the feed they stand for
+        if (source === 'rss' && isArxivApi(String(b.query ?? ''))) { b.query = queryOfArxivUrl(String(b.query)); source = 'arxiv'; }   // arxiv:cs.AI with words, or an arXiv API address pasted as a feed
         if (source === 'rss' && isYoutubeFeed(String(b.query ?? '').trim())) source = 'youtube';   // a YouTube feed address pasted as a plain feed
         // The list it came from: a feed list's id, or "a:<id>" for an account list and "x:<id>" for an X List (so Sources can manage it as one).
         const listId = /^(?:[ax]:)?[A-Za-z0-9-]{1,40}$/.test(String(b.list ?? '')) ? String(b.list) : undefined;
@@ -978,6 +980,12 @@ export class MonitorDO extends DurableObject<Env> {
           const had = this.watches().find((x) => x.query === w.query && (sourceOf(x) === 'rss' || sourceOf(x) === 'youtube'));
           if (had) return repeat(had, 'that feed is already watched');
           w.label = given || new URL(w.query).hostname; w.autoLabel = !given; w.originalsOnly = false; w.includeRetweets = false;
+        } else if (source === 'arxiv') {
+          w.query = String(b.query ?? '').trim().slice(0, 300);
+          if (!arxivSearchQuery(w.query)) throw new Error('enter categories (cs.CL, cs.LG), words, or a search such as au:"Hinton" AND cat:cs.LG');
+          const hadArxiv = this.watches().find((x) => sourceOf(x) === 'arxiv' && x.query.toLowerCase() === w.query.toLowerCase());
+          if (hadArxiv) return repeat(hadArxiv, 'that search is already watched');
+          w.label = given || `arXiv: ${w.query}`.slice(0, 60); w.originalsOnly = false; w.includeRetweets = false;
         } else if (source === 'hn') {
           w.hnTag = HN_TAGS.includes(b.hnTag as HnTag) ? (b.hnTag as HnTag) : 'front_page';
           w.query = String(b.query ?? '').trim().slice(0, 200);

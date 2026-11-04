@@ -92,7 +92,7 @@ const who = (a: string[]) => (a.length > 2 ? `${a[0]} et al.` : a.join(' & ')).s
 export function paperToItem(p: Paper): SourceItem {
   const t = Date.parse(p.published);
   return {
-    source: 'rss', id: `arxiv:${p.id}`, url: p.absUrl, title: p.title,
+    source: 'arxiv', id: `arxiv:${p.id}`, url: p.absUrl, title: p.title,
     text: `${p.authors.slice(0, 6).join(', ')}${p.authors.length > 6 ? ' et al.' : ''} · ${p.categories.slice(0, 4).join(' ')}\n${p.abstract}`.slice(0, 900),
     by: who(p.authors) || 'arXiv', at: new Date(Number.isNaN(t) ? Date.now() : Math.min(t, Date.now())).toISOString(),
     pdfUrl: p.pdfUrl, categories: p.categories.slice(0, 6),
@@ -121,6 +121,20 @@ export async function fetchArxiv(opts: { url: string; since?: number }): Promise
   const q = new URL(opts.url).searchParams.get('search_query') ?? '';
   return { items: papers.map(paperToItem), title: `arXiv: ${q.replace(/\bcat:/g, '').slice(0, 70)}` };
 }
+
+/** A watch's own words (`cs.CL, cs.LG`, `au:"Hinton"`, `diffusion models`) → what the API is asked, or an error the person can read. */
+export async function fetchArxivQuery(opts: { query: string; since?: number }): Promise<FetchResult & { title: string }> {
+  const q = arxivSearchQuery(opts.query);
+  if (!q) throw new Error('enter categories (cs.CL, cs.LG), words, or a search such as au:"Hinton" AND cat:cs.LG');
+  return fetchArxiv({ url: arxivApiUrl(q), since: opts.since });
+}
+
+/** The words of a search behind an arXiv API address, so a pasted address becomes an arXiv source. */
+export const queryOfArxivUrl = (url: string): string => {
+  const q = new URL(url).searchParams.get('search_query') ?? '';
+  const cats = q.split(' OR ');
+  return cats.length > 0 && cats.every((c) => /^cat:[a-z-]+(\.[A-Za-z-]+)?$/.test(c)) ? cats.map((c) => c.slice(4)).join(', ') : q.replace(/^all:/, '');
+};
 
 /** One paper for the summarizer: its abstract, and with `full` its full text when arXiv has an HTML version of it. */
 export async function readArxivPaper(rawId: string, full = false, maxChars = 12_000): Promise<Paper & { fullText?: string; truncated?: boolean; note?: string }> {

@@ -1,5 +1,6 @@
 // Feed lists: curated sets of feeds (RSS, YouTube channels and playlists, Hacker News searches). Reading a list fetches every member
 // now and keeps what was published in the window, so a briefing or a summary does not depend on what the Monitor happened to capture.
+import { fetchArxivQuery, isArxivApi, queryOfArxivUrl } from './arxiv.ts';
 import { fetchHn, HN_TAGS, type HnTag } from './hn.ts';
 import { expandShorthand } from './presets.ts';
 import { checkFeedUrl, fetchRss } from './rss.ts';
@@ -7,7 +8,7 @@ import { toFeedShape, type SourceItem } from './types.ts';
 import { isYoutubeFeed, resolveYoutubeFeed } from './youtube.ts';
 
 export interface FeedMember {
-  source: 'rss' | 'youtube' | 'hn';
+  source: 'rss' | 'youtube' | 'hn' | 'arxiv';
   /** The feed address (rss, youtube) or the keywords (hn, may be empty). */
   query: string;
   hnTag?: HnTag; minPoints?: number;
@@ -35,6 +36,7 @@ async function resolveLine(raw: string): Promise<ResolveResult> {
   const line = raw.trim();
   try {
     const short = expandShorthand(line);
+    if (short && isArxivApi(short)) { const query = queryOfArxivUrl(short), r = await fetchArxivQuery({ query }); return { line, ok: true, member: { source: 'arxiv', query, label: `arXiv: ${query}`.slice(0, 80) } }; }
     if (short) { const r = await fetchRss({ url: short }); return { line, ok: true, member: { source: 'rss', query: short, label: r.title.slice(0, 80) || new URL(short).hostname } }; }
     const looksYoutube = /^@?[\w.-]{2,60}$/.test(line) && !/\./.test(line.replace(/^@/, '')) || /^UC[\w-]{22}$/.test(line) || /^(PL|UU|OL)[\w-]{10,60}$/.test(line)
       || /^(https?:\/\/)?(www\.|m\.)?(youtube\.com|youtu\.be)\b/i.test(line);
@@ -58,8 +60,9 @@ export async function readMembers(members: FeedMember[], sinceMs: number): Promi
   const use = members.slice(0, MAX_READ), failed: string[] = [], items: Array<{ it: SourceItem; label: string; url: string }> = [];
   await pool(use, CONCURRENCY, async (m) => {
     try {
-      const url = m.source === 'hn' ? 'https://news.ycombinator.com/' : m.query;
+      const url = m.source === 'hn' ? 'https://news.ycombinator.com/' : m.source === 'arxiv' ? 'https://arxiv.org/' : m.query;
       const r = m.source === 'hn' ? await fetchHn({ tag: HN_TAGS.includes(m.hnTag as HnTag) ? m.hnTag! : 'front_page', query: m.query || undefined, minPoints: m.minPoints, since: Math.floor(sinceMs / 1000) })
+        : m.source === 'arxiv' ? await fetchArxivQuery({ query: m.query, since: Math.floor(sinceMs / 1000) })
         : await fetchRss({ url: m.query, since: Math.floor(sinceMs / 1000) });
       for (const it of r.items) if (Date.parse(it.at) >= sinceMs) items.push({ it, label: m.label, url });
     } catch (err) { failed.push(`${m.label} (${friendly(err).slice(0, 60)})`); }

@@ -62,12 +62,12 @@ function cleanFeedList(raw: Record<string, unknown>, prev?: FeedList): FeedList 
   if (!name) throw new Error('list name required');
   const seen = new Set<string>(), members: FeedMember[] = [];
   for (const m of (Array.isArray(raw.members) ? (raw.members as Record<string, unknown>[]) : []).slice(0, MAX_FEED_MEMBERS)) {
-    const source = m?.source === 'hn' || m?.source === 'youtube' || m?.source === 'rss' ? m.source : null;
+    const source = m?.source === 'hn' || m?.source === 'youtube' || m?.source === 'rss' || m?.source === 'arxiv' ? m.source : null;
     if (!source) continue;
     let query = str(m.query, 400);
-    if (source !== 'hn') { try { query = checkFeedUrl(query); } catch { continue; } }
+    if (source !== 'hn' && source !== 'arxiv') { try { query = checkFeedUrl(query); } catch { continue; } }
     const member: FeedMember = {
-      source, query, label: str(m.label, 80) || (source === 'hn' ? 'Hacker News' : query), note: str(m.note, 200), addedAt: num(m.addedAt) || Date.now(),
+      source, query, label: str(m.label, 80) || (source === 'hn' ? 'Hacker News' : source === 'arxiv' ? `arXiv: ${query}`.slice(0, 80) : query), note: str(m.note, 200), addedAt: num(m.addedAt) || Date.now(),
       ...(source === 'hn' ? { hnTag: (HN_TAGS.includes(m.hnTag as HnTag) ? m.hnTag : 'front_page') as HnTag, minPoints: Math.min(10_000, Math.max(0, Math.floor(num(m.minPoints)))) } : {}),
     };
     const k = memberKey(member);

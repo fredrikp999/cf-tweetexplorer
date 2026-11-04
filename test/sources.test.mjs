@@ -470,7 +470,7 @@ describe('arXiv', () => {
     assert.match(ua, /TweetExplorer/);
     assert.equal(items.length, 1);
     const p = items[0];
-    assert.equal(p.id, 'arxiv:2401.00001'); assert.equal(p.url, 'https://arxiv.org/abs/2401.00001'); assert.equal(p.pdfUrl, 'https://arxiv.org/pdf/2401.00001');
+    assert.equal(p.source, 'arxiv'); assert.equal(p.id, 'arxiv:2401.00001'); assert.equal(p.url, 'https://arxiv.org/abs/2401.00001'); assert.equal(p.pdfUrl, 'https://arxiv.org/pdf/2401.00001');
     assert.equal(p.title, 'Diffusion & Friends'); assert.equal(p.by, 'Ada L et al.'); assert.deepEqual(p.categories, ['cs.LG', 'cs.CL']);
     assert.match(p.text, /^Ada L, Bo K, Cy M · cs\.LG cs\.CL\nWe study things\. More\.$/);
   });
@@ -488,4 +488,27 @@ test('an arXiv error entry is reported when there are no papers', async () => {
   globalThis.fetch = async () => new Response('<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/api/errors#x</id><title>Error</title><summary>malformed query</summary></entry></feed>');
   try { await assert.rejects((await import('../src/sources/arxiv.ts')).fetchArxiv({ url: 'https://export.arxiv.org/api/query?search_query=x' }), /malformed query/); }
   finally { globalThis.fetch = real; }
+});
+
+describe('arXiv as a source of its own', () => {
+  test('keys, kinds and pasted addresses', async () => {
+    const { sourceKey, strategyOf } = await import('../src/collect/plan.ts');
+    const { arxivApiUrl, queryOfArxivUrl, isSource } = { ...(await import('../src/sources/arxiv.ts')), ...(await import('../src/sources/types.ts')) };
+    assert.equal(sourceKey('arxiv', { query: 'cs.CL, cs.LG' }), sourceKey('arxiv', { query: ' CS.CL, cs.LG ' }));
+    assert.notEqual(sourceKey('arxiv', { query: 'cs.CL' }), sourceKey('rss', { query: 'cs.CL' }));
+    assert.equal(strategyOf('arxiv'), 'poll');
+    assert.ok(isSource('arxiv'));
+    assert.equal(queryOfArxivUrl(arxivApiUrl('cat:cs.CL OR cat:cs.LG')), 'cs.CL, cs.LG');
+    assert.equal(queryOfArxivUrl(arxivApiUrl('all:diffusion models')), 'diffusion models');
+    assert.equal(queryOfArxivUrl(arxivApiUrl('au:"Hinton" AND cat:cs.LG')), 'au:"Hinton" AND cat:cs.LG');
+  });
+  test('a feed-list line becomes an arXiv member', async () => {
+    const real = globalThis.fetch;
+    globalThis.fetch = async () => new Response('<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/abs/2401.00001v1</id><published>2024-01-01T00:00:00Z</published><title>T</title><summary>S</summary><author><name>A</name></author></entry></feed>');
+    try {
+      const { resolveLines } = await import('../src/sources/feedlist.ts');
+      const [r] = await resolveLines(['arxiv:cs.CL, cs.LG']);
+      assert.ok(r.ok, r.error); assert.equal(r.member.source, 'arxiv'); assert.equal(r.member.query, 'cs.CL, cs.LG');
+    } finally { globalThis.fetch = real; }
+  });
 });

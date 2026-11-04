@@ -83,7 +83,7 @@ function buildServer(env: Env): McpServer {
 
   server.registerTool('get_collected_items', {
     description: `Items the collection layer has stored, newest first (at most 100 per call; page with offset). Filter by source id, kind, consumer ("briefing:<slug>"), words or days.`,
-    inputSchema: { source: z.string().optional(), kind: z.enum(['x', 'rss', 'hn', 'youtube']).optional(), consumer: z.string().optional(), q: z.string().optional(), days: z.number().int().min(1).max(90).optional(), limit: z.number().int().min(1).max(100).default(50), offset: z.number().int().min(0).default(0) },
+    inputSchema: { source: z.string().optional(), kind: z.enum(['x', 'rss', 'hn', 'youtube', 'arxiv']).optional(), consumer: z.string().optional(), q: z.string().optional(), days: z.number().int().min(1).max(90).optional(), limit: z.number().int().min(1).max(100).default(50), offset: z.number().int().min(0).default(0) },
     annotations: readOnly,
   }, (a) => ask(env.COLLECT, '/collect/items', a));
 
@@ -109,7 +109,7 @@ function buildServer(env: Env): McpServer {
 
   server.registerTool('get_monitor_feed', {
     description: 'The most recent items the Monitor found, newest first: tweets, RSS items and Hacker News stories. Every item has a `source` (x, rss or hn); leave `source` out for all of them combined.',
-    inputSchema: { limit: z.number().int().min(1).max(500).default(100), source: z.enum(['x', 'rss', 'hn', 'youtube']).optional() },
+    inputSchema: { limit: z.number().int().min(1).max(500).default(100), source: z.enum(['x', 'rss', 'hn', 'youtube', 'arxiv']).optional() },
     annotations: readOnly,
   }, ({ limit, source }) => ask(env.MONITOR, '/mon/feed', { limit, ...(source ? { source } : {}) }));
 

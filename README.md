@@ -99,7 +99,7 @@ src/            The Cloudflare Worker
   signal/         Signal: terms, scoring, topics, AI topic names, filters
   site/           The public site (server-rendered HTML), Markdown, briefing structure
   summarize/      The writing agent, model providers, screening, pricing
-  sources/        X, RSS, YouTube, Hacker News, feed lists
+  sources/        X, RSS, YouTube, Hacker News, arXiv, feed lists
   history/        Archive statistics and AI analysis
   media/          Audio (text to speech) and pictures for briefings (Replicate, Workers AI)
   llm/, lib/      Model calls, AI Gateway routing, cost recording, shared helpers

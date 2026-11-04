@@ -28,7 +28,7 @@ interface PubTweet { id: string; url: string; text: string; createdAt: string; l
 interface PubTweets { total: number; pages: number; page: number; sort: 'new' | 'top'; tweets: PubTweet[] }
 /** What every page needs for the rail. */
 interface PubAList { id: string; name: string; topic: string; handles: string[] }
-interface PubFList { id: string; name: string; topic: string; feeds: { source: 'rss' | 'youtube' | 'hn'; label: string; query: string; hnTag?: string; minPoints?: number }[] }
+interface PubFList { id: string; name: string; topic: string; feeds: { source: 'rss' | 'youtube' | 'hn' | 'arxiv'; label: string; query: string; hnTag?: string; minPoints?: number }[] }
 // lists: X lists (live on x.com); alists: curated sets of X accounts; flists: curated sets of feeds (RSS, YouTube, Hacker News)
 /** One item on a feed page. `video`: a YouTube video id, for its picture and the player. */
 interface ViewItem { title: string; url: string; by: string; source: string; kind: string; ts: number; reactions: number; video?: string }
@@ -491,11 +491,11 @@ export function sourcesHtml(i: IssueFull): string {
   const webUrl = (raw?: string) => { try { const u = new URL(raw ?? ''); return u.protocol === 'https:' || u.protocol === 'http:' ? u : null; } catch { return null; } };
   const feedRows = feeds.map((f) => {
     // The name links to the site, or for YouTube to the channel or playlist page.
-    const feed = webUrl(f.url), page = f.source === 'youtube' ? pageOfFeed(f.url ?? '') : feed && f.source === 'rss' ? feed.origin : null;
+    const feed = webUrl(f.url), page = f.source === 'youtube' ? pageOfFeed(f.url ?? '') : feed && (f.source === 'rss' || f.source === 'arxiv') ? feed.origin : null;
     const name = page ? `<a href="${esc(page)}" rel="noopener noreferrer nofollow" target="_blank">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`;
     // The address of the feed itself, in full, so a reader can subscribe to it or check what was read.
     const addr = feed ? ` <a class="k" href="${esc(feed.href)}" rel="noopener noreferrer nofollow" target="_blank"><code>${esc(feed.href)}</code></a>` : '';
-    return `<li>${name} <span class="k">${f.source === 'hn' ? 'Hacker News' : f.source === 'youtube' ? 'YouTube' : 'RSS feed'}</span>${addr} <span class="c">${n(f.count)} ${f.count === 1 ? 'item' : 'items'}</span></li>`;
+    return `<li>${name} <span class="k">${f.source === 'hn' ? 'Hacker News' : f.source === 'youtube' ? 'YouTube' : f.source === 'arxiv' ? 'arXiv' : 'RSS feed'}</span>${f.source === 'arxiv' ? '' : addr} <span class="c">${n(f.count)} ${f.count === 1 ? 'item' : 'items'}</span></li>`;
   }).join('');
   const basis = !feeds.length ? `<b>${n(p.used)} posts</b> from <b>${n(p.accounts)} accounts</b>`
     : !xPosts ? `<b>${n(feedItems)} items</b> from <b>${n(feeds.length)} ${feeds.length === 1 ? 'feed' : 'feeds'}</b>`
@@ -667,6 +667,7 @@ export function feedXml(d: { topic: TopicInfo; issues: IssueFull[] }, origin: st
 const HN_TAGS: Record<string, string> = { front_page: 'front page', story: 'new stories', show_hn: 'Show HN', ask_hn: 'Ask HN' };
 function feedLine(f: PubFList['feeds'][number]): string {
   if (f.source === 'hn') return `<li><b>Hacker News</b> <span class="k">${esc(HN_TAGS[f.hnTag ?? ''] ?? 'stories')}${f.query ? `, matching <code>${esc(f.query)}</code>` : ''}${f.minPoints ? `, ${n(f.minPoints)}+ points` : ''}</span></li>`;
+  if (f.source === 'arxiv') return `<li><b>arXiv</b> <span class="k">papers matching <code>${esc(f.query)}</code></span></li>`;
   const u = (() => { try { const x = new URL(f.query); return x.protocol === 'https:' || x.protocol === 'http:' ? x : null; } catch { return null; } })();
   const page = f.source === 'youtube' ? pageOfFeed(f.query) : u ? u.origin : null;
   return `<li>${page ? `<a href="${esc(page)}" rel="noopener noreferrer nofollow" target="_blank">${esc(f.label)}</a>` : `<b>${esc(f.label)}</b>`} <span class="k">${f.source === 'youtube' ? 'YouTube' : 'RSS feed'}</span></li>`;
