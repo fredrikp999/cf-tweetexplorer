@@ -3933,9 +3933,51 @@ const srcOpts = (s) => {
   const best = s.mode !== 'latest', pages = +s.pages || 2;
   return `<div class="srcopt" style="grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;font-size:13px;color:var(--muted)">
     <select data-f="mode" aria-label="What to read" style="width:auto"><option value="best" ${best ? 'selected' : ''}>Best posts of the period</option><option value="latest" ${best ? '' : 'selected'}>Newest first (everything)</option></select>
-    ${best ? `<label style="display:flex;gap:6px;align-items:center">at least <input type="number" data-f="minFaves" min="0" max="1000" value="${s.minFaves ?? 5}" style="width:72px"> likes</label>` : ''}
-    <label style="display:flex;gap:6px;align-items:center">up to <select data-f="pages" style="width:auto">${[1, 2, 3, 5].map((n) => `<option value="${n}" ${pages === n ? 'selected' : ''}>${best ? n * 20 : n * 80}</option>`).join('')}</select> ${best ? 'posts' : 'tweets'} per list</label></div>`;
+    ${best ? `<label style="display:flex;gap:6px;align-items:center">at least <input type="number" data-f="minFaves" min="0" max="50000" value="${s.minFaves ?? 5}" style="width:84px"> likes</label>` : ''}
+    <label style="display:flex;gap:6px;align-items:center">up to <select data-f="pages" style="width:auto">${[1, 2, 3, 5].map((n) => `<option value="${n}" ${pages === n ? 'selected' : ''}>${best ? n * 20 : n * 80}</option>`).join('')}</select> ${best ? 'posts' : 'tweets'} per list</label>
+    ${best ? '<button type="button" class="sec" data-likes="open">Find a good setting</button><div data-likes-panel hidden style="flex-basis:100%"></div>' : ''}</div>`;
 };
+// Finding a good "at least N likes": what the collected posts say (free) next to a live check (paid), with a button to use any setting.
+const likesRequest = (row) => {
+  const f = row.closest('form'), source = Object.fromEntries([...row.querySelectorAll('[data-f]')].map((x) => [x.dataset.f, x.value]));
+  return { source: { ...source, pages: +source.pages || 2, minFaves: +source.minFaves || 0 }, maxCost: +f.elements.maxCost?.value || 0, hours: +f.elements.intervalHours?.value || 24 };
+};
+function renderLikes(panel, cur) {
+  const { hist, live } = panel.likes, proposed = live?.proposed ?? hist.proposed, histAt = new Map(hist.rows.filter(Boolean).map((r) => [r.minFaves, r]));
+  const all = live ? live.rows : hist.rows.filter(Boolean), lists = hist.lists;
+  // Only the settings worth choosing between: not ones that leave nothing, and of those where every list is still cut off, only the highest.
+  const useful = all.filter((r, i) => r.minFaves === cur || (r.posts > 0 && !(r.over === lists && all[i + 1]?.over === lists)));
+  const rows = useful.map((r) => {
+    const h = histAt.get(r.minFaves), tag = [r.minFaves === proposed && '<b>Proposed</b>', r.minFaves === cur && 'now'].filter(Boolean).join(', ');
+    return `<tr${r.minFaves === proposed ? ' style="background:color-mix(in srgb, var(--accent) 12%, transparent)"' : ''}><td>${fmt(r.minFaves)}${tag ? ` <span class="muted">(${tag})</span>` : ''}</td>
+      ${live ? `<td>${fmt(r.posts)}</td><td>${usd(r.cost)}</td><td>${r.over ? `${r.over} of ${lists}` : 'none'}</td><td>${r.thin ? `${r.thin} of ${lists}` : 'none'}</td>` : ''}
+      <td>${h ? `at least ${fmt(h.posts)}` : '<span class="muted">not known</span>'}</td>
+      <td><button type="button" class="sec" data-likes="use" data-value="${r.minFaves}" ${r.minFaves === cur ? 'disabled' : ''}>Use ${fmt(r.minFaves)}</button></td></tr>`;
+  });
+  const head = ['At least', ...(live ? ['Posts a run', 'X data a run', 'Lists cut off', `Lists under 5 posts`] : []), 'Collected posts a run', ''];
+  panel.innerHTML = `<div class="card" style="background:var(--bg);margin:0;padding:12px 14px;color:var(--text)">
+    <p class="muted" style="margin:0 0 8px">X's order is not a sort by likes, so posts past the limit of ${hist.limit} per list can be the biggest ones. The proposal is the lowest setting where the lists fit within that limit: then every post above it is read, and only those are paid for.${lists > 1 ? ' A group shares one setting, so a few of the busiest lists may still be cut off.' : ''}</p>
+    ${proposed == null ? `<p style="margin:0 0 8px">${live ? 'No setting fits these lists.' : 'Nothing to propose from the collected posts yet.'}</p>` : `<p style="margin:0 0 8px"><b>Proposed: at least ${fmt(proposed)} likes</b>, ${live ? 'from the live check' : 'from the collected posts. They are a minimum, because posts past the limit were never bought, so a live check can land higher'}.</p>`}
+    ${rows.length ? `<div class="co-wrap">${coTable(head, rows, '')}</div>` : ''}
+    <p class="muted" style="margin:8px 0 0">${hist.runs ? `Collected posts: ${hist.runs} run${hist.runs === 1 ? '' : 's'}, free to read.` : 'No posts collected for this source yet.'}${live ? ` Live check: today's posts, ${live.calls} call${live.calls === 1 ? '' : 's'}, ${usd(live.cost)}.${live.stopped ? ' <span class="perr">It stopped at its budget, so some lists were not finished.</span>' : ''}` : ''}</p>
+    ${live ? `<details style="margin-top:6px"><summary class="muted">Per list</summary><ul class="muted" style="margin:6px 0 0;padding-left:18px">${live.lists.map((l) => `<li>${esc(l.label)}: ${l.error ? `<span class="perr">${esc(l.error)}</span>` : l.fit == null ? 'no setting found that fits' : `fits from ${fmt(l.fit)} likes (${fmt(l.posts)} posts)`}</li>`).join('')}</ul></details>` : ''}
+    <p class="actions" style="margin:8px 0 0"><button type="button" class="sec" data-likes="live">${live ? 'Check live again' : 'Check live now'} (up to ${usd(hist.worst)})</button></p></div>`;
+}
+async function likesAction(btn) {
+  const row = btn.closest('.src'), panel = row.querySelector('[data-likes-panel]'), input = row.querySelector('[data-f=minFaves]'), what = btn.dataset.likes;
+  if (what === 'use') {
+    input.value = btn.dataset.value; refreshEstimate();
+    if (sel === '+new') { renderLikes(panel, +input.value); return toast(`Set to ${fmt(btn.dataset.value)}. It is saved with the briefing.`); }
+    return row.closest('form').requestSubmit();     // saves the form as it stands; the next run uses the new setting
+  }
+  if (what === 'open' && !panel.hidden) { panel.hidden = true; return; }
+  const label = btn.textContent; btn.disabled = true; btn.textContent = what === 'live' ? 'Checking…' : 'Reading…';
+  try {
+    if (what === 'open') { panel.likes = { hist: await post('/collect/likes-history', likesRequest(row)) }; panel.hidden = false; }
+    else panel.likes.live = await post('/collect/likes-probe', likesRequest(row));
+    renderLikes(panel, +input.value);
+  } finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
+}
 const srcRow = (s = { type: 'search' }) => `<div class="src"><select data-f="type">${['search', 'list', ...(xlists.length ? ['xlist', 'xgroup'] : []), ...(features.sources ? ['flist'] : []), 'feed'].map((x) => `<option ${s.type === x ? 'selected' : ''} value="${x}">${{ search: 'Search', list: 'List', xlist: 'X list', xgroup: 'X list group', flist: 'Feed list', feed: 'Monitor feed' }[x]}</option>`).join('')}</select>
   ${s.type === 'xlist' ? `<select data-f="listId">${xlists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select>`
     : s.type === 'xgroup' ? `<select data-f="group">${xgroups().map((g) => `<option value="${esc(g)}" ${s.group === g ? 'selected' : ''}>${esc(g)} (${xlists.filter((l) => l.groups.includes(g)).length} lists, read together)</option>`).join('')}</select>`
@@ -4205,7 +4247,8 @@ async function followAudio(id) {
 $('#pubDetail').addEventListener('click', async (e) => {
   try {
     const t = topics.find((x) => x.slug === sel);
-    if (e.target.id === 'pubAddSrc') { $('#pubSources').insertAdjacentHTML('beforeend', srcRow()); refreshEstimate(); }
+    if (e.target.dataset.likes) await likesAction(e.target);
+    else if (e.target.id === 'pubAddSrc') { $('#pubSources').insertAdjacentHTML('beforeend', srcRow()); refreshEstimate(); }
     else if (e.target.matches('[data-rm]')) { e.target.closest('.src').remove(); refreshEstimate(); }
     else if (e.target.id === 'pubRun' || e.target.dataset.run === 'new') { await call('run', { slug: sel }); toast('Started. The issue appears under Briefings when it is ready.'); await load(); }
     else if (e.target.dataset.rerun) {

@@ -261,7 +261,9 @@ shared document (`public/admin/x-lists-scoble.json`, grouped as in the document;
 "Add lists from links or ids" takes your own. Re-importing adds only what is new and keeps your renames.
 - **Two ways to read a list**, chosen per view, per Summarize run and per scheduled source:
   - **Best posts** (the default): X searches the list (`list:<id>`) for the range's top posts, without retweets or replies and
-    with at least N likes (default 5). 20 posts a call (about $0.003) and you pay only for what comes back, so it covers the
+    with at least N likes (default 5). In Briefing setup, **Find a good setting** next to the likes shows what each setting
+    would buy, from the posts already collected (free, a minimum) and from a live check (paid, the cost is on the button), and
+    applies one with a click. 20 posts a call (about $0.003) and you pay only for what comes back, so it covers the
     whole range and costs a fraction. A 2-list group went from $0.044 to $0.012 a run, and from "the newest slice" to "the
     day's best".
   - **Newest first**: the list's timeline, about 80 tweets a call, retweets included. It has no time filter, so a busy list can

@@ -23,6 +23,7 @@ import { MockModel } from '../summarize/mock-model.ts';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
 import { modelFor, workerSources } from '../summarize/worker';
 import { mockX } from '../collect/mock.ts';
+import { MAX_MIN_FAVES } from '../collect/likes.ts';
 import { screenTweets } from '../summarize/screen.ts';
 import { pickHero, sectionsOf, themesOf } from '../site/brief.ts';
 import { setYoutubeKey } from '../sources/youtube';
@@ -138,7 +139,7 @@ function cleanSources(raw: unknown): TopicSource[] {
     // How an X list is read. Unset (topics from before this option) means the default: best posts.
     const xopts = () => ({
       mode: (s.mode === 'latest' ? 'latest' : 'best') as XMode,
-      minFaves: Math.min(1000, Math.max(0, Math.floor(Number(s.minFaves)) || (s.minFaves === 0 || s.minFaves === '0' ? 0 : 5))),
+      minFaves: Math.min(MAX_MIN_FAVES, Math.max(0, Math.floor(Number(s.minFaves)) || (s.minFaves === 0 || s.minFaves === '0' ? 0 : 5))),
       pages: Math.min(5, Math.max(1, Math.floor(Number(s.pages)) || 2)),
     });
     if (s.type === 'xlist') {

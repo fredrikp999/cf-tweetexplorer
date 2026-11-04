@@ -14,6 +14,7 @@ import { fetchSource, type Sources } from '../summarize/agent.ts';
 import { bill, newMeter, tweetCallCost } from '../summarize/pricing.ts';
 import { workerSources } from '../summarize/worker';
 import { mockX } from '../collect/mock.ts';
+import { findFit, historyRows, liveRows, propose, startFrom, worstCost, type Fit, type StoredList } from '../collect/likes.ts';
 import {
   allocate, BRIEFING_POLL_SEC, canReuse, compareSets, dedupeByAddress, demandsOf, hitLimit, incrementalAllowed, isPaid, matchesFeed, mergeDepth, MODES, nextDelaySec, PAGE_TWEETS, readSince, reuseMs, selectForUse, sourceKey, strategyOf,
   type CollectKind, type CollectMode, type Covered, type Demand, type Lookups, type SourceSpec, type StoredItem, type TopicLike,
@@ -535,6 +536,58 @@ export class CollectDO extends DurableObject<Env> {
     return { rows, addedPerRun, addedPerDay: (addedPerRun * 24) / interval };
   }
 
+  // ---- finding a good "at least N likes" for a briefing's X list or group
+  /** The lists one briefing source reads, each with what is already stored for it. */
+  private async likesLists(b: { source?: unknown; maxCost?: unknown; hours?: unknown }) {
+    const hours = Math.min(720, Math.max(1, Number(b.hours) || 24)), source = (b.source ?? {}) as TopicLike['sources'][number];
+    if ((source.type !== 'xlist' && source.type !== 'xgroup') || source.mode === 'latest') throw new Error('only an X list or group read as best posts has a likes setting');
+    const demands = demandsOf({ sources: [{ ...source, pages: Number(source.pages) || 2 }], maxCost: Number(b.maxCost) || 0 }, await this.lookups());
+    if (!demands.length) throw new Error('this source has no lists');
+    const since = Date.now() - KEEP_MS, now = Date.now();
+    const lists = demands.map((d) => {
+      const s = this.byKey(d.key), runs = new Map<number, number[]>();
+      if (s?.covered) for (const r of this.ctx.storage.sql.exec<{ likes: number; at: number }>('SELECT i.likes, x.collected_at AS at FROM item_sources x JOIN items i ON i.id = x.item WHERE x.source = ? AND x.collected_at >= ?', s.id, since)) {
+        const run = Math.floor((now - r.at) / (hours * 3_600_000));
+        runs.set(run, [...(runs.get(run) ?? []), r.likes]);
+      }
+      const stored: StoredList = { floor: s?.covered?.minFaves ?? 0, runs: [...runs.values()] };
+      return { id: d.spec.listId ?? '', label: d.label, stored };
+    });
+    return { hours, lists, limit: demands[0].pages * PAGE_TWEETS, pages: demands[0].pages };
+  }
+  /** Free: what each setting would have kept of the posts already collected. */
+  private async likesHistory(b: Record<string, unknown>) {
+    const { lists, limit, pages } = await this.likesLists(b), stored = lists.map((l) => l.stored), rows = historyRows(stored, limit);
+    return { limit, lists: lists.length, runs: Math.max(0, ...stored.map((s) => s.runs.length)), rows, proposed: propose(rows, lists.length), worst: worstCost(lists.length, pages) };
+  }
+  /** Paid: searches each list for the lowest setting that fits, at most `worstCost`, and never past the daily cap. */
+  private async likesProbe(b: Record<string, unknown>) {
+    const { hours, lists, limit, pages } = await this.likesLists(b), room = this.cap() - this.spent();
+    if (room <= 0) throw new Error('the daily X data cap is reached');
+    const meter = newMeter(Math.min(worstCost(lists.length, pages), room)), sources = this.xSources(meter);
+    const results: Array<{ id: string; label: string; fit: Fit | null; error: string }> = [];
+    for (let i = 0; i < lists.length; i += WIDTH) {
+      results.push(...await Promise.all(lists.slice(i, i + WIDTH).map(async (l) => {
+        try {
+          const fit = await findFit(async (minFaves) => {
+            const got = await sources.xlistTweets!({ listId: l.id, hours, pages, mode: 'best', minFaves });
+            return meter.capped ? null : got.map((t) => Number(t.likeCount) || 0);       // a read the budget cut short looks like a list that fits: it says nothing
+          }, limit, startFrom(l.stored, limit));
+          return { id: l.id, label: l.label, fit, error: '' };
+        } catch (err) { return { id: l.id, label: l.label, fit: null, error: err instanceof Error ? err.message : String(err) }; }
+      })));
+    }
+    if (meter.cost) {
+      this.addSpend(meter.cost);
+      await recordCost(this.env, { kind: 'collect', ref: 'likes-check', label: 'Min likes check', twitter: meter.cost, tweets: meter.tweets, calls: meter.calls });
+    }
+    const read = results.flatMap((r) => (r.fit ? [r.fit] : [])), rows = liveRows(read, limit);
+    return {
+      limit, rows, proposed: read.length ? propose(rows, read.length) : null, cost: meter.cost, calls: meter.calls, stopped: !!meter.capped,
+      lists: results.map((r) => ({ label: r.label, fit: r.fit?.fit ?? null, posts: r.fit?.likes.length ?? 0, error: r.error, complete: r.fit?.complete ?? false })),
+    };
+  }
+
   // ---- HTTP (internal: the Worker, the Monitor and Publish are the only callers)
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url), name = url.pathname.replace(/^\/collect\//, '');
@@ -583,6 +636,8 @@ export class CollectDO extends DurableObject<Env> {
         return json({ ok: true });
       }
       if (name === 'estimate') return json(await this.estimate(b));
+      if (name === 'likes-history') return json(await this.likesHistory(b));
+      if (name === 'likes-probe') return json(await this.likesProbe(b));
       if (name === 'settings') {
         if (!MODES.includes(b.mode as CollectMode)) throw new Error('unknown mode');
         this.setMeta('mode', b.mode); await this.arm();
