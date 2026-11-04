@@ -206,3 +206,7 @@ flowchart TD
 4. The view (`src/apps/map.ts`, in the sandboxed frame of `src/site/viz.ts`) does all its filtering and counting in the browser from one read of `/research/map.json`. An abstract is read when a reader opens it, from `/research/map/paper/<id>.json`.
 
 Progress and errors show under **Signal setup → Research pulse** in the admin, and on the page itself while it is being built.
+
+**Papers named without a link.** Besides links, attention counts collected posts that use a paper's own made-up name: one mixed-case word before the colon of its title, such as `nanoMuse` (`coinedName` in `src/signal/attention.ts`). A name is dropped if it was in use more than a day before its paper appeared, if more than 25 accounts use it, or if two papers share it, and an author naming their own paper does not count. This uses no embeddings: on 1,124 real posts they found papers on the same subject rather than the same paper, while all 5 mixed-case name matches were right. Papers without such a name, at least two thirds of them, can only be found by a link.
+
+**Topics inside bigger topics.** In the Signal lists, a topic whose name holds all the words of a bigger topic's name sits straight under it, such as `trump lawsuit` under `trump` (`nestTopics` in `src/signal/topics.ts`). It keeps its own score and its own page, and its numbers are not added to the bigger topic. Nesting goes by names only, so topics that are related but named differently, such as `us election` and `voting id`, stay apart.

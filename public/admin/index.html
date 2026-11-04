@@ -423,6 +423,7 @@ a { color: var(--accent); }   /* the lowest specificity there is, so every link 
 .sigleg i, .sigdot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--gc); margin-right: 6px; vertical-align: -1px; }
 .sigrows { display: flex; flex-direction: column; gap: 3px; }
 .sigrow { display: grid; grid-template-columns: minmax(120px, 210px) minmax(0, 1fr) 54px minmax(0, 190px); gap: 12px; align-items: center; width: 100%; background: none; border: 0; border-radius: 8px; padding: 5px 8px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.sigrow.part .t { padding-left: 16px; position: relative; font-weight: 400; } .sigrow.part .t::before { content: "└"; position: absolute; left: 2px; color: var(--muted); }
 .sigrow:hover, .sigrow.on { background: color-mix(in srgb, var(--text) 6%, transparent); }
 .sigrow .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .sigrow .t small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
@@ -3768,7 +3769,7 @@ function renderSignal() {
       mid = `<span class="bar" style="width:${Math.max(2, (t.signal / max) * 100).toFixed(1)}%">${t.groups.filter((x) => x.part >= 0.02).map((x) => `<b style="flex:${x.part.toFixed(3)};--gc:${sigCol(x.key)}" title="${esc(sigName(x.key))}: ${fmt(x.docs)} items"></b>`).join('')}</span>`;
     }
     const h = t.headlines?.[0];
-    return `<button class="sigrow${sigPick?.id === n ? ' on' : ''}" data-sterm="${esc(n)}"><span class="t" title="${esc([t.label, ...t.members].join(', '))}">${esc(t.label)}${t.related?.length ? `<small>${esc(t.related.join(' · '))}</small>` : ''}</span><span>${mid}</span><span class="v" title="Weighted share of items that mention it">${sigPct(t.signal)}</span><span class="cs">${sigChips(t)}</span>${h ? `<span class="hl">“${esc(h.title)}” <span class="note">${esc(h.by)}</span></span>` : ''}</button>`;
+    return `<button class="sigrow${sigPick?.id === n ? ' on' : ''}${t.parent && shown.includes(t.parent) ? ' part' : ''}" data-sterm="${esc(n)}"><span class="t" title="${esc([t.label, ...t.members].join(', '))}">${esc(t.label)}${t.related?.length ? `<small>${esc(t.related.join(' · '))}</small>` : ''}</span><span>${mid}</span><span class="v" title="Weighted share of items that mention it">${sigPct(t.signal)}</span><span class="cs">${sigChips(t)}</span>${h ? `<span class="hl">“${esc(h.title)}” <span class="note">${esc(h.by)}</span></span>` : ''}</button>`;
   }).join('')}</div>${names.length > 20 ? `<button class="go ghost" data-sigmore style="margin-top:10px">${sigAll ? 'Show fewer' : `Show all ${names.length}`}</button>` : ''}`
     : '<div class="empty">No term is mentioned often enough yet. Terms need three items in the window.</div>';
 

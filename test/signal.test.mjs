@@ -129,7 +129,7 @@ describe('dropParts and distinctive', () => {
   });
 });
 
-import { boostByEngagement, indexItems, mergeTopics, relatedTerms, topicEngagement, topicItems } from '../src/signal/topics.ts';
+import { boostByEngagement, indexItems, mergeTopics, relatedTerms, topicEngagement, topicItems, nestTopics, partsAfterParents } from '../src/signal/topics.ts';
 describe('topics', () => {
   const T = (term, signal) => ({ term, signal, docs: 5, prev: 0, change: null, isNew: false, breadth: 1, active: 1, exclusivity: 1, topGroup: 'x', kind: 'single', groups: [] });
   const item = (ts, ...terms) => ({ ts, terms: new Set(terms) });
@@ -328,5 +328,36 @@ describe('YouTube API fallback', () => {
       assert.equal(r.items[0].id, 'yt:abcdefghijk');
       assert.equal(r.title, 'AI Explained');
     } finally { globalThis.fetch = real; }
+  });
+});
+
+describe('topics inside bigger topics', () => {
+  const t = (term, signal, label) => ({ term, signal, label });
+  // Every topic from a real Signal over 14 days, in order of size.
+  const REAL = ['ai agent', 'us election', 'cybersecurity', 'ai code', 'workflow efficiency', 'stock market', 'claude code', 'trump', 'job posting', 'ai security', 'iphone duo', 'grok bot', 'cve-2026-98432', 'healthcare', 'elon musk', 'opus 5.5', 'gemini 4 carbon', 'trump lawsuit', 'solopreneurs', 'yc winter 2027', 'moonshot', 'llms', 'world changing', 'chatgpt', 'deepseek', 'voting id', 'linux kernel', 'binance hack', 'haley steven', 'hackertube', 'european union', 'bitcoin whitepaper', 'anthropic ipo', 'oracle ai world', 'socialism', 'cloudflare', 'apple intelligence', 'qwen', 'omarchy', 'rust', 'tryhackme', 'starlink', 'claude code backdoor'];
+  test('on real topics it nests the two that belong, and nothing else', () => {
+    const list = REAL.map((x, i) => t(x, 1 - i / 100));
+    assert.deepEqual([...nestTopics(list)].sort(), [['claude code backdoor', 'claude code'], ['trump lawsuit', 'trump']]);
+  });
+  test('a smaller topic never holds a bigger one', () => {
+    assert.equal(nestTopics([t('trump', 0.1), t('trump lawsuit', 0.5)]).size, 0);
+  });
+  test('one level only, under the top one', () => {
+    const m = nestTopics([t('trump', 0.5), t('trump lawsuit', 0.3), t('trump lawsuit appeal', 0.1)]);
+    assert.equal(m.get('trump lawsuit'), 'trump'); assert.equal(m.get('trump lawsuit appeal'), 'trump');
+  });
+  test('whole words only, and a plural is the same word', () => {
+    assert.equal(nestTopics([t('rust', 0.5), t('trustworthy ai', 0.1)]).size, 0);
+    assert.equal(nestTopics([t('ai agent', 0.5), t('ai agents security', 0.1)]).get('ai agents security'), 'ai agent');
+  });
+  test('a very short word alone does not collect half of the list', () => {
+    assert.equal(nestTopics([t('ai', 0.9), t('ai code', 0.2), t('ai agent', 0.3)]).size, 0);
+  });
+  test('it goes by the name shown', () => {
+    assert.equal(nestTopics([t('donald', 0.5, 'trump'), t('suit', 0.1, 'trump lawsuit')]).get('suit'), 'donald');
+  });
+  test('parts follow their topic, and stand alone when it is not in the list', () => {
+    const list = [{ term: 'a' }, { term: 'b' }, { term: 'a x', parent: 'a' }, { term: 'c y', parent: 'c' }];
+    assert.deepEqual(partsAfterParents(list).map((x) => x.term), ['a', 'a x', 'b', 'c y']);
   });
 });

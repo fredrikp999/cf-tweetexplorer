@@ -122,7 +122,7 @@ Claude app, claude.ai) draw the page inline in the conversation; every other cli
 | Tool | View | What you can do in it |
 | --- | --- | --- |
 | `get_costs` | `ui://tweet-explorer/costs-v7.html` (`src/apps/costs.ts`) | Totals and a per-day chart; switch between 7, 30 and 90 days |
-| `get_signal` | `ui://tweet-explorer/signal-v2.html` (`src/apps/signal.ts`) | Pick the window and which published Signal; switch between strength and where it shows up; show background topics; open a topic to see the items behind it |
+| `get_signal` | `ui://tweet-explorer/signal-v3.html` (`src/apps/signal.ts`) | Pick the window and which published Signal; switch between strength and where it shows up; show background topics; open a topic to see the items behind it |
 | `get_tweet_galaxy` | `ui://tweet-explorer/galaxy-v2.html` (`src/apps/galaxy.ts`) | Every tweet of a History collection is a particle: move them between spirals per theme or kind, a timeline, and for and against a subject; replay the collection day by day; isolate a theme; select tweets and ask Claude about them |
 | `get_who_said_first` | `ui://tweet-explorer/first-v1.html` (`src/apps/first.ts`) | Each topic is a ripple from the group that had it first; distance from the centre is how late the others were. Pick a topic, a window and a Signal; compare every group's firsts with what chance predicts |
 
@@ -152,7 +152,7 @@ sequenceDiagram
   participant S as MCP server /mcp
   H->>S: tools/call get_signal
   S-->>H: JSON result
-  H->>V: load ui://…/signal-v2.html
+  H->>V: load ui://…/signal-v3.html
   V->>H: ui/initialize
   H-->>V: host context (theme, …)
   V->>H: ui/notifications/initialized

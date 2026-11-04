@@ -12,6 +12,7 @@ import type { Provenance } from '../durable-objects/publish';
 import type { Stats } from '../history/stats.ts';
 import type { Results, Subject, Theme } from '../history/analysis.ts';
 import { GALAXY_PAGE, MAX_GALAXY_POINTS } from '../history/galaxy.ts';
+import { partsAfterParents } from '../signal/topics';
 import { HOST_JS, VIZ_CSS, VIZ_VIEWS, vizFrame, viewCsp } from './viz';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
 import { aiModelInfo } from '../summarize/workers-ai.ts';
@@ -46,7 +47,7 @@ interface PubTopicPage { slug: string; title: string; proof: boolean; days: numb
   total?: number; sources?: Array<{ label: string; group: string; n: number }>; items?: Array<{ title: string; url: string; discussionUrl: string; source: string; by: string; group: string; ts: number; reactions?: number }> }
 interface PubProof { slug: string; title: string; days: number; term: string; label: string; terms: string[]; from: string; to: string; total: number; groups: Array<{ name: string; n: number }>; sources: Array<{ label: string; group: string; n: number }>; items: Array<{ title: string; url: string; discussionUrl: string; source: string; by: string; group: string; ts: number }> }
 // Signal, as the Monitor gives it for the public page: group names and counts, and terms. `parts` is each group's share of a term's score, in the order of `groups`.
-interface PubSigTerm { term: string; label: string; related: string[]; members: string[]; signal: number; change: number | null; isNew: boolean; kind: 'shared' | 'single' | 'mixed'; breadth: number; active: number; top: number; parts: number[]; /** Each group's own share of its items that mention the topic, in the order of `groups`. */ shares?: number[]; /** Only on a Signal with sources shown. */ reactions?: number; headlines?: Array<{ title: string; url: string; by: string; reactions?: number }> }
+interface PubSigTerm { /** The bigger topic this one is part of. */ parent?: string; term: string; label: string; related: string[]; members: string[]; signal: number; change: number | null; isNew: boolean; kind: 'shared' | 'single' | 'mixed'; breadth: number; active: number; top: number; parts: number[]; /** Each group's own share of its items that mention the topic, in the order of `groups`. */ shares?: number[]; /** Only on a Signal with sources shown. */ reactions?: number; headlines?: Array<{ title: string; url: string; by: string; reactions?: number }> }
 interface PubSignal { slug: string; title: string; description: string; proof?: boolean; /** Topics were named by a language model. */ ai?: boolean; /** Topics left out because they are always around at the same level. */ steadyHidden?: number; days: number; from: string; to: string; baselineOk: boolean; volumeDays: string[]; groups: Array<{ name: string; weight: number; items: number; perDay: number[] }>;
   top: PubSigTerm[]; rising: PubSigTerm[]; shared: PubSigTerm[]; single: PubSigTerm[] }
 const listTotal = (c: Ctx) => c.lists.length + c.alists.length + c.flists.length;
@@ -149,7 +150,7 @@ figure.bars span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}figur
 figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-template-columns:1fr}}
 .sgwin{display:flex;gap:4px;margin:0 0 12px;flex-wrap:wrap}.sgwin a{padding:5px 14px;border-radius:999px;border:1px solid var(--line);color:var(--text);text-decoration:none;font-size:14px;background:var(--card)}.sgwin a[aria-current=page]{border-color:var(--accent);color:var(--accent);font-weight:600}
 .sglegend{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:14px;margin:6px 0 4px}.sglegend i,.sgrow .bar i{display:inline-block}.sglegend i{width:11px;height:11px;border-radius:3px;margin-right:6px}.sglegend small{color:var(--muted)}
-.sgrows{display:flex;flex-direction:column;gap:6px}.sgrow{display:grid;grid-template-columns:minmax(90px,200px) minmax(0,1fr) 3.4rem minmax(0,200px);gap:12px;align-items:center;font-size:15px}
+.sgrows{display:flex;flex-direction:column;gap:6px}.sgrow.sgpart .t{padding-left:18px;position:relative;font-weight:400}.sgrow.sgpart .t::before{content:'└';position:absolute;left:3px;color:var(--muted)}.sgrow{display:grid;grid-template-columns:minmax(90px,200px) minmax(0,1fr) 3.4rem minmax(0,200px);gap:12px;align-items:center;font-size:15px}
 .sgrow .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.sgrow .t small{display:block;font-weight:400;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}.sgrow .bar{display:flex;height:16px;border-radius:4px;overflow:hidden}.sgrow .bar i{display:block;min-width:2px}
 .sgrow b{text-align:right;font-weight:500;font-variant-numeric:tabular-nums;color:var(--muted)}.sgrow .cs{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
 .chip{font-size:12px;padding:0 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}.chip.shared{color:#1a7f5a;border-color:#1a7f5a}.chip.single{color:#7c5cbf;border-color:#7c5cbf}.chip.up{color:var(--accent);border-color:var(--accent)}
@@ -281,7 +282,7 @@ const ext = (u: string, text: string) => (httpsOnly(u) ? `<a href="${esc(u)}" re
 function paperHtml(p: PubPaper): string {
   const a = p.attention, shown = p.authors.slice(0, 6).join(', ') + (p.authors.length > 6 ? ` and ${p.authors.length - 6} more` : '');
   const signals = [a.hf && `<span>${ext(a.hf.url, `${n(a.hf.upvotes)} upvote${a.hf.upvotes === 1 ? '' : 's'} on Hugging Face`)}</span>`, a.hn && `<span>${ext(a.hn.url, `${n(a.hn.points)} point${a.hn.points === 1 ? '' : 's'} on Hacker News`)}</span>`,
-    a.accounts ? `<span>Linked by ${a.mentions.slice(0, 3).map((m) => ext(m.url, `@${esc(m.by)}`)).join(', ')}${a.accounts > 3 ? ` and ${a.accounts - 3} more` : ''}</span>` : ''].filter(Boolean).join('');
+    a.accounts ? `<span>Mentioned by ${a.mentions.slice(0, 3).map((m) => ext(m.url, `@${esc(m.by)}`)).join(', ')}${a.accounts > 3 ? ` and ${a.accounts - 3} more` : ''}</span>` : ''].filter(Boolean).join('');
   return `<li><h3>${ext(p.absUrl, esc(p.title))}</h3><p class="pby">${esc(shown)} · ${esc(new Date(p.published).toISOString().slice(0, 10))} · ${esc(p.categories.slice(0, 3).join(' '))}</p>
 ${signals ? `<p class="psig">${signals}</p>` : ''}<details><summary>Abstract</summary><p>${esc(p.abstract)}</p></details>
 <p class="plinks">${ext(p.absUrl, 'On arXiv')} · ${ext(p.pdfUrl, 'PDF')}${p.also.length ? ` · Also in ${p.also.map((t) => `<a href="/research/${esc(t.slug)}">${esc(t.title)}</a>`).join(', ')}` : ''}</p></li>`;
@@ -400,7 +401,8 @@ export function signalPageHtml(d: PubSignal, ctx: Ctx, q: { sort: SigSort; group
   const key = (t: PubSigTerm) => (q.sort === 'reacted' ? t.reactions ?? 0 : q.sort === 'rising' ? (t.isNew ? 1e6 : t.change ?? 0) : t.signal);
   let topList = d.top.filter((t) => (q.group < 0 || (t.shares?.[q.group] ?? 0) > 0) && (q.sort === 'new' ? t.isNew : q.sort === 'rising' ? t.isNew || (t.change ?? 0) >= 1.5 : q.sort === 'reacted' ? (t.reactions ?? 0) > 0 : true));
   if (q.sort !== 'strength' && q.sort !== 'new') topList = [...topList].sort((a, b) => key(b) - key(a) || b.signal - a.signal);
-  topList = topList.slice(0, 20);
+  topList = partsAfterParents(topList).slice(0, 20);
+  const shownTerms = new Set(topList.map((t) => t.term)), isPart = (t: PubSigTerm) => !!t.parent && shownTerms.has(t.parent);
   const sortBar = `<nav class="sgwin" aria-label="Sort">${SORTS.map(([k, label]) => `<a href="${qs(k, q.group)}"${q.sort === k ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`
     + (d.groups.length > 1 ? `<nav class="sgwin" aria-label="Show one group"><a href="${qs(q.sort, -1)}"${q.group < 0 ? ' aria-current="page"' : ''}>All groups</a>${d.groups.map((g, i) => `<a href="${qs(q.sort, i)}"${q.group === i ? ' aria-current="page"' : ''}>${esc(g.name)}</a>`).join('')}</nav>` : '');
   const chips = (t: PubSigTerm) => [
@@ -411,13 +413,13 @@ export function signalPageHtml(d: PubSignal, ctx: Ctx, q: { sort: SigSort; group
   const max = Math.max(1e-9, ...topList.map((t) => t.signal));
   const headline = (t: PubSigTerm) => { const h = t.headlines?.[0]; return h?.title ? `<div class="hl">${h.url ? `<a href="${esc(h.url)}" rel="noopener noreferrer nofollow" target="_blank">&ldquo;${esc(h.title)}&rdquo;</a>` : `&ldquo;${esc(h.title)}&rdquo;`}${h.by ? ` <small>${esc(h.by)}</small>` : ''}${h.reactions ? ` <small>&#9650; ${kfmt(h.reactions)}</small>` : ''}</div>` : ''; };
   const name = (t: PubSigTerm) => `<span class="t" title="${esc([t.label, ...t.members].join(', '))}">${termLink(t)}${t.related.length ? `<small>${esc(t.related.join(' · '))}</small>` : ''}</span>`;
-  const rows = topList.map((t) => `<div class="sgrow">${name(t)}
+  const rows = topList.map((t) => `<div class="sgrow${isPart(t) ? ' sgpart' : ''}">${name(t)}
 <span class="bar" style="width:${Math.max(2, (100 * t.signal) / max).toFixed(1)}%" role="img" aria-label="${esc(t.parts.map((p, i) => `${gname(i)} ${Math.round(p * 100)}%`).join(', '))}">${t.parts.map((p, i) => (p >= 0.02 ? `<i style="flex:${p.toFixed(3)};background:${sigColor(i)}" title="${esc(gname(i))}"></i>` : '')).join('')}</span>
 <b>${sigPct(t.signal)}</b><span class="cs">${chips(t)}</span>${headline(t)}</div>`).join('');
   // "Where it shows up": each group's own share of its items, one column per group. Switched with a radio, so the page needs no script.
   const topShare = Math.max(1e-9, ...topList.flatMap((t) => t.shares ?? []));
   const cols = `grid-template-columns:repeat(${d.groups.length},minmax(0,1fr))`;
-  const grid = topList.map((t) => `<div class="sgrow sgwhere">${name(t)}
+  const grid = topList.map((t) => `<div class="sgrow sgwhere${isPart(t) ? ' sgpart' : ''}">${name(t)}
 <span class="cells" style="${cols}">${d.groups.map((_, i) => { const v = t.shares?.[i] ?? 0; return v > 0 ? `<span class="cell" title="${esc(gname(i))}"><i style="width:${Math.max(6, (100 * v) / topShare).toFixed(0)}%;background:${sigColor(i)}"></i><em>${sigPct(v)}</em></span>` : '<span class="cell"></span>'; }).join('')}</span>
 <b>${sigPct(t.signal)}</b><span class="cs">${chips(t)}</span>${headline(t)}</div>`).join('');
   const view = rows ? `<div class="sgview"><input type="radio" name="sgv" id="sgv1" checked><input type="radio" name="sgv" id="sgv2">

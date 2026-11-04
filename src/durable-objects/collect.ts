@@ -7,7 +7,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { json, OutOfCredits, search, slim, type Tweet } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
 import { arxivDirect, fetchArxivQuery, isArxivHost } from '../sources/arxiv';
-import { arxivIdsIn } from '../signal/attention';
+import { arxivIdsIn, namesIn } from '../signal/attention';
 import { fetchHn, type HnTag } from '../sources/hn';
 import { fetchRss } from '../sources/rss';
 import { setYoutubeKey } from '../sources/youtube';
@@ -609,7 +609,7 @@ export class CollectDO extends DurableObject<Env> {
         }
         if (name === 'paper-mentions') {   // collected posts that link to an arXiv paper. Hacker News is read in full elsewhere, and Hugging Face has its own count.
           const since = Number(url.searchParams.get('since')) || 0, out: Array<{ paper: string; by: string; name: string; url: string; reactions: number }> = [];
-          const rows = this.ctx.storage.sql.exec<{ id: string; kind: string; likes: number; json: string }>("SELECT id, kind, likes, json FROM items WHERE published >= ? AND kind IN ('x', 'rss', 'youtube') AND (json LIKE '%arxiv.org/%' OR json LIKE '%alphaxiv.org/%' OR json LIKE '%huggingface.co/papers/%') ORDER BY published DESC LIMIT 3000", since).toArray();
+          const rows = this.ctx.storage.sql.exec<{ id: string; kind: string; likes: number; json: string }>("SELECT id, kind, likes, json FROM items WHERE published >= ? AND kind IN ('x', 'rss', 'youtube') AND (json LIKE '%arxiv.org/%' OR json LIKE '%alphaxiv.org/%' OR json LIKE '%huggingface.co/papers/%' OR json LIKE '%arxiv %' OR json LIKE '%arxiv:%') ORDER BY published DESC LIMIT 3000", since).toArray();
           for (const r of rows) {
             const j = JSON.parse(r.json) as { url?: string; text?: string; title?: string; isRetweet?: boolean; retweetCount?: number; replyCount?: number; quoteCount?: number; author?: { userName?: string; name?: string }; entities?: { urls?: Array<{ url?: string; expanded_url?: string }> } };
             if (j.isRetweet || /huggingface\.co\/papers\//.test(j.url ?? '')) continue;
@@ -625,6 +625,20 @@ export class CollectDO extends DurableObject<Env> {
       }
       if (request.method !== 'POST') return json({ error: 'GET or POST required' }, 405);
       const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      if (name === 'paper-names') {   // collected posts that use one of these paper names, from any time, so a name in use before its paper can be told apart
+        const names = new Set(Array.isArray(b.names) ? b.names.map(String) : []), out: Array<{ name: string; by: string; author: string; url: string; reactions: number; ts: number }> = [];
+        if (!names.size) return json(out);
+        for (const r of this.ctx.storage.sql.exec<{ id: string; kind: string; published: number; likes: number; json: string }>("SELECT id, kind, published, likes, json FROM items WHERE kind IN ('x', 'rss', 'youtube') ORDER BY published DESC LIMIT 30000")) {
+          const j = JSON.parse(r.json) as { url?: string; text?: string; title?: string; isRetweet?: boolean; retweetCount?: number; replyCount?: number; quoteCount?: number; author?: { userName?: string; name?: string } };
+          if (j.isRetweet) continue;
+          const found = namesIn(`${j.title ?? ''} ${j.text ?? ''}`, names);
+          if (!found.length) continue;
+          const by = j.author?.userName ?? '', link = j.url ?? (r.kind === 'x' && by ? `https://x.com/${by}/status/${r.id}` : '');
+          if (!by || !/^https:\/\//.test(link)) continue;
+          for (const n of found) out.push({ name: n, by: by.slice(0, 80), author: (j.author?.name ?? '').slice(0, 80), url: link.slice(0, 400), reactions: r.likes + (j.retweetCount ?? 0) * 2 + (j.replyCount ?? 0) * 2 + (j.quoteCount ?? 0) * 2, ts: r.published });
+        }
+        return json(out);
+      }
       if (name === 'sync-monitor') { await this.syncMonitor(b as unknown as Parameters<CollectDO['syncMonitor']>[0]); await this.drain().catch(() => {}); await this.arm(); return json({ ok: true }); }
       if (name === 'sync-briefing') {
         if (typeof b.delete === 'string') {

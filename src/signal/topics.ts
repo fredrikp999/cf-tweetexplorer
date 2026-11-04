@@ -87,3 +87,30 @@ export function topicItems(own: string[], items: TopicItem[], post: Postings, n 
   for (const t of own) for (const i of post.get(t) ?? []) score.set(i, (score.get(i) ?? 0) + 1);
   return [...score].sort((a, b) => b[1] - a[1] || (items[b[0]].eng ?? 0) - (items[a[0]].eng ?? 0) || items[b[0]].ts - items[a[0]].ts).slice(0, n).map(([i]) => i);
 }
+
+// ---- Topics that are part of a bigger one: "trump lawsuit" belongs under "trump". Only by their names, as all their words have to be in the longer name: going by shared items
+// or by meaning nests topics that merely go together. Tried on 43 real topics, this nests "claude code backdoor" and "trump lawsuit", and nothing else.
+const nameWords = (s: string) => s.toLowerCase().split(/\s+/).filter(Boolean).map((w) => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w));
+
+/** Which topic each topic sits under, by its `term`. One level only: a topic under a topic that is itself under another goes straight to the top one. A smaller topic never holds a bigger one. */
+export function nestTopics(topics: Array<{ term: string; label?: string; signal: number }>): Map<string, string> {
+  const named = topics.map((t) => ({ term: t.term, signal: t.signal, words: nameWords(t.label ?? t.term) })), up = new Map<string, string>();
+  for (const child of named) {
+    const parents = named.filter((p) => p.term !== child.term && p.words.length < child.words.length && p.signal >= child.signal
+      && (p.words.length > 1 || p.words[0].length >= 3)   // "ai" alone would hold half of the list
+      && p.words.every((w) => child.words.includes(w)));
+    if (parents.length) up.set(child.term, parents.sort((a, b) => b.words.length - a.words.length || b.signal - a.signal)[0].term);
+  }
+  const top = (t: string): string => { let x = t; while (up.has(x)) x = up.get(x)!; return x; };
+  return new Map([...up.keys()].map((t) => [t, top(t)]));
+}
+
+/** The same list with each part straight after the topic it belongs to. A part whose topic is not in the list stays where it is, as a topic of its own. */
+export function partsAfterParents<T extends { term: string; parent?: string }>(list: T[]): T[] {
+  const here = new Set(list.map((t) => t.term)), out: T[] = [];
+  for (const t of list) {
+    if (t.parent && here.has(t.parent)) continue;
+    out.push(t, ...list.filter((c) => c.parent === t.term));
+  }
+  return out;
+}

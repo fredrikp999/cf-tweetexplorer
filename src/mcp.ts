@@ -13,7 +13,7 @@ import { GALAXY_PAGE } from './history/galaxy';
 
 const MAX_TWEETS = 200;
 const COSTS_UI = 'ui://tweet-explorer/costs-v7.html';
-const SIGNAL_UI = 'ui://tweet-explorer/signal-v2.html';
+const SIGNAL_UI = 'ui://tweet-explorer/signal-v3.html';
 const GALAXY_UI = 'ui://tweet-explorer/galaxy-v2.html';
 const FIRST_UI = 'ui://tweet-explorer/first-v1.html';
 

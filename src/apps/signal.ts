@@ -2,7 +2,7 @@
 // mcp-app skill and costs.ts for why) and draws the tool's JSON result.
 // The result it draws: { days, from, to, baselineOk, board, boards: [{ id, title, slug, public, proof }], ai: { using },
 //   groups: [{ key, name, weight, items, perDay }], lists: { top, rising, shared, single },
-//   terms: { [term]: { label, members, related, signal, change, isNew, kind, topGroup, breadth, active, groups: [{ key, docs, share, part }], headlines } } }.
+//   terms: { [term]: { label, parent, members, related, signal, change, isNew, kind, topGroup, breadth, active, groups: [{ key, docs, share, part }], headlines } } }.
 // It is interactive through tools/call: the window, the Signal (board) and the background-topics switch ask the host to call get_signal again, and
 // opening a topic calls get_signal_items for the items behind it. Strength / Where it shows up and the open topic are kept in the page.
 export default `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -32,6 +32,7 @@ label.chk{color:var(--mut);font-size:12px;cursor:pointer}
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
 .li{display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px solid var(--line)}.li small{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #s,.note{color:var(--mut)}.note{font-size:12px;margin-top:10px}
+.row.part .t{padding-left:16px;position:relative;font-weight:400}.row.part .t::before{content:'\u2514';position:absolute;left:2px;color:var(--mut)}
 </style></head><body>
 <div id="s">waiting for data</div><div id="root"></div>
 <script>
@@ -143,7 +144,7 @@ function draw() {
       for (j = 0; j < t.groups.length; j++) if (t.groups[j].part >= 0.02) mid += '<b style="flex:' + t.groups[j].part.toFixed(3) + ';background:' + color[t.groups[j].key] + '" title="' + esc(name(t.groups[j].key)) + '"></b>';
       mid += '</span>';
     }
-    rows += '<button class="row' + (st.open === shown[i] ? ' on' : '') + '" data-term="' + esc(shown[i]) + '"><span class="t" title="' + esc([t.label].concat(t.members || []).join(', ')) + '">' + esc(t.label || shown[i])
+    rows += '<button class="row' + (st.open === shown[i] ? ' on' : '') + (t.parent && shown.indexOf(t.parent) >= 0 ? ' part' : '') + '" data-term="' + esc(shown[i]) + '"><span class="t" title="' + esc([t.label].concat(t.members || []).join(', ')) + '">' + esc(t.label || shown[i])
       + (t.related && t.related.length ? '<small>' + esc(t.related.join(' / ')) + '</small>' : '') + '</span><span>' + mid + (st.view === 'strength' ? chips(t, name) : '') + '</span><span class="v">' + pct(t.signal) + '</span></button>'
       + (hl ? '<div class="hl">' + esc(hl.title) + ' <span class="note">' + esc(hl.by) + '</span></div>' : '')
       + (st.open === shown[i] ? proofHtml(name) : '');

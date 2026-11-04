@@ -6,7 +6,7 @@ import { recordCost } from '../lib/costs';
 import { HN_TAGS, type HnTag } from '../sources/hn';
 import type { Paper } from '../sources/arxiv';
 import { arxivCount, arxivPage, arxivPapers, arxivSearchQuery, arxivThroughCollect, isArxivApi, queryOfArxivUrl, useArxivGate } from '../sources/arxiv';
-import { arxivIdsIn, attentionOf, type PaperSignals } from '../signal/attention';
+import { arxivIdsIn, attentionOf, coinedName, trustedNames, type PaperSignals } from '../signal/attention';
 import { BASELINE_WEEKS, DEFAULT_PULSE_TOPICS, PULSE_BASE, PULSE_BASE_ID, fieldSurge, pulseOf, pulseWindows, pulseWork, windowStart, type PulseTopic } from '../signal/pulse';
 import { NAME_SYSTEM, clusterPapers, nameFromTerms, nameUser, parseNames } from '../signal/paperClusters';
 import { expandShorthand } from '../sources/presets';
@@ -15,7 +15,7 @@ import { isYoutubeFeed, resolveYoutubeFeed } from '../sources/youtube';
 import { isSource, type SourceKind } from '../sources/types';
 import { extractTerms } from '../signal/terms';
 import { distinctive, findEvergreen, notSteady, rising, scoreTerms, type Counts, type GroupInfo, type ScoredTerm } from '../signal/score';
-import { boostByEngagement, indexItems, mergeTopics, REACTION_CAP, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
+import { boostByEngagement, indexItems, mergeTopics, nestTopics, partsAfterParents, REACTION_CAP, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
 import { QUIET_MS, findWaves, foldTerm, publicFirst, rankWaves, watchStartMs, scoreFirsts, type FirstItem } from '../signal/first';
 import { cleanTitle, isBait } from '../signal/clean';
 import { setYoutubeKey } from '../sources/youtube';
@@ -387,6 +387,21 @@ export class MonitorDO extends DurableObject<Env> {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const found = new Map<string, Array<{ by: string; name: string; url: string; reactions: number }>>();
       for (const m of (await res.json()) as Array<{ paper: string; by: string; name: string; url: string; reactions: number }>) (found.get(m.paper) ?? found.set(m.paper, []).get(m.paper)!).push(m);
+      // Posts that use the paper's own name. A failure here leaves the links, which are the surer signal.
+      try {
+        const named = new Map<string, { id: string; published: number } | null>();
+        for (const p of sql.exec<{ id: string; title: string; published: number }>('SELECT id, title, published FROM research_papers')) { const n = coinedName(p.title); if (n) named.set(n, named.has(n) ? null : { id: p.id, published: p.published }); }   // two papers with one name: it says neither
+        for (const [n, v] of named) if (!v) named.delete(n);
+        const r = await this.env.COLLECT.getByName('main').fetch(new Request('https://internal/collect/paper-names', { method: 'POST', body: JSON.stringify({ names: [...named.keys()] }) }));
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const hits = (await r.json()) as Array<{ name: string; by: string; author: string; url: string; reactions: number; ts: number }>;
+        const good = trustedNames(hits, new Map([...named].map(([n, v]) => [n, v!.published] as const)));
+        for (const h of hits) {
+          if (!good.has(h.name)) continue;
+          const paper = named.get(h.name)!.id, list = found.get(paper) ?? found.set(paper, []).get(paper)!;
+          if (!list.some((m) => m.url === h.url)) list.push({ paper, by: h.by, name: h.author, url: h.url, reactions: h.reactions } as never);
+        }
+      } catch (err) { problems.push(`paper names: ${err instanceof Error ? err.message : String(err)}`); }
       for (const [id, k] of known) k.s.mentions = (found.get(id) ?? []).map(({ by, name, url, reactions }) => ({ by, name, url, reactions }));
     } catch (err) { problems.push(`collected posts: ${err instanceof Error ? err.message : String(err)}`); }
     this.ctx.storage.transactionSync(() => {
@@ -848,7 +863,8 @@ export class MonitorDO extends DurableObject<Env> {
       related: relatedTerms(members, items, post), reactions: topicEngagement(members, items, post), headlines: topicItems(members, items, post, 2).map((i) => ({ ...meta[i], reactions: items[i].eng ?? 0 })) });
     const clusters = mergeTopics(pool.slice(0, 60), post, nTop);
     const ordered = boostByEngagement(clusters, clusters.map((cl) => topicEngagement(cl.members.map((m) => m.term), items, post, REACTION_CAP)));
-    return { top: ordered.map((cl) => describe(cl.lead, cl.label, cl.members.map((m) => m.term))), describe };
+    const described = ordered.map((cl) => describe(cl.lead, cl.label, cl.members.map((m) => m.term))), parents = nestTopics(described);
+    return { top: partsAfterParents(described.map((t) => ({ ...t, parent: parents.get(t.term) }))), describe };
   }
   private async signalOverview(daysIn: number, boardRef = '', hideSteady = true) {
     const board = boardRef ? this.findBoard(boardRef) : undefined;
@@ -859,7 +875,7 @@ export class MonitorDO extends DurableObject<Env> {
     const pool = hideSteady ? c.terms.filter(notSteady) : c.terms;
     const { top, describe } = this.describeTopics(c, pool, 40), rise = rising(c.terms, 25);
     const shared = pool.filter((t) => t.kind === 'shared').slice(0, 15), single = pool.filter((t) => t.kind === 'single').slice(0, 20);
-    const terms: Record<string, ReturnType<typeof describe>> = {};
+    const terms: Record<string, ReturnType<typeof describe> & { parent?: string }> = {};
     for (const t of [...rise, ...shared, ...single]) terms[t.term] = describe(t);
     for (const t of top) terms[t.term] = t;   // a topic's own description wins
     const { days, by } = this.volume(c.of, c.groups);
@@ -955,7 +971,7 @@ export class MonitorDO extends DurableObject<Env> {
     const idx = new Map(shown.map((g, i) => [g.key, i] as const)), { days, by } = this.volume(c.of, shown), pool = c.terms.filter(notSteady);
     const { top, describe } = this.describeTopics({ ...c, groups: shown }, pool, 30);
     // Terms and what goes with them, never the items themselves.
-    const out = (t: ScoredTerm & { label?: string; related?: string[]; members?: string[]; reactions?: number; headlines?: Array<{ title: string; url: string; by: string; reactions?: number }> }) => ({ term: t.term, label: t.label ?? t.term, related: t.related ?? [], members: t.members ?? [], signal: t.signal, change: t.change, isNew: t.isNew, kind: t.kind, breadth: t.breadth, active: t.active,
+    const out = (t: ScoredTerm & { parent?: string; label?: string; related?: string[]; members?: string[]; reactions?: number; headlines?: Array<{ title: string; url: string; by: string; reactions?: number }> }) => ({ term: t.term, ...(t.parent ? { parent: t.parent } : {}), label: t.label ?? t.term, related: t.related ?? [], members: t.members ?? [], signal: t.signal, change: t.change, isNew: t.isNew, kind: t.kind, breadth: t.breadth, active: t.active,
       top: idx.get(t.topGroup) ?? 0, parts: shown.map((g) => t.groups.find((x) => x.key === g.key)?.part ?? 0), shares: shown.map((g) => t.groups.find((x) => x.key === g.key)?.share ?? 0),
       // Items are shown only on a Signal that has sources switched on (its proof pages show them too).
       reactions: t.reactions ?? 0,
