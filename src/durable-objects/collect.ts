@@ -52,6 +52,8 @@ export interface WatchSync {
 interface Fetched { id: string; ts: number; json: Record<string, unknown> }
 
 export class CollectDO extends DurableObject<Env> {
+  /** RPC: the size of this object's database, for the storage line in Costs. */
+  storageBytes(): number { return this.ctx.storage.sql.databaseSize; }
   private inFlight = new Map<string, Promise<RunResult>>();
 
   constructor(ctx: DurableObjectState, env: Env) {

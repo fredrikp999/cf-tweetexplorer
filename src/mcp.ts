@@ -12,7 +12,7 @@ import signalHtml from './apps/signal';
 import { GALAXY_PAGE } from './history/galaxy';
 
 const MAX_TWEETS = 200;
-const COSTS_UI = 'ui://tweet-explorer/costs-v6.html';
+const COSTS_UI = 'ui://tweet-explorer/costs-v7.html';
 const SIGNAL_UI = 'ui://tweet-explorer/signal-v2.html';
 const GALAXY_UI = 'ui://tweet-explorer/galaxy-v2.html';
 const FIRST_UI = 'ui://tweet-explorer/first-v1.html';
@@ -127,11 +127,11 @@ function buildServer(env: Env): McpServer {
 
   // MCP Apps: hosts that support them show the Costs view inline; the others still get the JSON text.
   registerAppTool(server, 'get_costs', {
-    description: 'Spend by feature over the last N days (twitterapi.io, language models, audio, pictures).',
+    description: 'Spend by feature over the last N days (twitterapi.io, language models, audio, pictures, embeddings, Cloudflare storage), and what is stored now.',
     inputSchema: { days: z.number().int().min(1).max(365).default(30) },
     annotations: readOnly,
     _meta: { ui: { resourceUri: COSTS_UI } },
-  }, async ({ days }) => text(await env.COST.getByName('main').summary(days)));
+  }, async ({ days }) => { const cost = env.COST.getByName('main'); try { await cost.measureStorage(); } catch { /* the costs still show */ } return text(await cost.summary(days)); });
 
   registerAppResource(server, 'Costs', COSTS_UI, { mimeType: RESOURCE_MIME_TYPE },
     async () => ({ contents: [{ uri: COSTS_UI, mimeType: RESOURCE_MIME_TYPE, text: costsHtml }] }));

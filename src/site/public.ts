@@ -195,7 +195,7 @@ const vizLink = (href: string, title: string, text: string) => `<a class="vizlin
 /** A link to one of the other reports or Signals on a picture page. Only when there is more than one to choose from. */
 const vizSwitch = (label: string, items: Array<{ href: string; title: string; on: boolean }>) => (items.length > 1 ? `<nav class="chips" aria-label="${label}">${items.map((i) => `<a href="${i.href}"${i.on ? ' aria-current="page"' : ''}>${esc(i.title)}</a>`).join('')}</nav>` : '');
 
-function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research', board?: string): string {
+function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map', board?: string): string {
   const list = inOrder(ctx.topics, (a, b) => a.title.localeCompare(b.title));
   if (active && !list.some((t) => t.slug === active.slug)) list.push({ slug: active.slug, title: active.title } as PubTopic);   // an unlisted topic, reached by its link
   const items = list.map((t) => {
@@ -206,8 +206,8 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' |
   // The picture pages open on the first Signal that has groups to compare and on the newest report; each page can switch to the others.
   const firstBoard = ctx.boards.find(hasFirst);
   // Today, the briefings, Signal and Reports. The lists behind the briefings are linked from the foot and from each briefing's sources.
-  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Briefings</div>${items}` : ''}${ctx.views.length ? `<div class="grp">Watch and read</div>${ctx.views.map((v) => `<a href="/feeds/${esc(v.slug)}"${page === 'feeds' && board === v.slug ? ' aria-current="page"' : ''}>${esc(v.title)}</a>`).join('')}` : ''}<div class="grp">Analysis</div><a href="/research"${page === 'research' ? ' aria-current="page"' : ''}>Research pulse</a>${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board && page === 'signal' ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>` : ''}${firstBoard ? `<a href="/signal/${esc(firstBoard.slug)}/first"${page === 'first' ? ' aria-current="page"' : ''}>Who said it first</a>` : ''}${ctx.boards.length ? `<a href="/topics"${page === 'topics' ? ' aria-current="page"' : ''}>Topics</a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${ctx.reports.length ? `<a href="/history/${esc(ctx.reports[0].slug)}/galaxy"${page === 'galaxy' ? ' aria-current="page"' : ''}>Tweet Galaxy</a>` : ''}${listTotal(ctx) ? `<div class="grp">Browse</div><a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}`;
-  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'first' ? 'Who said it first' : page === 'galaxy' ? 'Tweet Galaxy' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : page === 'feeds' ? ctx.views.find((v) => v.slug === board)?.title ?? 'Watch and read' : page === 'topics' ? 'Topics' : page === 'research' ? 'Research pulse' : 'Today');
+  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Briefings</div>${items}` : ''}${ctx.views.length ? `<div class="grp">Watch and read</div>${ctx.views.map((v) => `<a href="/feeds/${esc(v.slug)}"${page === 'feeds' && board === v.slug ? ' aria-current="page"' : ''}>${esc(v.title)}</a>`).join('')}` : ''}<div class="grp">Analysis</div><a href="/research"${page === 'research' ? ' aria-current="page"' : ''}>Research pulse</a><a href="/research/map"${page === 'map' ? ' aria-current="page"' : ''}>Research map</a>${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board && page === 'signal' ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>` : ''}${firstBoard ? `<a href="/signal/${esc(firstBoard.slug)}/first"${page === 'first' ? ' aria-current="page"' : ''}>Who said it first</a>` : ''}${ctx.boards.length ? `<a href="/topics"${page === 'topics' ? ' aria-current="page"' : ''}>Topics</a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${ctx.reports.length ? `<a href="/history/${esc(ctx.reports[0].slug)}/galaxy"${page === 'galaxy' ? ' aria-current="page"' : ''}>Tweet Galaxy</a>` : ''}${listTotal(ctx) ? `<div class="grp">Browse</div><a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}`;
+  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'first' ? 'Who said it first' : page === 'galaxy' ? 'Tweet Galaxy' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : page === 'feeds' ? ctx.views.find((v) => v.slug === board)?.title ?? 'Watch and read' : page === 'topics' ? 'Topics' : page === 'research' ? 'Research pulse' : page === 'map' ? 'Research map' : 'Today');
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Agent Cortex<small>Briefings and Signal</small></span></a>
 <nav class="full" aria-label="Site">${links}</nav>
 <details class="mnav"><summary><span>${esc(here)}</span> Menu</summary><nav aria-label="Site">${links}</nav></details>
@@ -297,6 +297,15 @@ ${d.attention.length ? `<h2>Getting attention</h2><p class="meta">From the last 
 <ol class="papers">${d.papers.map(paperHtml).join('')}</ol>${pager}
 <p class="meta">Papers and abstracts from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>, where each paper is hosted. This site is not affiliated with or endorsed by arXiv. Upvotes from <a href="https://huggingface.co/papers" rel="noopener noreferrer">Hugging Face Daily Papers</a>; points from Hacker News.</p>`, { description: `New research papers on ${t.title}, and which of them are getting attention.` });
 }
+function researchMapHtml(ctx: Ctx): string {
+  return shell('Research map · Agent Cortex', rail(ctx, undefined, 'map'), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>Research map</h1>
+<p class="lede">What the papers of the last 30 days in the research topics are about, grouped by subject. Choose the dates, the level of detail and the topics.</p></header>
+${vizFrame('map', '/research/map', 'New research papers grouped by subject, with date, detail and topic controls')}
+<h2>How this is made</h2>
+<p>Papers are grouped by the meaning of their title and abstract, using an embedding model, and a language model then names each group and describes it from its most typical titles. Names can be off, and a paper can land in a neighbouring group: this is a way to see the shape of a month, not a classification. It counts papers, which says nothing about their quality.</p>
+<p>The map is rebuilt once a day, and the descriptions cover the whole 30 days whichever dates you choose. A trend compares a group's share of the papers shown in the later half of your dates with the earlier half.</p>
+<p class="meta">Papers and abstracts from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>, where each paper is hosted. This site is not affiliated with or endorsed by arXiv. Upvotes from <a href="https://huggingface.co/papers" rel="noopener noreferrer">Hugging Face Daily Papers</a>; points from Hacker News.</p>`, { description: 'What new AI research papers are about, grouped by subject, with controls for dates, detail and topics.' });
+}
 export function researchHtml(d: PubPulse, ctx: Ctx): string {
   const cards = d.topics.map((t) => {
     const building = t.state === 'building';
@@ -306,6 +315,7 @@ export function researchHtml(d: PubPulse, ctx: Ctx): string {
   }).join('');
   return shell('Research pulse · Agent Cortex', rail(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow">Analysis</div><h1>Research pulse</h1>
 <p class="lede">Which areas of AI research are getting more attention from researchers right now, measured by how many new papers they post.</p></header>
+<p><a href="/research/map">See what the papers are about on the Research map &rarr;</a></p>
 ${d.field.surge ? `<p class="note">All of AI research had an unusually big week: ${n(d.field.n)} papers, ${d.field.ratio.toFixed(1)} times the usual. A topic only counts as spiking if it grew more than the field did.</p>` : ''}
 <div class="pulse">${cards}</div>
 <h2>How this is measured</h2>
@@ -811,6 +821,12 @@ async function vizData(env: Env, parts: string[]): Promise<Response | undefined>
     if (!view) return new Response('Not found', { status: 404, headers: NO_STORE });
     return new Response(view, { headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': await viewCsp(view), 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' } });
   }
+  if (parts[0] === 'research') {
+    const mon = (p: string) => env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/${p}`));
+    if (parts.length === 2 && parts[1] === 'map.json') return jsonOf(await mon('research-map'));
+    const m = parts.length === 4 && parts[1] === 'map' && parts[2] === 'paper' ? /^(\d{4}\.\d{4,5})\.json$/.exec(parts[3]) : null;
+    if (m) return jsonOf(await mon(`research-map-paper?id=${m[1]}`));
+  }
   const hist = (p: string) => env.HISTORY.getByName('main').fetch(new Request(`https://internal/hist/${p}`));
   if (parts[0] === 'history' && parts[1] && SLUG.test(parts[1])) {
     if (parts.length === 3 && parts[2] === 'galaxy.json') return jsonOf(await hist(`pub-galaxy?slug=${parts[1]}`));
@@ -852,6 +868,7 @@ async function render(env: Env, url: URL): Promise<Response> {
     return html(landingHtml(ctx, await signalStrip(env, ctx, 8), url.origin, lead));
   }
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
+  if (parts[0] === 'research' && parts[1] === 'map' && parts.length === 2) return vizPage(researchMapHtml(ctx));
   if (parts[0] === 'research' && parts.length === 2) {
     const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/research-page?slug=${encodeURIComponent(parts[1])}&page=${Number(url.searchParams.get('page')) || 1}`));
     if (!r.ok) { await r.body?.cancel(); return missing(); }

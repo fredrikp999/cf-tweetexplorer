@@ -153,6 +153,17 @@ export async function arxivCount(searchQuery: string, from: string, to: string):
   return Number(m[1]);
 }
 
+/** One page of a longer read, newest first, and how many papers the search has in all. A long read takes several requests, each through the gate. */
+export async function arxivPage(searchQuery: string, from: string, to: string, start: number, size: number): Promise<{ papers: Paper[]; total: number }> {
+  const day = (d: string) => d.replace(/-/g, '');
+  const q = `(${searchQuery}) AND submittedDate:[${day(from)}0000 TO ${day(to)}2359]`;
+  const xml = await get(`https://${HOST}/api/query?search_query=${encodeURIComponent(q)}&sortBy=submittedDate&sortOrder=descending&start=${start}&max_results=${Math.min(1000, size)}`);
+  if (/<id>[^<]*\/api\/errors/.test(xml)) throw new Error(`arXiv rejected the search: ${flat(/<summary>([\s\S]*?)<\/summary>/.exec(xml)?.[1] ?? '').slice(0, 160)}`);
+  const m = /<opensearch:totalResults[^>]*>(\d+)/.exec(xml);
+  if (!m) throw new Error('arXiv gave no count');
+  return { papers: parsePapers(xml), total: Number(m[1]) };
+}
+
 /** An arXiv API address (see `isArxivApi`), read as papers. `since` (unix seconds) keeps it to what was submitted after that. */
 export async function fetchArxiv(opts: { url: string; since?: number }): Promise<FetchResult & { title: string }> {
   const xml = await get(withWindow(opts.url, opts.since ?? 0));

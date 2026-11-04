@@ -1,13 +1,13 @@
 // The Costs view for the get_costs tool (MCP Apps): a plain page that speaks the ui/* postMessage protocol directly and draws the tool's JSON result.
 // No SDK and no bundler: bundling the ext-apps App class into the view hung the Claude app at "rendering widget" (see the mcp-app skill).
-// The summary it draws: { days, since, totals: { twitter, llm, audio, image, tweets, calls }, byDay: [{ day, ... }], byKind: [{ kind, ... }] }.
+// The summary it draws: { days, since, totals: { twitter, llm, audio, image, embedding, storage, tweets, calls }, byDay: [{ day, ... }], byKind: [{ kind, ... }] }.
 // The range buttons ask the host to call get_costs again with another number of days.
 export default `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root{color-scheme:light dark;--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--line:#e2e2e2;--c1:#2f6fed;--c2:#e8833a;--c3:#2aa06b;--c4:#a259d9}
-@media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f2;--mut:#9a9a9a;--line:#38383a;--c1:#6a9bff;--c2:#f0a060;--c3:#4cc790;--c4:#c48af0}}
-:root[data-theme=light]{--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--line:#e2e2e2;--c1:#2f6fed;--c2:#e8833a;--c3:#2aa06b;--c4:#a259d9}
-:root[data-theme=dark]{--bg:#1c1c1e;--fg:#f2f2f2;--mut:#9a9a9a;--line:#38383a;--c1:#6a9bff;--c2:#f0a060;--c3:#4cc790;--c4:#c48af0}
+:root{color-scheme:light dark;--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--line:#e2e2e2;--c1:#2f6fed;--c2:#e8833a;--c3:#2aa06b;--c4:#a259d9;--c5:#0f8b8d;--c6:#7a8699}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1c1e;--fg:#f2f2f2;--mut:#9a9a9a;--line:#38383a;--c1:#6a9bff;--c2:#f0a060;--c3:#4cc790;--c4:#c48af0;--c5:#3cc4c6;--c6:#a3aebd}}
+:root[data-theme=light]{--bg:#fff;--fg:#1a1a1a;--mut:#6b6b6b;--line:#e2e2e2;--c1:#2f6fed;--c2:#e8833a;--c3:#2aa06b;--c4:#a259d9;--c5:#0f8b8d;--c6:#7a8699}
+:root[data-theme=dark]{--bg:#1c1c1e;--fg:#f2f2f2;--mut:#9a9a9a;--line:#38383a;--c1:#6a9bff;--c2:#f0a060;--c3:#4cc790;--c4:#c48af0;--c5:#3cc4c6;--c6:#a3aebd}
 body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,sans-serif}
 h1{margin:0;font-size:26px}h1 small{font-size:13px;font-weight:400;color:var(--mut)}
 .range{margin:12px 0 0}button{font:inherit;color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:6px;padding:4px 10px;margin-right:6px;cursor:pointer}
@@ -17,18 +17,18 @@ button.on{border-color:var(--c1);color:var(--c1)}button:disabled{opacity:.5;curs
 .axis{display:flex;justify-content:space-between;color:var(--mut);font-size:12px}
 .legend{margin-top:6px}.legend span{margin-right:12px;color:var(--mut);font-size:12px}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px}
 table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}th{color:var(--mut);font-weight:500}
-#s{color:var(--mut)}
+#s{color:var(--mut)}.note{color:var(--mut);font-size:12px;margin:10px 0 0}
 </style></head><body>
 <div id="s">waiting for data</div><div id="root"></div>
 <script>
 var RANGES = [2, 7, 30, 90], TOOL = 'get_costs';
-var COLORS = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)'], NAMES = ['twitterapi.io', 'models', 'audio', 'pictures'];
+var COLORS = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)'], NAMES = ['twitterapi.io', 'models', 'audio', 'pictures', 'embeddings', 'storage'];
 var s = document.getElementById('s'), root = document.getElementById('root');
 var send = function (m) { m.jsonrpc = '2.0'; parent.postMessage(m, '*'); };
 var DOLLAR = String.fromCharCode(36);
 var money = function (n) { return DOLLAR + n.toFixed(n < 1 ? 3 : 2); };
-var parts = function (r) { return [r.twitter, r.llm, r.audio, r.image]; };
-var total = function (r) { return r.twitter + r.llm + r.audio + r.image; };
+var parts = function (r) { return [r.twitter, r.llm, r.audio, r.image, r.embedding || 0, r.storage || 0]; };
+var total = function (r) { return r.twitter + r.llm + r.audio + r.image + (r.embedding || 0) + (r.storage || 0); };
 var esc = function (v) { var d = document.createElement('div'); d.textContent = String(v == null ? '' : v); return d.innerHTML; };
 var pending = {}, nextId = 2, current = 30, buttons = [];
 
@@ -51,9 +51,9 @@ function render(d) {
   var t = d.totals, i, r, kinds = '', cards = '', legend = '';
   for (i = 0; i < d.byKind.length; i++) {
     r = d.byKind[i];
-    kinds += '<tr><td>' + esc(r.kind) + '</td><td>' + money(r.twitter) + '</td><td>' + money(r.llm) + '</td><td>' + money(r.audio + r.image) + '</td><td><b>' + money(total(r)) + '</b></td></tr>';
+    kinds += '<tr><td>' + esc(r.kind) + '</td><td>' + money(r.twitter) + '</td><td>' + money(r.llm) + '</td><td>' + money(r.audio + r.image) + '</td><td>' + money((r.embedding || 0) + (r.storage || 0)) + '</td><td><b>' + money(total(r)) + '</b></td></tr>';
   }
-  for (i = 0; i < 4; i++) {
+  for (i = 0; i < NAMES.length; i++) {
     cards += '<div class="card"><b>' + money(parts(t)[i]) + '</b><span>' + NAMES[i] + '</span></div>';
     legend += '<span><i style="background:' + COLORS[i] + '"></i>' + NAMES[i] + '</span>';
   }
@@ -61,7 +61,7 @@ function render(d) {
   s.textContent = '';
   root.innerHTML = '<h1>' + money(total(t)) + ' <small>over ' + esc(d.days) + ' days since ' + esc(d.since) + ' - ' + esc(t.tweets) + ' tweets</small></h1>'
     + '<div class="cards">' + cards + '</div>' + chart(d.byDay) + '<div class="legend">' + legend + '</div>'
-    + '<table><thead><tr><th>Feature</th><th>X data</th><th>Models</th><th>Media</th><th>Total</th></tr></thead><tbody>' + kinds + '</tbody></table>';
+    + '<table><thead><tr><th>Feature</th><th>X data</th><th>Models</th><th>Media</th><th>Infra</th><th>Total</th></tr></thead><tbody>' + kinds + '</tbody></table>' + (d.storage && d.storage.measured ? '<p class="note">Stored now: ' + (d.storage.bytes / 1e6).toFixed(1) + ' MB. A month at this size is ' + money(d.storage.monthList) + ' at list price, ' + money(d.storage.monthBilled) + ' after what the plan includes.</p>' : '');
   for (i = 0; i < buttons.length; i++) buttons[i].className = RANGES[i] === current ? 'on' : '';
   reportSize();
 }

@@ -247,6 +247,8 @@ const concat = (parts: Uint8Array[]): Uint8Array => { const out = new Uint8Array
 const dateLabel = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' });
 
 export class PublishDO extends DurableObject<Env> {
+  /** RPC: the size of this object's database, for the storage line in Costs. */
+  storageBytes(): number { return this.ctx.storage.sql.databaseSize; }
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API

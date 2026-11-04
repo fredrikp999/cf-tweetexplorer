@@ -23,7 +23,7 @@
 :root {
   --bg: #eff3f2; --card: #ffffff; --text: #0f252c; --muted: #5a7075; --line: #dbe4e3;
   --accent: #c9265f; --accent-text: #ffffff; --accent-soft: #fbe9ef;
-  --bar: #1f7a8c; --bar2: #e3a008; --bar3: #7c5cbf; --bar4: #c2410c; --ok: #1a7f5a; --err: #b42318;
+  --bar: #1f7a8c; --bar2: #e3a008; --bar3: #7c5cbf; --bar4: #c2410c; --bar5: #2f855a; --bar6: #64748b; --ok: #1a7f5a; --err: #b42318;
   --rail: #0c2a31; --rail-text: #b7cfd2; --rail-dim: #7b9ca1; --rail-on: rgba(255,255,255,.1);
   --ui: "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif;
   --read: Newsreader, "Iowan Old Style", Georgia, serif;
@@ -32,7 +32,7 @@
 @media (prefers-color-scheme: dark) {
   :root { --bg: #0a1a1f; --card: #112830; --text: #e5f0f0; --muted: #8da7ab; --line: #1f3a42;
     --accent: #ff6b97; --accent-text: #2a0713; --accent-soft: #3a1626;
-    --bar: #4cb5c6; --bar2: #f2b632; --bar3: #a78bfa; --bar4: #fb923c; --ok: #4cc79a; --err: #f97066;
+    --bar: #4cb5c6; --bar2: #f2b632; --bar3: #a78bfa; --bar4: #fb923c; --bar5: #68d391; --bar6: #94a3b8; --ok: #4cc79a; --err: #f97066;
     --rail: #06151a; --rail-on: rgba(255,255,255,.08); }
 }
 * { box-sizing: border-box; }
@@ -907,6 +907,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
       <span class="note" id="costBalance"></span>
     </div>
     <div id="costCards" class="grid"></div>
+    <div id="costStorage" class="note" style="margin:10px 0 14px"></div>
     <div class="card"><h3>Per day</h3><div style="height:240px"><canvas id="costChart"></canvas></div></div>
     <div class="card" style="margin-top:14px"><h3>By activity</h3><div id="costKinds"></div></div>
     <div class="card" style="margin-top:14px"><h3>By briefing topic, watch, collection job, audio and picture</h3><div id="costRefs"></div></div>
@@ -1527,28 +1528,30 @@ $('#xAddForm').addEventListener('submit', async (e) => {
 });
 
 // ---------- Costs: the ledger of what everything has spent ----------
-const KIND = { analysis: 'History analysis (AI)', image: 'Pictures', audio: 'Audio versions', explore: 'Explorer (Search, Users, Lists, Trends)', history: 'History collection', monitor: 'Monitor', summarize: 'Summarize tab', publish: 'Scheduled briefings', signal: 'Signal topics (AI)', collect: 'Data collection' };
+const KIND = { embedding: 'Embeddings', storage: 'Cloudflare storage', analysis: 'History analysis (AI)', image: 'Pictures', audio: 'Audio versions', explore: 'Explorer (Search, Users, Lists, Trends)', history: 'History collection', monitor: 'Monitor', summarize: 'Summarize tab', publish: 'Scheduled briefings', signal: 'Signal topics (AI)', collect: 'Data collection' };
 const dollars = (n) => '$' + (n < 0.1 ? n.toFixed(4) : n.toFixed(2));
 const ctable = (head, rows, empty) => rows.length ? `<table class="guide"><thead><tr>${head.map((h) => `<th${h.endsWith('$') ? ' style="text-align:right"' : ''}>${esc(h.replace(/\$$/, ''))}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>` : `<div class="empty" style="padding:18px 0">${empty}</div>`;
 const money$ = (n) => `<td style="text-align:right;white-space:nowrap">${dollars(n)}</td>`;
 
+const mbOf = (b) => (b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : (b / 1e6).toFixed(1) + ' MB');
 async function loadCosts() {
   const days = +document.querySelector('input[name=cdays]:checked').value;
   let d;
   try { d = await (await fetch('/costs/summary?days=' + days)).json(); } catch { return; }
-  const t = d.totals, total = t.twitter + t.llm + t.audio + t.image;
+  const sumOf = (r) => r.twitter + r.llm + r.audio + r.image + (r.embedding ?? 0) + (r.storage ?? 0), t = d.totals, total = sumOf(t), st = d.storage;
   $('#costCards').innerHTML = [['Total', dollars(total), `last ${days} days`], ['X data', dollars(t.twitter), `${fmt(t.tweets)} tweets, ${fmt(t.calls)} calls`],
-    ['Text models', dollars(t.llm), `${compact.format(t.tin)} tokens in, ${compact.format(t.tout)} out`], ['Audio models', dollars(t.audio), 'speech for audio versions'], ['Image models', dollars(t.image), 'pictures for briefings'], ['Per day', dollars(total / days), 'on average']]
+    ['Text models', dollars(t.llm), `${compact.format(t.tin)} tokens in, ${compact.format(t.tout)} out`], ['Audio models', dollars(t.audio), 'speech for audio versions'], ['Image models', dollars(t.image), 'pictures for briefings'], ['Embeddings', dollars(t.embedding), 'list price; the free daily Neurons usually cover this'], ['Cloudflare storage', dollars(t.storage), st?.measured ? `${mbOf(st.bytes)} stored now` : 'measured once a day'], ['Per day', dollars(total / days), 'on average']]
     .map(([l, v, s]) => `<div class="card"><div class="meta2">${l}</div><div style="font-size:28px;font-weight:700;letter-spacing:-.02em">${v}</div><div class="meta2">${s}</div></div>`).join('');
+  $('#costStorage').innerHTML = st?.measured ? `<b>Cloudflare storage now:</b> ${mbOf(st.bytes)}. A month at this size is ${dollars(st.monthList)} at list price, ${dollars(st.monthBilled)} after what the plan includes (5 GB of databases, 10 GB of R2, across your whole account). ${st.stores.map((x) => `${esc(x.store)} ${mbOf(x.bytes)}${x.objects ? ` in ${fmt(x.objects)} files` : ''}`).join(', ')}. Measured ${new Date(st.measured).toLocaleString()}.` : 'Cloudflare storage has not been measured yet.';
   // every day in the range, including quiet ones
-  const byDay = new Map(d.byDay.map((r) => [r.day, r])), labels = [], tw = [], ai = [], au = [], im = [];
-  for (let i = days - 1; i >= 0; i--) { const k = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10), r = byDay.get(k); labels.push(k.slice(5)); tw.push(+(r?.twitter ?? 0).toFixed(5)); ai.push(+(r?.llm ?? 0).toFixed(5)); au.push(+(r?.audio ?? 0).toFixed(5)); im.push(+(r?.image ?? 0).toFixed(5)); }
-  chart($('#costChart'), { type: 'bar', legend: true, data: { labels, datasets: [{ label: 'X data', data: tw, backgroundColor: css('--bar') }, { label: 'Text models', data: ai, backgroundColor: css('--bar2') }, { label: 'Audio models', data: au, backgroundColor: css('--bar3') }, { label: 'Image models', data: im, backgroundColor: css('--bar4') }] },
+  const byDay = new Map(d.byDay.map((r) => [r.day, r])), labels = [], tw = [], ai = [], au = [], im = [], em = [], so = [];
+  for (let i = days - 1; i >= 0; i--) { const k = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10), r = byDay.get(k); labels.push(k.slice(5)); tw.push(+(r?.twitter ?? 0).toFixed(5)); ai.push(+(r?.llm ?? 0).toFixed(5)); au.push(+(r?.audio ?? 0).toFixed(5)); im.push(+(r?.image ?? 0).toFixed(5)); em.push(+(r?.embedding ?? 0).toFixed(5)); so.push(+(r?.storage ?? 0).toFixed(5)); }
+  chart($('#costChart'), { type: 'bar', legend: true, data: { labels, datasets: [{ label: 'X data', data: tw, backgroundColor: css('--bar') }, { label: 'Text models', data: ai, backgroundColor: css('--bar2') }, { label: 'Audio models', data: au, backgroundColor: css('--bar3') }, { label: 'Image models', data: im, backgroundColor: css('--bar4') }, { label: 'Embeddings', data: em, backgroundColor: css('--bar5') }, { label: 'Cloudflare storage', data: so, backgroundColor: css('--bar6') }] },
     options: { scales: { x: { stacked: true }, y: { stacked: true, ticks: { precision: 3, callback: (v) => '$' + +(+v).toFixed(3) } } }, plugins: { tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${dollars(c.parsed.y)}` } } } } });
-  $('#costKinds').innerHTML = ctable(['Activity', 'Tweets$', 'X data$', 'Text models$', 'Audio models$', 'Image models$', 'Total$'], d.byKind.map((r) =>
-    `<tr><td>${esc(KIND[r.kind] ?? r.kind)}${r.unpriced ? ` <span class="perr" title="${r.unpriced} entries used a text model that has no price in the tables, so this figure is too low">${r.unpriced} unpriced</span>` : ''}</td><td style="text-align:right">${fmt(r.tweets)}</td>${money$(r.twitter)}${money$(r.llm)}${money$(r.audio)}${money$(r.image)}${money$(r.twitter + r.llm + r.audio + r.image)}</tr>`), 'Nothing spent in this period.');
+  $('#costKinds').innerHTML = ctable(['Activity', 'Tweets$', 'X data$', 'Text models$', 'Audio models$', 'Image models$', 'Embeddings$', 'Storage$', 'Total$'], d.byKind.map((r) =>
+    `<tr><td>${esc(KIND[r.kind] ?? r.kind)}${r.unpriced ? ` <span class="perr" title="${r.unpriced} entries used a text model that has no price in the tables, so this figure is too low">${r.unpriced} unpriced</span>` : ''}</td><td style="text-align:right">${fmt(r.tweets)}</td>${money$(r.twitter)}${money$(r.llm)}${money$(r.audio)}${money$(r.image)}${money$(r.embedding ?? 0)}${money$(r.storage ?? 0)}${money$(sumOf(r))}</tr>`), 'Nothing spent in this period.');
   $('#costRefs').innerHTML = ctable(['What', 'Kind', 'Tweets$', 'Total$'], d.byRef.map((r) =>
-    `<tr><td>${esc(r.label || r.ref)}${r.unpriced ? ` <span class="perr" title="${r.unpriced} runs used a model with no price: too low">unpriced</span>` : ''}</td><td>${esc(KIND[r.kind] ?? r.kind)}</td><td style="text-align:right">${fmt(r.tweets)}</td>${money$(r.twitter + r.llm + r.audio + r.image)}</tr>`), 'No scheduled briefings, watches or collections in this period.');
+    `<tr><td>${esc(r.label || r.ref)}${r.unpriced ? ` <span class="perr" title="${r.unpriced} runs used a model with no price: too low">unpriced</span>` : ''}</td><td>${esc(KIND[r.kind] ?? r.kind)}</td><td style="text-align:right">${fmt(r.tweets)}</td>${money$(sumOf(r))}</tr>`), 'No scheduled briefings, watches or collections in this period.');
   $('#costRuns').innerHTML = ctable(['When', 'What', 'Tweets$', 'Tokens$', 'X data$', 'Text model$', 'Audio model$', 'Image model$', 'Total$'], d.runs.map((r) =>
     `<tr><td style="white-space:nowrap">${new Date(r.ts).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</td><td>${esc(r.label)}${r.ok ? '' : ` <span class="badge error" title="${esc(r.note)}">failed</span>`}</td>
       <td style="text-align:right">${fmt(r.tweets)}</td><td style="text-align:right">${compact.format(r.tin + r.tout)}</td>${money$(r.twitter)}${money$(r.llm)}${money$(r.audio)}${money$(r.image)}${money$(r.twitter + r.llm + r.audio + r.image)}</tr>`), 'No briefings, summaries, audio or pictures in this period.');
@@ -3609,6 +3612,8 @@ async function loadPulse() {
   $('#pulseCard').innerHTML = `<h3 style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">Research pulse <a href="/research" target="_blank" rel="noopener" style="font-weight:400;font-size:13px">Public page &#8599;</a></h3>${pulse.field.surge ? `<div class="note" style="margin-bottom:8px">All of AI research had an unusually big week (×${pulse.field.ratio.toFixed(1)}). A topic only counts as spiking if it grew more than the field.</div>` : ''}
     ${pulse.topics.map((t) => `<div class="prow"><b><a href="/research/${esc(t.slug)}" target="_blank" rel="noopener">${esc(t.title)}</a></b>${pill(t)}<span class="note">${esc(pulseFacts(t))}</span>${spark(t)}</div>`).join('')}<div class="note" style="margin-top:8px">Data from arXiv. Thank you to arXiv for use of its open access interoperability.</div>`;
   $('#pulseStatus').innerHTML = pulse.error ? `<span style="color:var(--err)">arXiv: ${esc(pulse.error)}. It tries again by itself${pulse.retryAt > Date.now() ? ' at ' + new Date(pulse.retryAt).toLocaleTimeString() : ''}.</span>` : pulse.todo ? `Reading: ${fmt(pulse.todo)} counts to go, at arXiv's pace.` : `Up to date${pulse.updated ? `, read ${new Date(pulse.updated).toLocaleString()}` : ''}.`;
+  const m = pulse.map;
+  if (m) $('#pulseStatus').innerHTML += ` <br><a href="/research/map" target="_blank" rel="noopener">Research map</a>: ${m.error ? `<span style="color:var(--err)">${esc(m.error)}. It tries again by itself${m.retryAt > Date.now() ? ' at ' + new Date(m.retryAt).toLocaleTimeString() : ''}.</span>` : m.toRead ? `reading the month from arXiv, ${fmt(m.read)} papers so far.` : m.toEmbed ? `analysing papers, ${fmt(m.toEmbed)} to go.` : m.built ? `built ${new Date(m.built).toLocaleString()}, rebuilt daily.${m.namesProblem ? ` Groups have no written names: ${esc(m.namesProblem)}.` : ''}` : 'building.'}`;
   $('#pulseRows').innerHTML = pulse.topics.map((t) => `<div class="prow" data-pulse="${esc(t.id)}"><b>${esc(t.title)}</b>${pill(t)}<code class="note" style="overflow-wrap:anywhere">${esc(t.query)}</code><span class="optrow" style="justify-content:flex-end"><button class="go ghost" type="button" data-pulseedit>Edit</button><button class="link" type="button" data-pulsedel style="color:var(--err)">Delete</button></span></div>`).join('');
 }
 $('#pulseRows').addEventListener('click', async (e) => {

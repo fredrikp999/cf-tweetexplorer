@@ -195,3 +195,14 @@ flowchart TD
 **YouTube.** A YouTube channel or playlist is watched through its public Atom feed (free, no API key): paste a channel address, an @handle or a playlist and the Monitor resolves the feed address. New videos arrive as items with their description and view count. For what is said in a video the agent has `get_video_transcript` (see `docs/configuration.md` for the three ways to get it).
 
 **Reading tools.** The Summarize agent also has `read_article` (the text of the page behind an RSS item or Hacker News story) and `get_hn_comments` (the top comments, two levels deep). They only accept addresses and ids from RSS or Hacker News items the agent was given or a tool returned, never one it makes up or finds inside a page; local, numeric and credentialed hosts are refused, every redirect is checked again, pages are cut at 2 MB and 20,000 characters, and a run can make at most 5 reads. They are free (no API), and the text they return is treated as untrusted. Code: `src/sources/read.ts`, wiring in `buildTools` (`src/summarize/agent.ts`).
+
+## Research map
+
+`/research/map` shows what the papers of the research topics are about, grouped by subject, with sliders for the dates, the level of detail and the smallest cluster, plus topic, attention and search filters.
+
+1. `MonitorDO.backfillStep` reads the last 31 days of each topic from arXiv in pages of 500, through the same gate as every other arXiv request, over as many wake-ups as it takes. Changing a topic's search reads its month again.
+2. `mapStep` embeds titles and abstracts with Workers AI (`@cf/baai/bge-small-en-v1.5`), 50 at a time, into the `research_vectors` table. Full text is never read.
+3. Once a day `buildMap` groups the papers (`src/signal/paperClusters.ts`: spherical k-means, up to 40 groups, then Ward joins for less detail) and asks a language model for each group's name and one-line description. If that fails, the group's telling words are its name, and the admin says so.
+4. The view (`src/apps/map.ts`, in the sandboxed frame of `src/site/viz.ts`) does all its filtering and counting in the browser from one read of `/research/map.json`. An abstract is read when a reader opens it, from `/research/map/paper/<id>.json`.
+
+Progress and errors show under **Signal setup → Research pulse** in the admin, and on the page itself while it is being built.

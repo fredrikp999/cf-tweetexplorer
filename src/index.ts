@@ -19,6 +19,13 @@ export { CollectDO } from './durable-objects/collect';
 const UPSTREAM = 'https://api.twitterapi.io';
 
 // Read-only passthrough, same allowlist as the local server.
+/** The cost summary, with today's storage measured first if nothing else has yet. A failed measurement never stops the costs from showing. */
+async function costSummary(env: Env, days: number) {
+  const cost = env.COST.getByName('main');
+  try { await cost.measureStorage(); } catch (err) { console.error('storage measure failed', err instanceof Error ? err.message : String(err)); }
+  return cost.summary(days);
+}
+
 const ALLOWED = [
   /^\/twitter\/user\/(info|search|last_tweets|followers|followings|mentions|verifiedFollowers)$/,
   /^\/twitter\/user_about$/,
@@ -113,7 +120,7 @@ export default {
       if (rest === '/features') return json({ ...FEATURES, ...summarizerFeatures(env) });
       if (rest.startsWith('/sum/')) return await handleSummarize(request, env);
       if (rest.startsWith('/api/')) return await apiProxy(request, new URL(inner.url), env, ctx);
-      if (rest === '/costs/summary') return json(await env.COST.getByName('main').summary(Number(url.searchParams.get('days')) || 30));
+      if (rest === '/costs/summary') return json(await costSummary(env, Number(url.searchParams.get('days')) || 30));
       if (rest.startsWith('/mon/')) return await env.MONITOR.getByName('main').fetch(inner);
       if (rest.startsWith('/collect/')) return await env.COLLECT.getByName('main').fetch(inner);
       if (rest.startsWith('/lists/')) return await env.LISTS.getByName('main').fetch(inner);

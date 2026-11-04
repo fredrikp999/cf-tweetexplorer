@@ -124,3 +124,13 @@ and the stronger model), Monitor, collection (kind `collect`, per source), the S
 (about $0.15 per 1,000). A shared source's cost is split evenly between the briefings that read it in issue costs and topic stats; the ledger totals count it once; models by tokens at the list prices in `src/summarize/openrouter.ts` and `src/llm/decisions.ts`; Replicate by the prices in `src/media/replicate.ts`.
 Workers AI pictures are recorded at $0 (they stay inside the free daily Neurons), with the model that made them and a note when a fallback was used.
 Estimates are shown before anything large starts, and History collections, analyses and briefings each have a cap you set.
+
+## Research map costs
+
+No setting and no separate vector database: vectors are rows in the Monitor Durable Object's SQLite. Measured on 3,504 papers: about 1.3M tokens to embed the first month (about 2,400 of the 10,000 free Neurons a day, or $0.026 if paid), then about 120 papers a day, and 5.4 MB of vectors. Naming is one model call a day through OpenRouter, recorded under Signal topics as "Research map (names)".
+
+## Embeddings and Cloudflare storage in Costs
+
+Embeddings are recorded at list price (kind `embedding`), before the free daily Neurons, which image generation shares. The tokens are estimated from the text length, as the embedding model reports no count.
+
+Storage (kind `storage`) is measured once a day, by Monitor's daily wake-up or whoever opens Costs first. It asks this app's six Durable Object databases for their size and adds up the R2 bucket, so it needs no API token. Each day adds one day at list price (`src/lib/storagePrices.ts`), before the 5 GB of databases and 10 GB of R2 that the plan includes, and the Costs tab also shows what a month at this size would be billed after those. The ledger starts at the first measurement. It covers this Worker only: not the staging Worker or anything else on the account, not rows read or written, not R2 operations, and not the plan's monthly fee. The Cloudflare dashboard has the real bill.

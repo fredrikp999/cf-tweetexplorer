@@ -49,6 +49,8 @@ interface Job {
 }
 
 export class HistoryDO extends DurableObject<Env> {
+  /** RPC: the size of this object's database, for the storage line in Costs. */
+  storageBytes(): number { return this.ctx.storage.sql.databaseSize; }
   private runtime = new Map<string, { abort: boolean }>();
   /** Set when a call failed because this invocation has used all its subrequests: the slice ends and the next one carries on. Those failures are not the tweets' fault. */
   private outOfRequests = false;

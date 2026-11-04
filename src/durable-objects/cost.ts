@@ -4,8 +4,9 @@
 // from token counts. This is shown only in /admin, never on the public pages.
 import { DurableObject } from 'cloudflare:workers';
 import { llmCost } from '../summarize/pricing';
+import { storageDayCost, storageMonth, type StoreKind } from '../lib/storagePrices';
 
-export type CostKind = 'explore' | 'history' | 'monitor' | 'summarize' | 'publish' | 'audio' | 'image' | 'analysis' | 'signal' | 'collect';
+export type CostKind = 'explore' | 'history' | 'monitor' | 'summarize' | 'publish' | 'audio' | 'image' | 'analysis' | 'signal' | 'collect' | 'embedding' | 'storage';
 export interface CostEntry {
   kind: CostKind; ref?: string; label?: string;
   twitter?: number; llm?: number; tweets?: number; calls?: number; tokensIn?: number; tokensOut?: number; model?: string;
@@ -31,6 +32,7 @@ export class CostDO extends DurableObject<Env> {
     try { sql.exec('ALTER TABLE runs ADD COLUMN allocated REAL NOT NULL DEFAULT 0'); } catch { /* already there */ }
     // Entries that used a model but could not be priced (a model missing from the price tables): counted, so the Costs tab can say its numbers are low.
     try { sql.exec('ALTER TABLE daily ADD COLUMN unpriced INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
+    sql.exec('CREATE TABLE IF NOT EXISTS storage (store TEXT PRIMARY KEY, kind TEXT NOT NULL, bytes INTEGER NOT NULL, objects INTEGER NOT NULL DEFAULT 0, measured INTEGER NOT NULL)');
     this.repriceOld();
     sql.exec('DELETE FROM daily WHERE day < ?', day(Date.now() - 800 * DAY));
     sql.exec('DELETE FROM runs WHERE ts < ?', Date.now() - 400 * DAY);
@@ -57,7 +59,7 @@ export class CostDO extends DurableObject<Env> {
     const now = Date.now(), ref = String(e.ref ?? '').slice(0, 80), label = String(e.label ?? ref).slice(0, 120);
     const twitter = num(e.twitter), llm = num(e.llm), tweets = Math.round(num(e.tweets)), calls = Math.round(num(e.calls)), tin = Math.round(num(e.tokensIn)), tout = Math.round(num(e.tokensOut));
     // Tokens went to a text model but no money was counted for them: the model has no price in our tables.
-    const unpriced = (tin > 0 || e.tokensOut) && llm === 0 && e.kind !== 'audio' && e.kind !== 'image' && String(e.model ?? '') !== 'mock' ? 1 : 0;
+    const unpriced = (tin > 0 || e.tokensOut) && llm === 0 && e.kind !== 'audio' && e.kind !== 'image' && e.kind !== 'embedding' && e.kind !== 'storage' && String(e.model ?? '') !== 'mock' ? 1 : 0;
     this.ctx.storage.sql.exec(
       `INSERT INTO daily (day, kind, ref, label, twitter, llm, tweets, calls, tin, tout, n, unpriced) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
        ON CONFLICT (day, kind, ref) DO UPDATE SET label = excluded.label, twitter = twitter + excluded.twitter, llm = llm + excluded.llm,
@@ -74,17 +76,57 @@ export class CostDO extends DurableObject<Env> {
     const sql = this.ctx.storage.sql, n = Math.min(400, Math.max(1, Math.floor(days) || 30));
     const since = day(Date.now() - (n - 1) * DAY);
     const rows = <T extends Record<string, string | number | null>>(q: string, ...b: (string | number)[]) => sql.exec<T>(q, ...b).toArray();
-    // `llm` is the text models only; speech models (kind 'audio') and image models (kind 'image') are summed separately, though all live in the llm column.
-    const LLM = "SUM(CASE WHEN kind IN ('audio', 'image') THEN 0 ELSE llm END)", AUDIO = "SUM(CASE WHEN kind = 'audio' THEN llm ELSE 0 END)", IMAGE = "SUM(CASE WHEN kind = 'image' THEN llm ELSE 0 END)";
-    const totals = rows<{ twitter: number; llm: number; audio: number; image: number; tweets: number; calls: number; tin: number; tout: number }>(
-      `SELECT COALESCE(SUM(twitter),0) AS twitter, COALESCE(${LLM},0) AS llm, COALESCE(${AUDIO},0) AS audio, COALESCE(${IMAGE},0) AS image, COALESCE(SUM(tweets),0) AS tweets, COALESCE(SUM(calls),0) AS calls, COALESCE(SUM(tin),0) AS tin, COALESCE(SUM(tout),0) AS tout FROM daily WHERE day >= ?`, since)[0];
+    // `llm` is the text models only; speech models (kind 'audio'), image models (kind 'image'), embeddings and Cloudflare storage are summed separately, though all live in the llm column.
+    const EMBED = "SUM(CASE WHEN kind = 'embedding' THEN llm ELSE 0 END)", STORE = "SUM(CASE WHEN kind = 'storage' THEN llm ELSE 0 END)";
+    const LLM = "SUM(CASE WHEN kind IN ('audio', 'image', 'embedding', 'storage') THEN 0 ELSE llm END)", AUDIO = "SUM(CASE WHEN kind = 'audio' THEN llm ELSE 0 END)", IMAGE = "SUM(CASE WHEN kind = 'image' THEN llm ELSE 0 END)";
+    const totals = rows<{ twitter: number; llm: number; audio: number; image: number; embedding: number; storage: number; tweets: number; calls: number; tin: number; tout: number }>(
+      `SELECT COALESCE(SUM(twitter),0) AS twitter, COALESCE(${LLM},0) AS llm, COALESCE(${AUDIO},0) AS audio, COALESCE(${IMAGE},0) AS image, COALESCE(${EMBED},0) AS embedding, COALESCE(${STORE},0) AS storage, COALESCE(SUM(tweets),0) AS tweets, COALESCE(SUM(calls),0) AS calls, COALESCE(SUM(tin),0) AS tin, COALESCE(SUM(tout),0) AS tout FROM daily WHERE day >= ?`, since)[0];
     return {
-      days: n, since, totals,
-      byDay: rows(`SELECT day, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image FROM daily WHERE day >= ? GROUP BY day ORDER BY day`, since),
-      byKind: rows(`SELECT kind, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image, SUM(tweets) AS tweets, SUM(calls) AS calls, SUM(tin) AS tin, SUM(tout) AS tout, SUM(n) AS n, SUM(unpriced) AS unpriced FROM daily WHERE day >= ? GROUP BY kind ORDER BY SUM(twitter) + SUM(llm) DESC`, since),
-      byRef: rows(`SELECT kind, ref, MAX(label) AS label, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image, SUM(tweets) AS tweets, SUM(n) AS n, SUM(unpriced) AS unpriced FROM daily WHERE day >= ? AND kind IN ('publish', 'monitor', 'history', 'audio', 'image', 'analysis', 'signal', 'summarize') GROUP BY kind, ref ORDER BY SUM(twitter) + SUM(llm) DESC LIMIT 40`, since),
+      days: n, since, totals, storage: this.storageView(),
+      byDay: rows(`SELECT day, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image, ${EMBED} AS embedding, ${STORE} AS storage FROM daily WHERE day >= ? GROUP BY day ORDER BY day`, since),
+      byKind: rows(`SELECT kind, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image, ${EMBED} AS embedding, ${STORE} AS storage, SUM(tweets) AS tweets, SUM(calls) AS calls, SUM(tin) AS tin, SUM(tout) AS tout, SUM(n) AS n, SUM(unpriced) AS unpriced FROM daily WHERE day >= ? GROUP BY kind ORDER BY SUM(twitter) + SUM(llm) DESC`, since),
+      byRef: rows(`SELECT kind, ref, MAX(label) AS label, SUM(twitter) AS twitter, ${LLM} AS llm, ${AUDIO} AS audio, ${IMAGE} AS image, ${EMBED} AS embedding, ${STORE} AS storage, SUM(tweets) AS tweets, SUM(n) AS n, SUM(unpriced) AS unpriced FROM daily WHERE day >= ? AND kind IN ('publish', 'monitor', 'history', 'audio', 'image', 'analysis', 'signal', 'summarize', 'embedding', 'storage') GROUP BY kind, ref ORDER BY SUM(twitter) + SUM(llm) DESC LIMIT 40`, since),
       runs: rows('SELECT ts, kind, ref, label, twitter, CASE WHEN kind IN (\'audio\', \'image\') THEN 0 ELSE llm END AS llm, CASE WHEN kind = \'audio\' THEN llm ELSE 0 END AS audio, CASE WHEN kind = \'image\' THEN llm ELSE 0 END AS image, tweets, tin, tout, model, ok, note FROM runs WHERE ts >= ? ORDER BY ts DESC LIMIT 80', Date.now() - n * DAY),
     };
+  }
+
+  /**
+   * RPC: measures what is stored and adds one day of it to the ledger. Once a day, whoever asks first: Monitor's daily wake-up, or someone opening the costs.
+   * It measures this app's six databases and its bucket by asking them, so it needs no API token. A store that cannot be read keeps its last size and is not charged today.
+   */
+  async measureStorage(): Promise<void> {
+    const sql = this.ctx.storage.sql, today = day(Date.now());
+    if (sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM daily WHERE day = ? AND kind = 'storage'", today).one().n) return;
+    const e = this.env, found: Array<{ store: string; kind: StoreKind; bytes: number; objects: number }> = [];
+    const stores: Array<[string, () => Promise<number> | number]> = [
+      ['Monitor', () => e.MONITOR.getByName('main').storageBytes()], ['History', () => e.HISTORY.getByName('main').storageBytes()], ['Lists', () => e.LISTS.getByName('main').storageBytes()],
+      ['Publish', () => e.PUBLISH.getByName('main').storageBytes()], ['Collect', () => e.COLLECT.getByName('main').storageBytes()], ['Costs', () => sql.databaseSize],
+    ];
+    for (const [store, read] of stores) {
+      try { found.push({ store, kind: 'do', bytes: Number(await read()) || 0, objects: 0 }); }
+      catch (err) { console.error('storage size failed', store, err instanceof Error ? err.message : String(err)); }
+    }
+    try {
+      let bytes = 0, objects = 0, cursor: string | undefined;
+      do {
+        const page = await e.AUDIO.list({ cursor, limit: 1000 });
+        for (const o of page.objects) { bytes += o.size; objects++; }
+        cursor = page.truncated ? page.cursor : undefined;
+      } while (cursor);
+      found.push({ store: 'Audio and pictures (R2)', kind: 'r2', bytes, objects });
+    } catch (err) { console.error('storage size failed', 'R2', err instanceof Error ? err.message : String(err)); }
+    const now = Date.now();
+    for (const f of found) {
+      sql.exec('INSERT OR REPLACE INTO storage (store, kind, bytes, objects, measured) VALUES (?, ?, ?, ?, ?)', f.store, f.kind, f.bytes, f.objects, now);
+      this.add({ kind: 'storage', ref: f.store.slice(0, 80), label: f.kind === 'r2' ? f.store : `${f.store} database`, llm: storageDayCost(f.kind, f.bytes), calls: 0 });
+    }
+  }
+  /** What is stored now, and what a month at this size costs: at list price, and after what the plan includes. */
+  private storageView() {
+    const rows = this.ctx.storage.sql.exec<{ store: string; kind: StoreKind; bytes: number; objects: number; measured: number }>('SELECT store, kind, bytes, objects, measured FROM storage ORDER BY bytes DESC').toArray();
+    const sum = (k: StoreKind) => rows.filter((r) => r.kind === k).reduce((n, r) => n + r.bytes, 0), months = (['do', 'r2'] as const).map((k) => storageMonth(k, sum(k)));
+    return { measured: rows.reduce((n, r) => Math.max(n, r.measured), 0), bytes: rows.reduce((n, r) => n + r.bytes, 0), monthList: months[0].list + months[1].list, monthBilled: months[0].billed + months[1].billed,
+      stores: rows.map((r) => ({ store: r.store, kind: r.kind, bytes: r.bytes, objects: r.objects, monthList: storageMonth(r.kind, r.bytes).list })) };
   }
 
   /** RPC: what each scheduled topic has really cost per run, for the admin's estimate to be checked against. */
