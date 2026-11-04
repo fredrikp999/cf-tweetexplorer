@@ -208,7 +208,7 @@ export class CollectDO extends DurableObject<Env> {
   private async fetchPoll(s: CollectSource, since: number): Promise<{ items: Fetched[]; cache?: { etag?: string; lastModified?: string }; title?: string }> {
     const r: { items: Parameters<typeof toFeedShape>[0][]; cache?: { etag?: string; lastModified?: string }; title?: string } = s.kind === 'hn'
       ? await fetchHn({ tag: (s.spec.hnTag ?? 'front_page') as HnTag, query: s.spec.query || undefined, minPoints: s.spec.minPoints, since })
-      : await fetchRss({ url: s.spec.query ?? '', etag: s.etag, lastModified: s.lastModified });
+      : await fetchRss({ url: s.spec.query ?? '', etag: s.etag, lastModified: s.lastModified, since });
     return { items: r.items.map((i) => ({ id: i.id, ts: Date.parse(i.at), json: toFeedShape(i) as unknown as Record<string, unknown> })), cache: r.cache, title: r.title };
   }
   /** An X search from its checkpoint, page by page; duplicates are dropped when stored. */

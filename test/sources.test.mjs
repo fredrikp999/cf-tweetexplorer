@@ -442,3 +442,50 @@ describe('more shorthand and JSON feeds', async () => {
   });
   test('leaves other addresses to the XML reader', async () => assert.equal(await parseJsonFeed('{}', 'https://example.com/x.json', hash), null));
 });
+
+describe('arXiv', () => {
+  const real = globalThis.fetch;
+  after(() => { globalThis.fetch = real; });
+  const atom = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom"><title>query</title>
+    <entry><id>http://arxiv.org/abs/2401.00001v2</id><updated>2024-01-03T00:00:00Z</updated><published>2024-01-01T10:00:00Z</published>
+      <title>Diffusion
+        &amp; Friends</title><summary>  We study things.
+        More.</summary><author><name>Ada L</name></author><author><name>Bo K</name></author><author><name>Cy M</name></author>
+      <arxiv:primary_category term="cs.LG"/><category term="cs.LG"/><category term="cs.CL"/></entry>
+    <entry><id>http://arxiv.org/api/errors#x</id><title>Error</title><summary>bad</summary></entry></feed>`;
+  test('turns a query into search_query', async () => {
+    const { arxivSearchQuery } = await import('../src/sources/arxiv.ts');
+    assert.equal(arxivSearchQuery('cs.CL, cs.LG'), 'cat:cs.CL OR cat:cs.LG');
+    assert.equal(arxivSearchQuery('au:"Hinton" AND cat:cs.LG'), 'au:"Hinton" AND cat:cs.LG');
+    assert.equal(arxivSearchQuery('diffusion models'), 'all:diffusion models');
+    assert.equal(arxivSearchQuery(''), null);
+  });
+  test('maps papers, dates the window and names the client', async () => {
+    const { fetchRss } = await import('../src/sources/rss.ts');
+    let seen, ua;
+    globalThis.fetch = async (u, init) => { seen = new URL(String(u)); ua = init.headers['user-agent']; return new Response(atom); };
+    const since = Math.floor(Date.UTC(2024, 0, 1, 9, 30) / 1000);
+    const { items } = await fetchRss({ url: 'https://export.arxiv.org/api/query?search_query=cat:cs.LG&max_results=50', since });
+    assert.match(seen.searchParams.get('search_query'), /^\(cat:cs\.LG\) AND submittedDate:\[202401010930 TO \d{12}\]$/);
+    assert.match(ua, /TweetExplorer/);
+    assert.equal(items.length, 1);
+    const p = items[0];
+    assert.equal(p.id, 'arxiv:2401.00001'); assert.equal(p.url, 'https://arxiv.org/abs/2401.00001'); assert.equal(p.pdfUrl, 'https://arxiv.org/pdf/2401.00001');
+    assert.equal(p.title, 'Diffusion & Friends'); assert.equal(p.by, 'Ada L et al.'); assert.deepEqual(p.categories, ['cs.LG', 'cs.CL']);
+    assert.match(p.text, /^Ada L, Bo K, Cy M · cs\.LG cs\.CL\nWe study things\. More\.$/);
+  });
+  test('reads one paper by id and refuses a bad one', async () => {
+    const { readArxivPaper } = await import('../src/sources/arxiv.ts');
+    let seen;
+    globalThis.fetch = async (u) => { seen = new URL(String(u)); return new Response(atom); };
+    const p = await readArxivPaper('arxiv:2401.00001');
+    assert.equal(seen.searchParams.get('id_list'), '2401.00001'); assert.equal(p.abstract, 'We study things. More.');
+    await assert.rejects(readArxivPaper('../etc/passwd'), /not an arXiv id/);
+  });
+});
+test('an arXiv error entry is reported when there are no papers', async () => {
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => new Response('<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/api/errors#x</id><title>Error</title><summary>malformed query</summary></entry></feed>');
+  try { await assert.rejects((await import('../src/sources/arxiv.ts')).fetchArxiv({ url: 'https://export.arxiv.org/api/query?search_query=x' }), /malformed query/); }
+  finally { globalThis.fetch = real; }
+});

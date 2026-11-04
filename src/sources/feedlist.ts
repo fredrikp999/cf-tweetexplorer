@@ -60,7 +60,7 @@ export async function readMembers(members: FeedMember[], sinceMs: number): Promi
     try {
       const url = m.source === 'hn' ? 'https://news.ycombinator.com/' : m.query;
       const r = m.source === 'hn' ? await fetchHn({ tag: HN_TAGS.includes(m.hnTag as HnTag) ? m.hnTag! : 'front_page', query: m.query || undefined, minPoints: m.minPoints, since: Math.floor(sinceMs / 1000) })
-        : await fetchRss({ url: m.query });
+        : await fetchRss({ url: m.query, since: Math.floor(sinceMs / 1000) });
       for (const it of r.items) if (Date.parse(it.at) >= sinceMs) items.push({ it, label: m.label, url });
     } catch (err) { failed.push(`${m.label} (${friendly(err).slice(0, 60)})`); }
   });

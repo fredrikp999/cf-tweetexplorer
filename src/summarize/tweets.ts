@@ -8,6 +8,8 @@ export interface RawTweet {
   author?: { userName?: string; name?: string };
   /** Absent for X. RSS and Hacker News items from the Monitor feed carry these (see sources/types.ts). */
   source?: string; title?: string; discussionUrl?: string;
+  /** arXiv papers. */
+  pdfUrl?: string; categories?: string[];
   /** The Monitor watch (feed) the item came from: its name, and the feed's address. */
   feed?: string; feedUrl?: string;
 }
@@ -20,6 +22,8 @@ export interface CompactTweet {
   source?: string; discussion?: string;
   /** The feed it came from (name and address), so a summary can say which feeds it read. */
   feed?: string; feedUrl?: string;
+  /** arXiv papers: the PDF and the subject categories. */
+  pdf?: string; categories?: string[];
 }
 
 export const MAX_TEXT = 600;
@@ -31,7 +35,7 @@ export function compact(t: RawTweet): CompactTweet {
     id: String(t.id), url: t.url ?? (by && !other ? `https://x.com/${by}/status/${t.id}` : ''), by: other ? (t.author?.name || by) : by ? '@' + by : '',
     at: t.createdAt ? new Date(t.createdAt).toISOString() : '', text: String(t.text ?? '').slice(0, MAX_TEXT),
     likes: t.likeCount ?? 0, retweets: t.retweetCount ?? 0, replies: t.replyCount ?? 0, views: t.viewCount ?? 0, lang: t.lang,
-    ...(other ? { source: t.source, ...(t.discussionUrl ? { discussion: t.discussionUrl } : {}), ...(t.feed ? { feed: t.feed } : {}), ...(t.feedUrl ? { feedUrl: t.feedUrl } : {}) } : {}),
+    ...(other ? { source: t.source, ...(t.discussionUrl ? { discussion: t.discussionUrl } : {}), ...(t.feed ? { feed: t.feed } : {}), ...(t.feedUrl ? { feedUrl: t.feedUrl } : {}), ...(t.pdfUrl ? { pdf: t.pdfUrl } : {}), ...(t.categories?.length ? { categories: t.categories.slice(0, 6) } : {}) } : {}),
   };
 }
 

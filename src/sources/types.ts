@@ -22,6 +22,8 @@ export interface SourceItem {
   comments?: number;
   /** YouTube. */
   views?: number;
+  /** arXiv papers. */
+  pdfUrl?: string; categories?: string[];
 }
 
 export interface FetchResult { items: SourceItem[]; /** True when the server said nothing changed (HTTP 304). */ unchanged?: boolean; cache?: { etag?: string; lastModified?: string }; /** Read through the YouTube Data API because the feed failed. */ viaApi?: boolean }
@@ -35,5 +37,6 @@ export function toFeedShape(i: SourceItem) {
     author: { userName: i.by, name: i.by },
     entities: { hashtags: [] as { text: string }[], urls: [] as { url: string; expanded_url?: string }[] },
     source: i.source, title: i.title, discussionUrl: i.discussionUrl,
+    ...(i.pdfUrl ? { pdfUrl: i.pdfUrl } : {}), ...(i.categories?.length ? { categories: i.categories } : {}),
   };
 }

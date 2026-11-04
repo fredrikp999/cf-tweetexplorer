@@ -1,6 +1,7 @@
 // RSS 2.0 and Atom. Workers have no DOMParser, and feeds are regular enough that a small tolerant reader will do.
 import { isJsonFeed, parseJsonFeed, withDates } from './json.ts';
 import type { FetchResult, SourceItem } from './types';
+import { fetchArxiv, isArxivApi } from './arxiv.ts';
 import { fetchYoutubeApi, hasYoutubeKey, isYoutubeFeed } from './youtube.ts';
 
 const MAX_BYTES = 3_000_000, MAX_JSON_BYTES = 12_000_000;
@@ -79,7 +80,8 @@ export function checkFeedUrl(raw: string): string {
 }
 
 /** A feed, and for a YouTube channel or playlist whose public feed fails, the same videos from the YouTube Data API (when a key is set). */
-export async function fetchRss(opts: { url: string; etag?: string; lastModified?: string }): Promise<FetchResult & { title: string }> {
+export async function fetchRss(opts: { url: string; etag?: string; lastModified?: string; /** Unix seconds; arXiv searches only ask for papers after it. */ since?: number }): Promise<FetchResult & { title: string }> {
+  if (isArxivApi(opts.url)) return fetchArxiv({ url: opts.url, since: opts.since });
   try { return await fetchFeedDirect(opts); }
   catch (err) {
     if (!isYoutubeFeed(opts.url) || !hasYoutubeKey()) throw err;

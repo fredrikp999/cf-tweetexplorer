@@ -1,6 +1,8 @@
+import { arxivApiUrl, arxivSearchQuery } from './arxiv.ts';
 // Shorthand for places that already publish a feed: `r/rust`, `lobsters:rust`, `github:owner/repo`, `arxiv:cs.AI`, `news: climate`, …
 // Each one is turned into the feed address it stands for, so the rest of the app sees an ordinary RSS or Atom feed.
 const e = encodeURIComponent;
+const arxivUrl = (a: string) => { const q = arxivSearchQuery(a); return q ? arxivApiUrl(q) : null; };
 const NAME = /^[\w.-]{1,60}$/;
 
 type Preset = (arg: string) => string | null;
@@ -14,8 +16,7 @@ const PRESETS: Record<string, Preset> = {
   },
   lobsters: (a) => (!a ? 'https://lobste.rs/rss' : NAME.test(a) ? `https://lobste.rs/t/${a}.rss` : null),
   github: (a) => { const m = /^([\w.-]+)\/([\w.-]+)$/.exec(a.replace(/^https?:\/\/github\.com\//i, '').replace(/\/+$/, '')); return m ? `https://github.com/${m[1]}/${m[2]}/releases.atom` : null; },
-  arxiv: (a) => /^[a-z-]+(\.[A-Za-z-]+)?$/.test(a) ? `https://rss.arxiv.org/rss/${a}`
-    : a ? `https://export.arxiv.org/api/query?search_query=all:${e(a)}&sortBy=submittedDate&sortOrder=descending&max_results=50` : null,
+  arxiv: (a) => /^[a-z-]+(\.[A-Za-z-]+)?$/.test(a) ? `https://rss.arxiv.org/rss/${a}` : arxivUrl(a),
   news: (a) => (a ? `https://www.bing.com/news/search?q=${e(a)}&format=rss&setlang=en` : null),   // Google News answers 503 to Cloudflare's servers; Bing News does not
   stackoverflow: (a) => (NAME.test(a) ? `https://stackoverflow.com/feeds/tag?tagnames=${e(a)}&sort=newest` : null),
   producthunt: () => 'https://www.producthunt.com/feed',
@@ -23,7 +24,7 @@ const PRESETS: Record<string, Preset> = {
   medium: (a) => (/^@[\w.-]{1,60}$/.test(a) ? `https://medium.com/feed/${a}` : NAME.test(a) ? `https://medium.com/feed/tag/${a}` : null),
   wikipedia: (a) => (a ? `https://en.wikipedia.org/w/index.php?title=${e(a.replace(/ /g, '_'))}&action=history&feed=atom` : 'https://en.wikipedia.org/w/index.php?title=Special:RecentChanges&feed=atom&days=1&limit=50'),
   bluesky: (a) => { const h = a.replace(/^@/, '').replace(/^https?:\/\/bsky\.app\/profile\//i, '').replace(/\/+$/, ''); return /^[\w.-]+\.[a-z]{2,}$/i.test(h) || /^did:plc:\w+$/.test(h) ? `https://bsky.app/profile/${h}/rss` : null; },
-  arxivsearch: (a) => (a ? `https://export.arxiv.org/api/query?search_query=all:${e(a)}&sortBy=submittedDate&sortOrder=descending&max_results=50` : null),
+  arxivsearch: (a) => arxivUrl(a),
   mastodon: (a) => mastodon(a),
   trending: (a) => (/^[\w.-]+\.[a-z]{2,}$/i.test(a) ? `https://${a}/api/v1/trends/statuses?limit=40` : null),   // the posts a Mastodon server is talking about
   trends: (a) => (!a || /^[a-z]{2}$/i.test(a) ? `https://trends.google.com/trending/rss?geo=${(a || 'US').toUpperCase()}` : null),
