@@ -49,7 +49,7 @@ export class History {
 
   #queryFor(j, a, b, qi = 0) {
     const f = j.filters;
-    return [j.queries?.[qi] ?? j.query, `since_time:${a}`, `until_time:${b}`, f.excludeReplies && '-filter:replies', f.minFaves > 0 && `min_faves:${f.minFaves}`, f.lang && `lang:${f.lang}`]
+    return [j.queries?.[qi] ?? j.query, `since_time:${a}`, `until_time:${b}`, f.excludeReplies && '-filter:replies', f.excludeRetweets && '-filter:retweets', f.minFaves > 0 && `min_faves:${f.minFaves}`, f.lang && `lang:${f.lang}`]
       .filter(Boolean).join(' ');
   }
 

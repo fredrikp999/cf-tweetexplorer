@@ -4,6 +4,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { COST_PER_TWEET, json, search, Stopped, type Tweet } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
+import { queryFor, type Filters } from '../history/query';
 import { computeStats, epochOf } from '../history/stats';
 import type { Stats } from '../history/stats';
 import { complete, costOf, defaultTiers, modelOptions } from '../llm/analysis';
@@ -40,18 +41,12 @@ const frac = (s: string): number => { let h = 2166136261; for (let i = 0; i < s.
 /** A job saved as a named report, optionally published at /history/<slug>. The statistics live in report_stats; the tweets stay in the job. */
 interface Report { slug: string; title: string; description: string; listed: boolean; published: boolean; publishedAt: number; statsAt: number; stale?: boolean }
 
-interface Filters { excludeReplies: boolean; excludeRetweets: boolean; minFaves: number; lang: string }
 interface Job {
   id: string; created: number; status: 'running' | 'paused' | 'done' | 'capped' | 'error';
   query: string; queries?: string[]; fromTs: number; toTs: number; shardSec: number; filters: Filters;
   concurrency: number; maxTweets: number; tweets: number; calls: number; cost: number;
   error: string; startedAt: number; finishedAt: number; report?: Report;
 }
-
-// `query` is the base query for one group (words + a group of accounts); operators are added per window.
-const queryFor = (query: string, f: Filters, a: number, b: number) =>
-  [query, `since_time:${a}`, `until_time:${b}`, f.excludeReplies && '-filter:replies', f.minFaves > 0 && `min_faves:${f.minFaves}`, f.lang && `lang:${f.lang}`]
-    .filter(Boolean).join(' ');
 
 export class HistoryDO extends DurableObject<Env> {
   private runtime = new Map<string, { abort: boolean }>();
