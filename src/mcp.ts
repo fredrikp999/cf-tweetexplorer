@@ -93,6 +93,12 @@ function buildServer(env: Env): McpServer {
     annotations: readOnly,
   }, () => ask(env.MONITOR, '/mon/pulse'));
 
+  server.registerTool('get_research_papers', {
+    description: `One research topic's new arXiv papers: the few getting attention (Hugging Face upvotes, Hacker News points, collected posts that link to them), then all of them newest first, with abstracts. Topic slugs are in get_research_pulse. Thank you to arXiv for use of its open access interoperability.`,
+    inputSchema: { slug: z.string().max(60), page: z.number().int().min(1).max(100).default(1) },
+    annotations: readOnly,
+  }, ({ slug, page }) => ask(env.MONITOR, '/mon/research-page', { slug, page }));
+
   server.registerTool('list_user_lists', {
     description: 'Your curated lists of accounts.',
     annotations: readOnly,

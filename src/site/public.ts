@@ -175,6 +175,7 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .sgstrip{margin:18px 0 22px}.sgstrip h2{display:flex;justify-content:space-between;gap:10px;align-items:baseline;font-size:15px;margin:0 0 8px}.sgstrip h2 a{font-weight:400;font-size:13.5px;color:var(--muted)}
 .sgstrip div{display:flex;flex-wrap:wrap;gap:6px}.sgstrip div a{padding:4px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--text);text-decoration:none;font-size:14px}.sgstrip small.up{color:var(--accent,#c9265f)}
 .chip.react{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}.stat{border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:var(--card)}.stat b{display:block;font-size:24px;letter-spacing:-.02em}.stat span{color:var(--muted);font-size:13px}
+.papers{list-style:none;margin:10px 0 24px;padding:0;display:grid;gap:12px}.papers li{border:1px solid var(--line);border-radius:12px;padding:12px 16px;background:var(--card);min-width:0;overflow-wrap:anywhere}.papers h3{margin:0;font-size:17px;line-height:1.3}.papers p{margin:4px 0 0;font-size:14px}.papers .pby,.papers .plinks{color:var(--muted)}.papers .psig{display:flex;flex-wrap:wrap;gap:4px 14px}.papers details{margin-top:6px;font-size:14px}.papers summary{cursor:pointer;color:var(--muted)}
 .credit{margin:40px 0 0;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}.pulse{display:grid;gap:12px;margin:18px 0}.pulse article{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--card);display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,240px);gap:6px 18px;align-items:center}.pulse h2{margin:0;font-size:18px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}.pulse p{margin:2px 0 0;color:var(--muted);font-size:14px}.pulse svg{width:100%;height:56px;display:block}.pstate{font-size:12px;font-weight:600;padding:1px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}.pstate.spike{color:var(--accent);border-color:var(--accent)}.pstate.rising{color:var(--accent)}@media(max-width:560px){.pulse article{grid-template-columns:1fr}}
 .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px}
 .sgrow .hl{grid-column:1/-1;font-size:13.5px;color:var(--muted);margin-top:-2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sgrow .hl a{color:var(--muted)}.sgrow .hl small{margin-left:4px}
@@ -261,7 +262,7 @@ const sigColor = (i: number) => SIG_COLORS[i % SIG_COLORS.length];
 const sigPct = (x: number) => { const p = x * 100; return (p < 10 ? p.toFixed(1) : String(Math.round(p))) + '%'; };
 
 // ---- Research pulse: counts of new papers per topic. Script-free, like the other public pages.
-interface PubPulseTopic { id: string; title: string; blurb: string; query: string; state: 'building' | 'normal' | 'rising' | 'spike' | 'falling'; sustained: boolean; from: string; end: string; n: number; share: number; baseline: number; ratio: number; series: Array<{ end: string; n: number; share: number }> }
+interface PubPulseTopic { id: string; slug: string; title: string; blurb: string; query: string; state: 'building' | 'normal' | 'rising' | 'spike' | 'falling'; sustained: boolean; from: string; end: string; n: number; share: number; baseline: number; ratio: number; series: Array<{ end: string; n: number; share: number }> }
 export interface PubPulse { topics: PubPulseTopic[]; field: { surge: boolean; ratio: number; n: number }; baseQuery: string; baselineWeeks: number }
 const PULSE_LABEL = { building: 'Collecting history', normal: 'Usual level', rising: 'Rising', spike: 'Spike', falling: 'Falling' };
 const pct1 = (x: number) => `${(x * 100).toFixed(1)}%`;
@@ -272,12 +273,36 @@ function pulseSpark(t: PubPulseTopic): string {
   const label = `Share of AI papers per week, from ${pct1(s[0].share)} to ${pct1(s[s.length - 1].share)}`;
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">${t.baseline ? `<line x1="0" x2="${W}" y1="${y(t.baseline).toFixed(1)}" y2="${y(t.baseline).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>` : ''}<polyline fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" points="${s.map((p, i) => `${x(i).toFixed(1)},${y(p.share).toFixed(1)}`).join(' ')}"/></svg>`;
 }
+interface PubPaper { id: string; published: number; title: string; authors: string[]; categories: string[]; abstract: string; absUrl: string; pdfUrl: string; also: Array<{ slug: string; title: string }>;
+  attention: { top: boolean; hf?: { upvotes: number; url: string }; hn?: { points: number; comments: number; url: string }; mentions: Array<{ by: string; url: string; reactions: number }>; accounts: number } }
+export interface PubResearchPage { topic: PubPulseTopic; others: Array<{ slug: string; title: string }>; attention: PubPaper[]; papers: PubPaper[]; total: number; page: number; pages: number; keepDays: number; topDays: number; updated: number }
+const httpsOnly = (u: string) => (/^https:\/\//.test(u) ? u : '');
+const ext = (u: string, text: string) => (httpsOnly(u) ? `<a href="${esc(u)}" rel="noopener noreferrer nofollow" target="_blank">${text}</a>` : text);
+function paperHtml(p: PubPaper): string {
+  const a = p.attention, shown = p.authors.slice(0, 6).join(', ') + (p.authors.length > 6 ? ` and ${p.authors.length - 6} more` : '');
+  const signals = [a.hf && `<span>${ext(a.hf.url, `${n(a.hf.upvotes)} upvote${a.hf.upvotes === 1 ? '' : 's'} on Hugging Face`)}</span>`, a.hn && `<span>${ext(a.hn.url, `${n(a.hn.points)} point${a.hn.points === 1 ? '' : 's'} on Hacker News`)}</span>`,
+    a.accounts ? `<span>Linked by ${a.mentions.slice(0, 3).map((m) => ext(m.url, `@${esc(m.by)}`)).join(', ')}${a.accounts > 3 ? ` and ${a.accounts - 3} more` : ''}</span>` : ''].filter(Boolean).join('');
+  return `<li><h3>${ext(p.absUrl, esc(p.title))}</h3><p class="pby">${esc(shown)} · ${esc(new Date(p.published).toISOString().slice(0, 10))} · ${esc(p.categories.slice(0, 3).join(' '))}</p>
+${signals ? `<p class="psig">${signals}</p>` : ''}<details><summary>Abstract</summary><p>${esc(p.abstract)}</p></details>
+<p class="plinks">${ext(p.absUrl, 'On arXiv')} · ${ext(p.pdfUrl, 'PDF')}${p.also.length ? ` · Also in ${p.also.map((t) => `<a href="/research/${esc(t.slug)}">${esc(t.title)}</a>`).join(', ')}` : ''}</p></li>`;
+}
+export function researchTopicHtml(d: PubResearchPage, ctx: Ctx): string {
+  const t = d.topic, base = `/research/${esc(t.slug)}`;
+  const facts = t.state === 'building' ? 'Collecting past weeks to compare with.' : `${n(t.n)} new papers, ${esc(t.from)} to ${esc(t.end)}: ${pct1(t.share)} of AI papers, against a usual ${pct1(t.baseline)}.`;
+  const pager = d.pages > 1 ? `<nav class="pager" aria-label="Pages">${d.page > 1 ? `<a href="${base}${d.page > 2 ? `?page=${d.page - 1}` : ''}" rel="prev">&larr; Newer</a>` : '<span></span>'}<span>Page ${n(d.page)} of ${n(d.pages)}</span>${d.page < d.pages ? `<a href="${base}?page=${d.page + 1}" rel="next">Older &rarr;</a>` : '<span></span>'}</nav>` : '';
+  return shell(`${t.title} · Research pulse · Agent Cortex`, rail(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h1>
+${t.blurb ? `<p class="lede">${esc(t.blurb)}</p>` : ''}<p class="meta">${facts}${d.others.length ? ` Other topics: ${d.others.map((x) => `<a href="/research/${esc(x.slug)}">${esc(x.title)}</a>`).join(', ')}.` : ''}</p></header>
+${d.attention.length ? `<h2>Getting attention</h2><p class="meta">From the last ${d.topDays} days: upvotes on Hugging Face, points on Hacker News, and posts collected on this site that link to a paper. Attention is not quality, and most new papers have not had time to get any.</p><ol class="papers">${d.attention.map(paperHtml).join('')}</ol>` : ''}
+<h2>New papers</h2><p class="meta">${d.total ? `${n(d.total)} papers from the last ${d.keepDays} days at most, newest first.` : 'Reading the papers. This fills in by itself.'}</p>
+<ol class="papers">${d.papers.map(paperHtml).join('')}</ol>${pager}
+<p class="meta">Papers and abstracts from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>, where each paper is hosted. This site is not affiliated with or endorsed by arXiv. Upvotes from <a href="https://huggingface.co/papers" rel="noopener noreferrer">Hugging Face Daily Papers</a>; points from Hacker News.</p>`, { description: `New research papers on ${t.title}, and which of them are getting attention.` });
+}
 export function researchHtml(d: PubPulse, ctx: Ctx): string {
   const cards = d.topics.map((t) => {
     const building = t.state === 'building';
     const facts = building ? 'Collecting past weeks to compare with. This fills in by itself.'
       : `${n(t.n)} new papers, ${esc(t.from)} to ${esc(t.end)}: ${pct1(t.share)} of AI papers, against a usual ${pct1(t.baseline)} (${t.ratio.toFixed(2)} times).`;
-    return `<article id="${esc(t.id)}"><div><h2>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h2>${t.blurb ? `<p>${esc(t.blurb)}</p>` : ''}<p>${facts}</p></div>${pulseSpark(t)}</article>`;
+    return `<article id="${esc(t.id)}"><div><h2>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h2>${t.blurb ? `<p>${esc(t.blurb)}</p>` : ''}<p>${facts}</p><p><a href="/research/${esc(t.slug)}">The papers &rarr;</a></p></div>${pulseSpark(t)}</article>`;
   }).join('');
   return shell('Research pulse · Agent Cortex', rail(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow">Analysis</div><h1>Research pulse</h1>
 <p class="lede">Which areas of AI research are getting more attention from researchers right now, measured by how many new papers they post.</p></header>
@@ -827,6 +852,11 @@ async function render(env: Env, url: URL): Promise<Response> {
     return html(landingHtml(ctx, await signalStrip(env, ctx, 8), url.origin, lead));
   }
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
+  if (parts[0] === 'research' && parts.length === 2) {
+    const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/research-page?slug=${encodeURIComponent(parts[1])}&page=${Number(url.searchParams.get('page')) || 1}`));
+    if (!r.ok) { await r.body?.cancel(); return missing(); }
+    return html(researchTopicHtml((await r.json()) as PubResearchPage, ctx));
+  }
   if (parts[0] === 'research' && parts.length === 1) {
     const r = await env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/pulse-public'));
     if (!r.ok) { await r.body?.cancel(); return missing(); }
@@ -960,7 +990,7 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   const cache = (globalThis as unknown as { caches?: { default?: Cache } }).caches?.default;
   // The key is the path plus the query parameters a page reads (Signal's sort and group), so a sorted page is not served the default one.
   // The report form is never cached: it shows whether a report was sent.
-  const q = new URLSearchParams([...['sort', 'group', 'q'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, 20)]] : []))] as [string, string][]).toString();
+  const q = new URLSearchParams([...['sort', 'group', 'q', 'page'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, 20)]] : []))] as [string, string][]).toString();
   // The deployed version is part of the key, so a deploy never serves pages (with an old menu) rendered by the version before.
   const ver = (env as { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? '';
   const key = new Request(url.origin + url.pathname + '?' + new URLSearchParams([...(q ? new URLSearchParams(q) : []), ['v', ver]]).toString(), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/');

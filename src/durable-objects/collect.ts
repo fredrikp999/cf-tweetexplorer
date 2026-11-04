@@ -7,6 +7,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { json, OutOfCredits, search, slim, type Tweet } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
 import { arxivDirect, fetchArxivQuery, isArxivHost } from '../sources/arxiv';
+import { arxivIdsIn } from '../signal/attention';
 import { fetchHn, type HnTag } from '../sources/hn';
 import { fetchRss } from '../sources/rss';
 import { setYoutubeKey } from '../sources/youtube';
@@ -603,6 +604,18 @@ export class CollectDO extends DurableObject<Env> {
           const res = await arxivDirect(target, pass);
           const keep = new Headers(); for (const h of ['content-type', 'etag', 'last-modified', 'retry-after']) { const v = res.headers.get(h); if (v) keep.set(h, v); }
           return new Response(res.status === 304 ? null : res.body, { status: res.status, headers: keep });
+        }
+        if (name === 'paper-mentions') {   // collected posts that link to an arXiv paper. Hacker News is read in full elsewhere, and Hugging Face has its own count.
+          const since = Number(url.searchParams.get('since')) || 0, out: Array<{ paper: string; by: string; name: string; url: string; reactions: number }> = [];
+          const rows = this.ctx.storage.sql.exec<{ id: string; kind: string; likes: number; json: string }>("SELECT id, kind, likes, json FROM items WHERE published >= ? AND kind IN ('x', 'rss', 'youtube') AND (json LIKE '%arxiv.org/%' OR json LIKE '%alphaxiv.org/%' OR json LIKE '%huggingface.co/papers/%') ORDER BY published DESC LIMIT 3000", since).toArray();
+          for (const r of rows) {
+            const j = JSON.parse(r.json) as { url?: string; text?: string; title?: string; isRetweet?: boolean; retweetCount?: number; replyCount?: number; quoteCount?: number; author?: { userName?: string; name?: string }; entities?: { urls?: Array<{ url?: string; expanded_url?: string }> } };
+            if (j.isRetweet || /huggingface\.co\/papers\//.test(j.url ?? '')) continue;
+            const by = j.author?.userName ?? '', link = j.url ?? (r.kind === 'x' && by ? `https://x.com/${by}/status/${r.id}` : '');
+            if (!by || !/^https:\/\//.test(link)) continue;
+            for (const paper of arxivIdsIn([j.url, j.text, ...(j.entities?.urls ?? []).map((u) => u.expanded_url ?? u.url)].filter(Boolean).join(' '))) out.push({ paper, by: by.slice(0, 80), name: (j.author?.name ?? '').slice(0, 80), url: link.slice(0, 400), reactions: r.likes + (j.retweetCount ?? 0) * 2 + (j.replyCount ?? 0) * 2 + (j.quoteCount ?? 0) * 2 });
+          }
+          return json(out);
         }
         if (name === 'overview') return json({ ...this.overview(), drift: await this.drift().catch(() => []) });
         if (name === 'items') return json(this.browse(url.searchParams));

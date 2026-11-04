@@ -164,6 +164,15 @@ export async function fetchArxiv(opts: { url: string; since?: number }): Promise
   return { items: papers.map(paperToItem), title: `arXiv: ${q.replace(/\bcat:/g, '').slice(0, 70)}` };
 }
 
+/** The papers of a search first submitted in a period (YYYY-MM-DD, both included), newest first. */
+export async function arxivPapers(searchQuery: string, from: string, to: string, max: number): Promise<Paper[]> {
+  const day = (d: string) => d.replace(/-/g, '');
+  const q = `(${searchQuery}) AND submittedDate:[${day(from)}0000 TO ${day(to)}2359]`;
+  const xml = await get(`https://${HOST}/api/query?search_query=${encodeURIComponent(q)}&sortBy=submittedDate&sortOrder=descending&max_results=${Math.min(1000, max)}`);
+  if (/<id>[^<]*\/api\/errors/.test(xml)) throw new Error(`arXiv rejected the search: ${flat(/<summary>([\s\S]*?)<\/summary>/.exec(xml)?.[1] ?? '').slice(0, 160)}`);
+  return parsePapers(xml);
+}
+
 /** A watch's own words (`cs.CL, cs.LG`, `au:"Hinton"`, `diffusion models`) → what the API is asked, or an error the person can read. */
 export async function fetchArxivQuery(opts: { query: string; since?: number }): Promise<FetchResult & { title: string }> {
   const q = arxivSearchQuery(opts.query);

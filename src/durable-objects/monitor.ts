@@ -4,7 +4,8 @@ import { DurableObject } from 'cloudflare:workers';
 import { json } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
 import { HN_TAGS, type HnTag } from '../sources/hn';
-import { arxivCount, arxivSearchQuery, arxivThroughCollect, isArxivApi, queryOfArxivUrl, useArxivGate } from '../sources/arxiv';
+import { arxivCount, arxivPapers, arxivSearchQuery, arxivThroughCollect, isArxivApi, queryOfArxivUrl, useArxivGate } from '../sources/arxiv';
+import { arxivIdsIn, attentionOf, type PaperSignals } from '../signal/attention';
 import { BASELINE_WEEKS, DEFAULT_PULSE_TOPICS, PULSE_BASE, PULSE_BASE_ID, fieldSurge, pulseOf, pulseWindows, pulseWork, windowStart, type PulseTopic } from '../signal/pulse';
 import { expandShorthand } from '../sources/presets';
 import { checkFeedUrl } from '../sources/rss';
@@ -26,6 +27,7 @@ import { useGateway } from '../llm/gateway.ts';
 const SEEN_KEEP = 1000;
 const FEED_KEEP = 500;
 const MAX_WATCHES = 50;
+const RESEARCH_EVERY_MS = 6 * 3_600_000, RESEARCH_FIRST_DAYS = 14, RESEARCH_KEEP_DAYS = 60, RESEARCH_TOP_DAYS = 30, RESEARCH_PAGE = 25, HF_DAYS = 5, HF_FIRST_DAYS = 21;
 const MIN_INTERVAL = 15, MAX_INTERVAL = 86_400;
 const SIGNAL_KEEP_DAYS = 30;   // Signal keeps daily term counts this long: two windows of at most SIGNAL_MAX_DAYS, with room to spare
 const SIGNAL_MAX_DAYS = 14;
@@ -95,6 +97,10 @@ export class MonitorDO extends DurableObject<Env> {
     useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     const sql = ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS watches (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
+    // Research topic pages: new papers (title, abstract, authors and categories only: their full text is never fetched), which topics they are in, and the attention they get.
+    sql.exec('CREATE TABLE IF NOT EXISTS research_papers (id TEXT PRIMARY KEY, published INTEGER NOT NULL, title TEXT NOT NULL, authors TEXT NOT NULL, cats TEXT NOT NULL, abstract TEXT NOT NULL, signals TEXT NOT NULL DEFAULT \'{}\', score REAL NOT NULL DEFAULT 0, top INTEGER NOT NULL DEFAULT 0)');
+    sql.exec('CREATE TABLE IF NOT EXISTS research_topic_papers (topic TEXT NOT NULL, paper TEXT NOT NULL, published INTEGER NOT NULL, PRIMARY KEY (topic, paper)) WITHOUT ROWID');
+    sql.exec('CREATE INDEX IF NOT EXISTS research_topic_new ON research_topic_papers (topic, published)');
     sql.exec('CREATE TABLE IF NOT EXISTS pulse (topic TEXT NOT NULL, end TEXT NOT NULL, n INTEGER NOT NULL, checked TEXT NOT NULL, PRIMARY KEY (topic, end)) WITHOUT ROWID');   // Research pulse: papers per 7-day window
     sql.exec('CREATE TABLE IF NOT EXISTS seen (watch TEXT NOT NULL, tweet TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (watch, tweet))');
     sql.exec('CREATE TABLE IF NOT EXISTS feed (seq INTEGER PRIMARY KEY AUTOINCREMENT, watch TEXT NOT NULL, label TEXT NOT NULL, seen_at INTEGER NOT NULL, json TEXT NOT NULL)');
@@ -155,6 +161,7 @@ export class MonitorDO extends DurableObject<Env> {
     const wake = this.aiWake(), now = Date.now(), tidy = Date.parse(today() + 'T00:00:00Z') + 86_400_000 + 60_000;
     let next = wake ? Math.min(wake, tidy) : tidy;
     const pulse = this.pulseWake(); if (pulse) next = Math.min(next, pulse);
+    next = Math.min(next, this.researchWake());
     if (!this.collectReady()) next = Math.min(next, now + 60_000);
     await this.ctx.storage.setAlarm(Math.max(next, now + 1000));
   }
@@ -163,7 +170,8 @@ export class MonitorDO extends DurableObject<Env> {
     if (!this.collectReady()) await this.syncCollect();
     try { await this.processAi(Date.now() + 20_000); } catch (err) { console.error('signal topics failed', err instanceof Error ? err.message : String(err)); }
     this.pruneSignal();
-    try { await this.pulseStep(Date.now() + 25_000); } catch (err) { console.error('research pulse failed', err instanceof Error ? err.message : String(err)); }
+    const researchUntil = Date.now() + 25_000;
+    try { await this.pulseStep(researchUntil); await this.researchStep(researchUntil); } catch (err) { console.error('research pulse failed', err instanceof Error ? err.message : String(err)); }
     await this.reschedule();
   }
 
@@ -193,6 +201,93 @@ export class MonitorDO extends DurableObject<Env> {
       }
     }
     sql.exec('DELETE FROM pulse WHERE end < ?', pulseWindows(Date.now(), 40).at(-1)!);
+  }
+  // ---- Research topic pages: the papers themselves, read every few hours, and who is paying attention to them
+  private researchNext(): Record<string, number> { return this.getMeta<Record<string, number>>('researchNext', {}); }
+  private researchWake(): number {
+    const due = [...this.pulseTopics().map((t) => this.researchNext()[t.id] ?? 0), this.getMeta<number>('attentionNext', 0)];
+    return Math.max(Math.min(...due), this.getMeta<number>('pulseRetry', 0), Date.now() + 1000);
+  }
+  private async researchStep(deadline: number): Promise<void> {
+    if (Date.now() < this.getMeta<number>('pulseRetry', 0)) return;
+    const sql = this.ctx.storage.sql, nowDay = today(), back = (d: number) => dayOf(Date.now() - d * 86_400_000);
+    for (const t of this.pulseTopics()) {
+      const next = this.researchNext();
+      if ((next[t.id] ?? 0) > Date.now()) continue;
+      if (Date.now() > deadline) return;
+      const first = next[t.id] === undefined;
+      try {
+        // A paper can be listed days after its submission date, so each read looks a few days back. Its first read fills the page.
+        const papers = await arxivPapers(t.query, back(first ? RESEARCH_FIRST_DAYS : 4), nowDay, first ? 1000 : 300);
+        this.ctx.storage.transactionSync(() => {
+          for (const p of papers) {
+            const at = Date.parse(p.published) || Date.now();
+            sql.exec('INSERT INTO research_papers (id, published, title, authors, cats, abstract) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET title = excluded.title, authors = excluded.authors, cats = excluded.cats, abstract = excluded.abstract', p.id, at, p.title.slice(0, 400), JSON.stringify(p.authors.slice(0, 40)), JSON.stringify(p.categories.slice(0, 8)), p.abstract.slice(0, 4000));
+            sql.exec('INSERT OR IGNORE INTO research_topic_papers (topic, paper, published) VALUES (?, ?, ?)', t.id, p.id, at);
+          }
+        });
+        this.setMeta('researchNext', { ...this.researchNext(), [t.id]: Date.now() + RESEARCH_EVERY_MS });
+        this.pubCache.clear();
+      } catch (err) {
+        this.setMeta('pulseError', err instanceof Error ? err.message : String(err));
+        this.setMeta('pulseRetry', Date.now() + 3_600_000);
+        return;
+      }
+    }
+    if (this.getMeta<number>('attentionNext', 0) <= Date.now() && Date.now() < deadline) {
+      this.setMeta('attentionNext', Date.now() + RESEARCH_EVERY_MS);
+      await this.readAttention();
+    }
+    const old = Date.now() - RESEARCH_KEEP_DAYS * 86_400_000;
+    sql.exec('DELETE FROM research_topic_papers WHERE published < ?', old); sql.exec('DELETE FROM research_papers WHERE published < ?', old);
+  }
+  /** Each source on its own: one that fails leaves what was known from it, and the rest still count. */
+  private async readAttention(): Promise<void> {
+    const sql = this.ctx.storage.sql, known = new Map(sql.exec<{ id: string; signals: string; authors: string }>('SELECT id, signals, authors FROM research_papers').toArray().map((r) => [r.id, { s: JSON.parse(r.signals) as PaperSignals, authors: JSON.parse(r.authors) as string[] }] as const));
+    if (!known.size) return;
+    const problems: string[] = [], json_ = async (url: string) => { const r = await fetch(url, { signal: AbortSignal.timeout(20_000), headers: { 'user-agent': 'TweetExplorer/1.0 (research topic pages)' } }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<unknown>; };
+    try {   // Upvotes keep rising for a few days after a paper is featured.
+      for (let d = 0, days = this.getMeta<number>('attentionRun', 0) ? HF_DAYS : HF_FIRST_DAYS; d < days; d++) {
+        const list = (await json_(`https://huggingface.co/api/daily_papers?date=${dayOf(Date.now() - d * 86_400_000)}&limit=100`)) as Array<{ paper?: { id?: string; upvotes?: number } }>;
+        for (const x of Array.isArray(list) ? list : []) { const k = known.get(x.paper?.id ?? ''); if (k) k.s.hf = { upvotes: Math.max(0, Number(x.paper?.upvotes) || 0), url: `https://huggingface.co/papers/${x.paper!.id}` }; }
+      }
+    } catch (err) { problems.push(`Hugging Face: ${err instanceof Error ? err.message : String(err)}`); }
+    try {
+      const since = Math.floor(Date.now() / 1000) - RESEARCH_KEEP_DAYS * 86_400;
+      for (let page = 0; page < 3; page++) {
+        const r = (await json_(`https://hn.algolia.com/api/v1/search_by_date?query=arxiv.org&restrictSearchableAttributes=url&tags=story&hitsPerPage=200&page=${page}&numericFilters=created_at_i>${since}`)) as { nbPages?: number; hits?: Array<{ objectID: string; url?: string; points?: number; num_comments?: number }> };
+        for (const h of r.hits ?? []) for (const id of arxivIdsIn(h.url ?? '')) { const k = known.get(id); if (k && (h.points ?? 0) >= (k.s.hn?.points ?? 0)) k.s.hn = { points: h.points ?? 0, comments: h.num_comments ?? 0, url: `https://news.ycombinator.com/item?id=${h.objectID}` }; }
+        if (page + 1 >= (r.nbPages ?? 0)) break;
+      }
+    } catch (err) { problems.push(`Hacker News: ${err instanceof Error ? err.message : String(err)}`); }
+    try {
+      const res = await this.env.COLLECT.getByName('main').fetch(new Request(`https://internal/collect/paper-mentions?since=${Date.now() - RESEARCH_KEEP_DAYS * 86_400_000}`));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const found = new Map<string, Array<{ by: string; name: string; url: string; reactions: number }>>();
+      for (const m of (await res.json()) as Array<{ paper: string; by: string; name: string; url: string; reactions: number }>) (found.get(m.paper) ?? found.set(m.paper, []).get(m.paper)!).push(m);
+      for (const [id, k] of known) k.s.mentions = (found.get(id) ?? []).map(({ by, name, url, reactions }) => ({ by, name, url, reactions }));
+    } catch (err) { problems.push(`collected posts: ${err instanceof Error ? err.message : String(err)}`); }
+    this.ctx.storage.transactionSync(() => {
+      for (const [id, k] of known) { const a = attentionOf(k.s, k.authors); sql.exec('UPDATE research_papers SET signals = ?, score = ?, top = ? WHERE id = ?', JSON.stringify(k.s), a.score, a.top ? 1 : 0, id); }
+    });
+    this.setMeta('attentionProblems', problems); this.setMeta('attentionRun', Date.now()); this.pubCache.clear();
+  }
+  /** One topic's page: its pulse, the few papers getting attention, and all of them, newest first. */
+  private researchPage(slug: string, pageIn: number) {
+    const topic = this.pulseTopics().find((t) => t.slug === slug);
+    if (!topic) return null;
+    const sql = this.ctx.storage.sql, topics = new Map(this.pulseTopics().map((t) => [t.id, t] as const));
+    type Row = { id: string; published: number; title: string; authors: string; cats: string; abstract: string; signals: string };
+    const shape = (r: Row) => {
+      const authors = JSON.parse(r.authors) as string[], a = attentionOf(JSON.parse(r.signals) as PaperSignals, authors);
+      const also = sql.exec<{ topic: string }>('SELECT topic FROM research_topic_papers WHERE paper = ? AND topic != ?', r.id, topic.id).toArray().map((x) => topics.get(x.topic)).filter((t): t is PulseTopic => !!t).map((t) => ({ slug: t.slug, title: t.title }));
+      return { id: r.id, published: r.published, title: r.title, authors, categories: JSON.parse(r.cats) as string[], abstract: r.abstract, absUrl: `https://arxiv.org/abs/${r.id}`, pdfUrl: `https://arxiv.org/pdf/${r.id}`, also, attention: { top: a.top, hf: a.hf, hn: a.hn, mentions: a.mentions.slice(0, 5).map(({ by, url, reactions }) => ({ by, url, reactions })), accounts: a.mentions.length } };
+    };
+    const COLS = 'p.id, p.published, p.title, p.authors, p.cats, p.abstract, p.signals', FROM = 'research_topic_papers x JOIN research_papers p ON p.id = x.paper';
+    const total = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM research_topic_papers WHERE topic = ?', topic.id).one().n, pages = Math.max(1, Math.ceil(total / RESEARCH_PAGE)), page = Math.min(pages, Math.max(1, Math.floor(pageIn) || 1));
+    const attention = page === 1 ? sql.exec<Row>(`SELECT ${COLS} FROM ${FROM} WHERE x.topic = ? AND p.top = 1 AND x.published >= ? ORDER BY p.score DESC, x.published DESC LIMIT 10`, topic.id, Date.now() - RESEARCH_TOP_DAYS * 86_400_000).toArray().map(shape) : [];
+    const papers = sql.exec<Row>(`SELECT ${COLS} FROM ${FROM} WHERE x.topic = ? ORDER BY x.published DESC, x.paper DESC LIMIT ? OFFSET ?`, topic.id, RESEARCH_PAGE, (page - 1) * RESEARCH_PAGE).toArray().map(shape);
+    return { topic: this.pulseView().topics.find((t) => t.id === topic.id)!, others: this.pulseTopics().filter((t) => t.id !== topic.id).map((t) => ({ slug: t.slug, title: t.title })), attention, papers, total, page, pages, keepDays: RESEARCH_KEEP_DAYS, topDays: RESEARCH_TOP_DAYS, updated: this.getMeta<number>('attentionRun', 0) };
   }
   /** Every topic's state, from what has been read so far. The same for the admin and for readers: counts and the searches behind them, which are public anyway. */
   private pulseView() {
@@ -970,6 +1065,15 @@ export class MonitorDO extends DurableObject<Env> {
           return out ? json(out) : json({ error: 'not shown' }, 404);
         }
         if (name === 'signal-public-boards') return json(await this.publicBoards());
+        if (name === 'research-page') {   // a topic's page: kept for two minutes
+          const slug = url.searchParams.get('slug') ?? '', page = Number(url.searchParams.get('page')) || 1, key = `research\n${slug}\n${page}`, hit = this.pubCache.get(key);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = this.researchPage(slug, page);
+          if (!v) return json({ error: 'no such topic' }, 404);
+          this.pubCache.set(key, { at: Date.now(), v });
+          await this.reschedule();
+          return json(v);
+        }
         if (name === 'pulse-public') {   // the public page: kept for two minutes
           const hit = this.pubCache.get('pulse');
           if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
@@ -1076,13 +1180,16 @@ export class MonitorDO extends DurableObject<Env> {
         if (!prev && list.length >= 12) throw new Error('at most 12 topics');
         const t = this.cleanPulseTopic(b, prev);
         this.setMeta('pulseTopics', prev ? list.map((x) => (x.id === t.id ? t : x)) : [...list, t]);
-        if (prev && prev.query !== t.query) this.ctx.storage.sql.exec('DELETE FROM pulse WHERE topic = ?', t.id);   // another search has another history: start it again
+        if (prev && prev.query !== t.query) {   // another search has another history and other papers: start them again
+          this.ctx.storage.sql.exec('DELETE FROM pulse WHERE topic = ?', t.id); this.ctx.storage.sql.exec('DELETE FROM research_topic_papers WHERE topic = ?', t.id);
+          const next = this.researchNext(); delete next[t.id]; this.setMeta('researchNext', next);
+        }
         this.setMeta('pulseRetry', 0); await this.reschedule();
         return json(t);
       }
       if (name === 'pulse-topic-delete') {
         this.setMeta('pulseTopics', this.pulseTopics().filter((t) => t.id !== b.id));
-        this.ctx.storage.sql.exec('DELETE FROM pulse WHERE topic = ?', String(b.id ?? ''));
+        this.ctx.storage.sql.exec('DELETE FROM pulse WHERE topic = ?', String(b.id ?? '')); this.ctx.storage.sql.exec('DELETE FROM research_topic_papers WHERE topic = ?', String(b.id ?? ''));
         return json({ ok: true });
       }
       if (name === 'settings') {
