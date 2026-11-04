@@ -512,3 +512,10 @@ describe('arXiv as a source of its own', () => {
     } finally { globalThis.fetch = real; }
   });
 });
+
+test('an arXiv window never starts later than a week back, so late-indexed papers and new watches still find papers', async () => {
+  const { withWindow } = await import('../src/sources/arxiv.ts');
+  const q = new URL(withWindow('https://export.arxiv.org/api/query?search_query=all:x', Math.floor(Date.now() / 1000) - 60)).searchParams.get('search_query');
+  const from = q.match(/\[(\d{12}) TO/)[1], week = new Date(Date.now() - 7 * 86_400_000).toISOString().replace(/[-:T]/g, '').slice(0, 12);
+  assert.ok(from <= week, `${from} should not be later than ${week}`);
+});

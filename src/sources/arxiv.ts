@@ -36,12 +36,18 @@ export function arxivApiUrl(searchQuery: string, maxResults = 50): string {
 
 const stamp = (ms: number) => new Date(ms).toISOString().replace(/[-:T]/g, '').slice(0, 12);   // YYYYMMDDHHMM, GMT
 
-/** The same query restricted to papers first submitted after `sinceSec`, so a poll asks only for what is new. */
+const LOOKBACK = 7 * 86_400;
+/**
+ * The same query restricted to recent papers. The window starts a week back at the latest, never at the last check: a paper
+ * shows up in the API hours after its submission date, and a new watch has no last check worth asking from. Papers already
+ * seen are dropped by their ids when stored, so asking again for them costs nothing.
+ */
 export function withWindow(url: string, sinceSec: number): string {
   const u = new URL(url);
   const q = u.searchParams.get('search_query');
   if (!q || !(sinceSec > 0) || /submittedDate:/.test(q)) return u.href;
-  u.searchParams.set('search_query', `(${q}) AND submittedDate:[${stamp(sinceSec * 1000)} TO ${stamp(Date.now() + 86_400_000)}]`);
+  const from = Math.min(sinceSec, Math.floor(Date.now() / 1000) - LOOKBACK);
+  u.searchParams.set('search_query', `(${q}) AND submittedDate:[${stamp(from * 1000)} TO ${stamp(Date.now() + 86_400_000)}]`);
   u.searchParams.set('max_results', String(MAX_RESULTS));
   return u.href;
 }
