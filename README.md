@@ -37,7 +37,7 @@ what failed or waits, with a button to retry each.
 | | Who | What |
 | --- | --- | --- |
 | **Public site** `/` | Anyone | **Today** (each briefing's headline and themes), one page per briefing topic with its earlier days and an RSS feed, **feed pages** ("Watch and read"), **Signal** with a page per topic, **Topics** (every topic Signal found, new, rising and A to Z, searchable), and how it works, published reports, and the lists behind the briefings. Readers can report an error in any theme. Server-rendered, no cookies; the only script is optional Cloudflare Web Analytics, except on two picture pages: the **Tweet Galaxy** of a published report and **Who said it first** of a published Signal, which run a script in a sandboxed frame. |
-| **Admin** `/admin` | You, behind Cloudflare Access | **Overview** (what needs attention, with fixes), then **Day to day**: Signal, Live feed, Briefings, Archives, Costs; **Explore**: Find tweets, Look up account, Trending, Ask AI; **Setup**: Sources, Signal setup, Briefing setup, Lists & templates, Feed pages, Budgets. Viewing and configuration are kept on separate pages. |
+| **Admin** `/admin` | You, behind Cloudflare Access | **Overview** (what needs attention, with fixes), then **Day to day**: Signal, Live feed, Briefings, Archives, Costs; **Explore**: Find tweets, Look up account, Trending, Ask AI; **Setup**: Sources, Collection, Lists & templates, Feed pages, Budgets. Signal and Briefings have their setup as a tab on the page, and say why something does not reach readers. |
 | **MCP server** `/mcp` | You, behind its own Access application: your Access login (OAuth) from the Claude app, or a service token | Read-only tools for briefings, Signal, archives, lists, the live feed and costs. In the Claude app, `get_signal` and `get_costs` open as interactive dashboards, `get_tweet_galaxy` as an animated picture of a History collection, and `get_who_said_first` as ripples showing which sources had a topic first (MCP Apps). See [docs/mcp.md](docs/mcp.md). |
 
 Language models come from [OpenRouter](https://openrouter.ai) (Anthropic directly also works for summaries), audio (Gemini TTS) from
@@ -85,7 +85,7 @@ with its own data on workers.dev.
 | --- | --- |
 | [Architecture](docs/architecture.md) | How it is deployed, public and private routes, the Durable Objects, the code map, which models are used |
 | [Flows](docs/flows.md) | What happens for archives, AI analysis, Ask AI, briefings, screening and the live feed, step by step |
-| [Configuration](docs/configuration.md) | Secrets, variables, and every setting in the app (Sources, Signal setup, Briefing setup, Budgets) |
+| [Configuration](docs/configuration.md) | Secrets, variables, and every setting in the app (Sources, Signal, Briefings, Budgets) |
 | [Deployment](docs/deployment.md) | How to deploy (release, smoke test, staging), retrying and re-running, and setup one feature at a time: Access, briefings, audio, pictures, AI Gateway, archives, YouTube API, analytics, reader reports |
 | [MCP server](docs/mcp.md) | The tools, signing in (Managed OAuth for the Claude app, service tokens for Claude Code), and the MCP Apps (interactive views) |
 | [Setup overview](public/admin/setup.html) | The same setup as one illustrated page, opened from the admin app (Guide → *How it is set up*, at `/admin/setup`, behind the admin login) |

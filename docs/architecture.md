@@ -102,7 +102,7 @@ src/
   signal/                  terms.ts (words, phrases and hashtags of an item) · score.ts (weighted score per term across groups; shared / single / rising) · topics.ts (merging terms into topics, what goes with them) · ai.ts (optional: prompt and parsing for topics written by a model)
   lib/                     twitterapi.ts (API client) · costs.ts (ledger writes) · pool.ts
 server/                    The same app for running locally with Node (npm start): index.js, History, Lists, Monitor, Agent (no collection layer)
-public/admin/              The admin app (one HTML page, no build step)
+public/admin/              The admin app (one HTML page, no build step), and health.js: why a briefing or Signal group does or does not reach readers
 test/                      Tests (node --test)
 docs/                      Architecture, flows, configuration, deployment, MCP
 ```

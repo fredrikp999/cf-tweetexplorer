@@ -11,7 +11,7 @@ The site has three parts:
   grouped by what you do there:
   - **Day to day** (viewing and acting): Signal, Live feed, Briefings (read, edit, publish, run), Archives, Costs.
   - **Explore**: Find tweets, Look up account, Trending, Ask AI.
-  - **Setup** (configuration only): Sources (what is watched), Signal setup, Briefing setup, Lists & templates, Budgets (every spending limit), Post as X, Guide.
+  - **Setup** (configuration only): Sources (what is watched), Lists & templates, Budgets (every spending limit), Post as X, Guide.
 
   `/admin/#costs`, `/admin/#sources` and so on open a given tab. The old `/custom` addresses redirect to `/admin`.
   Agent and Account only exist when you run the app locally (`npm start`, which serves it at `/`).
@@ -261,7 +261,7 @@ shared document (`public/admin/x-lists-scoble.json`, grouped as in the document;
 "Add lists from links or ids" takes your own. Re-importing adds only what is new and keeps your renames.
 - **Two ways to read a list**, chosen per view, per Summarize run and per scheduled source:
   - **Best posts** (the default): X searches the list (`list:<id>`) for the range's top posts, without retweets or replies and
-    with at least N likes (default 5). In Briefing setup, **Find a good setting** next to the likes shows what each setting
+    with at least N likes (default 5). In a briefing's Settings, **Find a good setting** next to the likes shows what each setting
     would buy, from the posts already collected (free, a minimum) and from a live check (paid, the cost is on the button), and
     applies one with a click. 20 posts a call (about $0.003) and you pay only for what comes back, so it covers the
     whole range and costs a fraction. A 2-list group went from $0.044 to $0.012 a run, and from "the newest slice" to "the
@@ -320,7 +320,7 @@ Everything that runs on its own can be run again by hand, where you would look f
 
 | What | When it failed | After you changed its settings |
 | --- | --- | --- |
-| A briefing | **Overview** shows the error with **Run again**; **Briefings** turns **Run now** into **Run again**. | **Briefing setup**: after **Save**, a bar offers **Run now** (a new issue) or **Re-run and replace** the latest. **Briefings** has **Re-run and replace** too. |
+| A briefing | **Overview** shows the error with **Run again**; **Briefings** turns **Run now** into **Run again**. | **Briefings**: a panel at the top of Issues and Settings says what is wrong and offers the fix, with **Run now** (a new issue) and **Re-run and replace** the latest. Both use what is on the page: unsaved settings are saved first. |
 | A briefing's audio or picture | **Overview**: **Make again**. **Briefings**: the buttons on the issue. | The same buttons; they reuse the text, so nothing is fetched or written again. |
 | A watch (Sources) | **Overview**: **Check again** for all failing ones; **Sources**: **Check now** on the card. | Applies at the next check; **Check now** runs it at once. |
 | Signal topics by AI | **Overview** and **Signal setup → Topic detection**: **Retry** the items the model could not read, or a waiting error. | **Signal setup → Topic detection**: **Re-read** reads the last two weeks again with the current model (shows how many items and about what it costs). Saving a new model points you there. |

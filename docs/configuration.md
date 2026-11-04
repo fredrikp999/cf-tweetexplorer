@@ -74,7 +74,7 @@ Bindings in `wrangler.jsonc`: the six Durable Objects, the R2 bucket `AUDIO` (cr
 | Label at most | A stable sample beyond this many unique tweets (default 20,000). |
 | Show on the public report | Adds the analysis to the published report. |
 
-**Briefing topic** (`/admin` → Briefing setup; what it has written is under Briefings)
+**Briefing topic** (`/admin` → Briefings → Settings; what it has written is under Issues)
 
 | Setting | Meaning |
 | --- | --- |
@@ -95,7 +95,7 @@ its sources one by one, each with its status, last error, its own interval and *
 are grouped by kind (X, RSS, YouTube, Hacker News) and handled the same way, and lists that exist but are not watched are listed with a **Watch**
 button. Desktop notifications are set here too. New items show in Live feed.
 
-**Signal setup** (`/admin` → Signal setup): sources and the group each votes in; group weights (0 mutes, 3 triples); topic rules (words or AI,
+**Signal setup** (`/admin` → Signal → Setup and publishing): sources and the group each votes in; group weights (0 mutes, 3 triples); topic rules (words or AI,
 the model, filtered words, and hide, merge or rename a topic, which applies everywhere and also to what was counted before); and the top-level
 Signals, each with its groups, its public address, and whether it is published and shows its sources.
 

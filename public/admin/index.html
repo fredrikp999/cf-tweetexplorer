@@ -18,6 +18,7 @@
 })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="/admin/health.js"></script>
 <style>
 :root {
   --bg: #eff3f2; --card: #ffffff; --text: #0f252c; --muted: #5a7075; --line: #dbe4e3;
@@ -327,34 +328,58 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
 /* ----- Briefings (scheduled publishing) ----- */
-#publish .layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 24px; align-items: start; }
-@media (max-width: 820px) { #publish .layout { grid-template-columns: 1fr; } }
+#pubLayout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 820px) { #pubLayout { grid-template-columns: 1fr; } }
 #pubTopics { display: grid; gap: 8px; align-content: start; }
 #pubTopics button.t { text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: inherit; color: inherit; cursor: pointer; }
 #pubTopics button.t.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 #pubTopics small { display: block; color: var(--muted); }
-#publish button.primary, #publish button.sec, #publish button.danger { font: inherit; border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--text); }
-#publish button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
-#publish button.danger { color: var(--err); }
-#publish h2 { font-size: 20px; margin: 0 0 12px; letter-spacing: -.01em; }
-#publish form { display: grid; gap: 14px; margin-bottom: 0; }
-#publish label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
-#publish label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
-#publish input[type=text], #publish input[type=number], #publish select, #publish textarea { font: inherit; font-size: 14.5px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); width: 100%; }
-#publish textarea { min-height: 70px; resize: vertical; }
-#publish .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
-#publish .src { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-#publish .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-#publish .spill { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+:is(#pubLayout, #libTpl) button.primary, :is(#pubLayout, #libTpl) button.sec, :is(#pubLayout, #libTpl) button.danger { font: inherit; border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+:is(#pubLayout, #libTpl) button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+:is(#pubLayout, #libTpl) button.danger { color: var(--err); }
+:is(#pubLayout, #libTpl) h2 { font-size: 20px; margin: 0 0 12px; letter-spacing: -.01em; }
+:is(#pubLayout, #libTpl) form { display: grid; gap: 14px; margin-bottom: 0; }
+:is(#pubLayout, #libTpl) label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+:is(#pubLayout, #libTpl) label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+:is(#pubLayout, #libTpl) input[type=text], :is(#pubLayout, #libTpl) input[type=number], :is(#pubLayout, #libTpl) select, :is(#pubLayout, #libTpl) textarea { font: inherit; font-size: 14.5px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); width: 100%; }
+:is(#pubLayout, #libTpl) textarea { min-height: 70px; resize: vertical; }
+:is(#pubLayout, #libTpl) .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+:is(#pubLayout, #libTpl) .src { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+#pubLayout .src > select[data-f=type] { flex: 0 0 150px; width: 150px; } #pubLayout .src > input, #pubLayout .src > select:not([data-f=type]) { flex: 1 1 180px; width: auto; min-width: 0; } #pubLayout .src > button[data-rm] { flex: none; }
+#pubLayout .src > .srcopt, #pubLayout .src > .srchint { flex: 1 0 100%; }
+.srchint { font-size: 13px; color: var(--muted); } .srchint.l-bad { color: var(--err); } .srchint.l-warn { color: var(--bar4); } .src.bad input { border-color: var(--err); }
+:is(#pubLayout, #libTpl) .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+:is(#pubLayout, #libTpl) .spill { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .applybar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 12px; margin: -4px 0 14px; border: 1px solid var(--accent); border-radius: 10px; } .applybar span { flex: 1; min-width: 200px; }
-#publish .spill.published { color: var(--ok); border-color: var(--ok); } #publish .spill.draft { color: var(--accent); border-color: var(--accent); }
-#publish .perr { color: var(--err); } #publish .muted { color: var(--muted); }
-#publish table { width: 100%; border-collapse: collapse; }
-#publish td, #publish th { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: top; font-size: 14px; }
-#publish th { font-size: 12px; color: var(--muted); border-top: 0; }
-#publish a { color: var(--accent); }
+:is(#pubLayout, #libTpl) .spill.published { color: var(--ok); border-color: var(--ok); } :is(#pubLayout, #libTpl) .spill.draft { color: var(--accent); border-color: var(--accent); }
+:is(#pubLayout, #libTpl) .perr { color: var(--err); } :is(#pubLayout, #libTpl) .muted { color: var(--muted); }
+:is(#pubLayout, #libTpl) table { width: 100%; border-collapse: collapse; }
+:is(#pubLayout, #libTpl) td, :is(#pubLayout, #libTpl) th { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: top; font-size: 14px; }
+:is(#pubLayout, #libTpl) th { font-size: 12px; color: var(--muted); border-top: 0; }
+:is(#pubLayout, #libTpl) a { color: var(--accent); }
 #pubEditor textarea { min-height: 360px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
 
+/* ----- why something is or is not showing ----- */
+a { color: var(--accent); }   /* the lowest specificity there is, so every link style elsewhere still wins */
+.subtabs { display: inline-flex; gap: 2px; padding: 3px; margin-top: 10px; border-radius: 11px; background: color-mix(in srgb, var(--text) 7%, transparent); }
+.subtabs button { font: inherit; font-size: 14px; color: var(--text); background: none; border: 0; border-radius: 8px; padding: 6px 16px; cursor: pointer; }
+.subtabs button:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.subtabs button.on { background: var(--card); font-weight: 650; box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(6, 21, 26, .12); }
+.subtabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hpill { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.hpill.l-ok { color: var(--ok); border-color: var(--ok); } .hpill.l-warn { color: var(--bar4); border-color: var(--bar4); } .hpill.l-bad { color: var(--err); border-color: var(--err); } .hpill.l-wait { color: var(--bar); border-color: var(--bar); }
+#pubTopics button.t b { display: block; } #pubTopics .tline { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; } #pubTopics .tline b { min-width: 0; overflow-wrap: anywhere; }
+#pubHead .htop { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 6px; } #pubHead .htop h2 { margin: 0; } #pubHead .htop .hlink { margin-left: auto; font-size: 14px; }
+#pubHead .hline { margin: 0 0 12px; font-size: 15px; font-weight: 550; }
+.hsteps { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); }
+.hstep { padding: 8px 10px 9px; border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: 8px; font-size: 13px; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.hstep b { display: block; color: var(--text); font-size: 13px; margin-bottom: 2px; }
+.hstep.l-ok { border-top-color: var(--ok); } .hstep.l-warn { border-top-color: var(--bar4); } .hstep.l-bad { border-top-color: var(--err); } .hstep.l-wait { border-top-color: var(--bar); }
+.hstep .go, .gstat .go { display: inline-block; margin-top: 6px; font-size: 12.5px; padding: 2px 10px; }
+.gstat { font-size: 13px; color: var(--muted); padding: 6px 0 2px; } .gstat.l-warn, .reach .l-warn, .srchint.l-warn { color: var(--bar4); border: 0; border-radius: 0; background: none; } .gstat.l-ok { color: var(--ok); } .gstat .go { margin: 4px 6px 0 0; color: var(--text); } .ssgrp .gstat { display: inline; padding: 0 0 0 8px; } .ssgrp .gstat .go { margin-top: 0; margin-left: 6px; }
+.reach { font-size: 13px; color: var(--muted); } .reach .l-warn { color: var(--bar4); } .reach .l-ok { color: var(--ok); } .reach button.go { font-size: 12.5px; padding: 2px 10px; margin-left: 6px; }
+#pubLayout form .savebar { position: sticky; bottom: 0; z-index: 2; margin: 0 -20px -18px; padding: 12px 20px; background: var(--card); border-top: 1px solid var(--line); border-radius: 0 0 var(--r) var(--r); }
+#pubDirty { font-size: 13px; color: var(--bar4); } #pubLayout .savebar #pubDel { margin-left: auto; }
 /* ----- signal ----- */
 
 .srclists { display: grid; gap: 12px; } .srclist .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .srclist.bad { border-left: 3px solid var(--err); }
@@ -460,8 +485,6 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <div class="grp">Setup</div>
     <button data-tab="sources"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/></svg><span>Sources</span></button>
     <button data-tab="collection" data-feature="collection" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6.5" rx="7" ry="2.8"/><path d="M5 6.5v11c0 1.6 3.1 2.8 7 2.8s7-1.2 7-2.8v-11M5 12c0 1.6 3.1 2.8 7 2.8s7-1.2 7-2.8"/></svg><span>Collection</span></button>
-    <button data-tab="signalsetup" data-feature="signal" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h9M18 7h1M5 17h1M10 17h9"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>Signal setup</span></button>
-    <button data-tab="pubsetup" data-feature="publish" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><circle cx="16" cy="9.5" r="2"/><path d="M8 9.5h5"/></svg><span>Briefing setup</span></button>
     <button data-tab="lists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg><span>Lists and templates</span></button>
     <button data-tab="views"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11" rx="2"/><path d="m10.5 8.5 4 2-4 2z"/><path d="M7 19.5h10"/></svg><span>Feed pages</span></button>
     <button data-tab="budgets"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="6" width="17" height="12" rx="2"/><path d="M3.5 10h17M15 14.5h2.5"/></svg><span>Budgets</span></button>
@@ -634,7 +657,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   </section>
 
   <section id="signal" hidden>
-    <header class="page"><h1>Signal</h1><p>Everything you watch, combined into one read of what is being talked about, and where.</p></header>
+    <header class="page"><h1>Signal</h1><p>Everything you watch, combined into one read of what is being talked about, and where.</p><div class="subtabs" role="tablist"><button type="button" role="tab" data-tabgo="signal" class="on" aria-selected="true">Results</button><button type="button" role="tab" data-tabgo="signalsetup">Setup and publishing</button></div></header>
     <details class="about" data-about="signal"><summary>How the score works</summary>
       <div><ul>
         <li>Every watch belongs to a <b>group</b>: the feed list it was made from, or its kind of source (X, RSS, Hacker News, YouTube), or a name you give it. Groups vote.</li>
@@ -646,7 +669,6 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
       <label class="chk note" title="Topics at the same level as in the period before are always around (for example “ai” on a feed about AI). They are left out so what is new or growing stands out."><input type="checkbox" id="sigHideSteady" checked> Hide background topics</label>
       <label class="note">Showing <select id="sigBoardSel" aria-label="Which Signal to show"></select></label>
       <span class="note" id="sigNote"></span>
-      <button class="go ghost" data-tabgo="signalsetup" type="button" style="margin-left:auto">Set up &amp; publish</button>
     </div>
     <div class="note" id="sigBoardInfo" style="margin:-4px 0 12px"></div>
     <div id="sigBody">
@@ -662,14 +684,14 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   </section>
 
   <section id="signalsetup" hidden>
-    <header class="page"><h1>Signal setup</h1><p>What feeds Signal, how it is weighed and what is published. The results are on the <a href="#signal" data-tabgo="signal">Signal</a> tab, which only shows them.</p></header>
+    <header class="page"><h1>Signal</h1><p>What feeds Signal, how it is weighed and what readers see.</p><div class="subtabs" role="tablist"><button type="button" role="tab" data-tabgo="signal">Results</button><button type="button" role="tab" data-tabgo="signalsetup" class="on" aria-selected="true">Setup and publishing</button></div></header>
     <div class="sigflow" id="ssFlow" aria-label="From sources to published page"></div>
 
     <h2 class="ssh" id="ssSources"><span>1</span> Sources <small>what is counted</small></h2>
     <div class="card" style="margin-bottom:14px">
       <div class="note" style="margin-bottom:8px">Every watch, the group it votes in, and whether it counts. Type a group name to move a source (the same name merges them); leave it empty for the default (its feed list, or its kind of source). <b>Leave out</b> keeps watching but stops counting it; <b>Delete</b> stops watching it. Briefings can feed Signal too: tick <b>Signal</b> in a briefing's settings.</div>
       <div id="sigManageRows"></div>
-      <button class="go ghost" data-tabgo="monitor" type="button" style="margin-top:10px">Add watches in Live feed</button>
+      <button class="go ghost" data-tabgo="sources" type="button" style="margin-top:10px">Add sources</button>
     </div>
 
     <h2 class="ssh" id="ssGroups"><span>2</span> Groups <small>who votes, and how loudly</small></h2>
@@ -714,7 +736,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   </section>
 
   <section id="sources" hidden>
-    <header class="page"><h1>Sources</h1><p>What is watched: X accounts and searches, RSS feeds, YouTube and Hacker News. New items appear in the <a href="#monitor" data-tabgo="monitor">Live feed</a> and feed <a href="#signal" data-tabgo="signal" data-feature="signal">Signal</a>. <span data-feature="collection" hidden>How often each one is checked may stretch automatically for quiet or failing feeds; see <a href="#collection" data-tabgo="collection">Collection</a>.</span></p></header>
+    <header class="page"><h1>Sources</h1><p>What is watched: X accounts and searches, RSS feeds, YouTube, Hacker News and arXiv. New items appear in the <a href="#monitor" data-tabgo="monitor">Live feed</a> and feed <a href="#signal" data-tabgo="signal" data-feature="signal">Signal</a>. <span data-feature="collection" hidden>How often each one is checked may stretch automatically for quiet or failing feeds; see <a href="#collection" data-tabgo="collection">Collection</a>.</span></p></header>
     <details class="about" data-about="monitor"><summary>How this works and what it costs</summary>
       <div><p>Get new tweets as they are posted, from an account or a search query, without keeping the page open.</p>
    <ul><li>The <b>server</b> checks each watch every N seconds (15 s to 1 h) using a <code>since_time</code> window, and pushes anything new to this page live.</li>
@@ -786,7 +808,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   </section>
 
   <section id="pubsetup" hidden>
-    <header class="page"><h1>Briefing setup</h1><p>What each briefing reads, how it is written, when it runs, and what it costs. What it has written is under <a href="#publish" data-tabgo="publish">Briefings</a>.</p></header>
+    <header class="page"><h1>Briefings</h1><p>What each briefing reads, how it is written, when it runs, and what it costs.</p><div class="subtabs" role="tablist"><button type="button" role="tab" data-tabgo="publish">Issues</button><button type="button" role="tab" data-tabgo="pubsetup" class="on" aria-selected="true">Settings</button></div></header>
     <div id="pubSetupHost"></div>
   </section>
 
@@ -847,7 +869,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
   </section>
 
   <section id="publish" hidden>
-    <header class="page"><h1>Briefings</h1><p>What has been written: read, edit, publish and run. Summaries of X, feeds, YouTube and Hacker News, published to <a href="/" target="_blank" rel="noopener">the public site</a>. Topics are set up under <a href="#pubsetup" data-tabgo="pubsetup">Briefing setup</a>.</p></header>
+    <header class="page"><h1>Briefings</h1><p>What has been written, and whether readers can see it. Published to <a href="/" target="_blank" rel="noopener">the public site</a>.</p><div class="subtabs" role="tablist"><button type="button" role="tab" data-tabgo="publish" class="on" aria-selected="true">Issues</button><button type="button" role="tab" data-tabgo="pubsetup">Settings</button></div></header>
     <div class="layout" id="pubLayout">
       <aside><div id="pubTopics"></div><p><button class="primary" id="pubNew">New topic</button></p>
       <div class="card" id="pubHero" style="padding:12px 14px;margin-bottom:12px"><label for="pubHeroSel"><b>Picture on Today</b></label><select id="pubHeroSel" style="width:100%;margin-top:6px"></select><p class="muted" id="pubHeroNow" style="font-size:13px;margin:6px 0 0"></p></div>
@@ -1041,7 +1063,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
         <ul><li>Tweets: about <b>$0.15 per 1,000</b> ($0.00015 each). An empty call is billed as one tweet.</li>
         <li>Profiles: about $0.18 per 1,000.</li>
         <li>Write actions: 60 credits ($0.0006); login 10,000 credits ($0.10).</li>
-        <li>The <b>Costs</b> tab shows what has actually been spent, per day, per activity and per briefing. <b>Briefings</b> shows each report's cost, <b>Briefing setup</b> an estimate while you set up a schedule, and <b>Budgets</b> every spending limit in one place.</li><li>Your remaining credits are shown at the bottom of the sidebar. Monitor has a daily spend cap; History asks before it starts.</li></ul></div></details>
+        <li>The <b>Costs</b> tab shows what has actually been spent, per day, per activity and per briefing. <b>Briefings</b> shows each report's cost, its <b>Settings</b> an estimate while you set up a schedule, and <b>Budgets</b> every spending limit in one place.</li><li>Your remaining credits are shown at the bottom of the sidebar. Monitor has a daily spend cap; History asks before it starts.</li></ul></div></details>
       <details class="fold" data-fold="guide:rate-limits"><summary>Rate limits</summary><div class="foldbody">
         <p>Free accounts allow about one request every 5 seconds, so multi-page loads are slow; the app waits and retries automatically. Paid accounts allow far more, and History can then run up to 12 shards in parallel.</p></div></details>
       <details class="fold" data-fold="guide:where-your-data-lives" data-feature="deployed"><summary>Where your data lives</summary><div class="foldbody">
@@ -1712,6 +1734,23 @@ function listSync(info, ws) {
   }
   return null;
 }
+// What a set of watches reaches beyond the Live feed. Loaded for this tab only: nothing here depends on it being there.
+async function loadReach() {
+  const jobs = [];
+  if (features.signal && !sig) jobs.push(loadSignal());
+  if (features.publish && !window.briefTopics) jobs.push(fetch('/pub/topics').then((r) => (r.ok ? r.json() : null)).then((t) => { if (t) window.briefTopics = t; }).catch(() => {}));
+  if (!jobs.length) return;
+  await Promise.all(jobs);
+  if (!$('#sources').hidden) renderWatches();
+}
+function reachHtml(ws) {
+  if (!sig && !window.briefTopics) return '';
+  const seen = new Map();
+  for (const w of ws) for (const r of Health.watchReach(w, { signal: sig, topics: window.briefTopics })) if (!seen.has(r.label)) seen.set(r.label, r);
+  const rows = [...seen.values()];
+  if (!rows.length) return '<div class="meta2 reach"><span class="l-warn">Only in the Live feed: no Signal group or briefing reads this.</span></div>';
+  return `<div class="meta2 reach">Reaches: ${rows.map((r) => `${r.slug ? `<a href="#publish/${esc(r.slug)}" data-brief="${esc(r.slug)}">${esc(r.label)}</a>` : esc(r.label)}${r.text ? ` <span class="l-${r.level}">(${esc(r.level === 'ok' ? 'public' : r.kind === 'briefing' ? 'nothing published' : 'not public')})</span>` : ''}${(r.addTo ?? []).map((b) => addToSignalBtn(r.group, b)).join('')}`).join(' · ')}</div>`;
+}
 function watchCard(w) {
   const status = !w.enabled ? 'paused' : w.errors ? 'error' : w.running ? 'checking' : 'active';
   const src = srcOf(w), flags = src === 'x' ? [w.originalsOnly && 'no replies', w.includeRetweets && '+retweets', w.query].filter(Boolean).join(' · ')
@@ -1740,6 +1779,7 @@ function renderWatches() {
         <div class="meta2">Signal group <input data-lgroup list="sigNames" value="${groups.length === 1 ? esc(groups[0]) : ''}" placeholder="${groups.length > 1 ? 'mixed' : 'default'}" maxlength="40" style="width:150px"><button class="go ghost" data-lact2="group">Set</button>
           <button class="link" data-lact2="signal">${allOut ? 'Count in Signal' : 'Leave out of Signal'}</button></div>
         ${sync ? `<div class="meta2"><span class="note">${esc(sync.text)}.</span> <button class="link" data-lact2="sync">${esc(sync.action)}</button></div>` : ''}
+        ${g.every((w) => w.briefing) ? '' : reachHtml(g)}
         <div class="btns">${checked ? `<button data-lact2="check" class="${bad ? 'pri' : ''}">${bad ? 'Retry the failing' : 'Check all now'}</button><button data-lact2="toggle">${paused === g.length ? 'Resume all' : 'Pause all'}</button>` : ''}<button data-lact2="delete" class="del">Stop watching</button></div>
         <details data-lkey="${esc(k)}"${srcOpen.has(k) || (bad && !srcOpen.size) ? ' open' : ''}><summary>The ${g.length} source${g.length === 1 ? '' : 's'}</summary><div class="srcrows">${g.map(watchCard).join('')}</div></details>
       </div>`;
@@ -1868,7 +1908,8 @@ async function initFeatures() {
   if (features.xlists) loadX();
   if (features.sources) loadFLists();
   // Open the tab named in the address (/admin/#costs); otherwise land on Briefings when they exist.
-  const want = location.hash.slice(1), wantTab = want === 'agent' ? 'summarize' : want === 'library' ? 'lists' : want, btn = want && document.querySelector(`#tabs button[data-tab="${CSS.escape(wantTab)}"]`);
+  const [want, wantSlug] = location.hash.slice(1).split('/'), btn = want && document.querySelector(`#tabs button[data-tab="${CSS.escape(NAV_OF[want] ?? want)}"]`);
+  if (wantSlug) window.pubWantSlug = decodeURIComponent(wantSlug);
   if (btn && !btn.hidden) show(want); else show('overview');
   if (features.account) fetch('/act/session').then((r) => r.json()).then(setSession).catch(() => {});
   loadMon();
@@ -3240,6 +3281,7 @@ $('#overview').addEventListener('click', async (e) => {
       if (k === 'check') { for (const id of a.dataset.ids.split(',')) await post('/mon/check', { id }); toast('Checking them again…'); }
       else if (k === 'airetry') { await post('/mon/signal-ai-retry', {}); toast('Reading them again…'); }
       else if (k === 'run') { await pub('run', { slug: a.dataset.slug }); toast('Started. The new issue appears under Briefings when it is ready.'); }
+      else if (k === 'publish') { await pub('issue-status', { slug: a.dataset.slug, id: a.dataset.id, status: 'published' }); toast('Published. The public page updates within a minute.'); }
       else if (k === 'audio') { await pub('audio-create', { slug: a.dataset.slug, id: a.dataset.id }); toast('Making the audio again…'); }
       else if (k === 'image') { await pub('image-create', { slug: a.dataset.slug, id: a.dataset.id }); toast('Drawing the picture again…'); }
       else if (k === 'resume') { await post('/hist/resume', { id: a.dataset.id }); toast('Resumed'); }
@@ -3292,13 +3334,25 @@ async function loadOverview() {
     if (ai.failedItems) add('warn', `${fmt(ai.failedItems)} item${ai.failedItems === 1 ? '' : 's'} the model could not read for Signal topics`, go('signalsetup', 'Signal setup'), act('Retry them', 'data-ovact="airetry"'));
   }
   if (topics) {
-    for (const t of topics.filter((x) => x.lastError && !x.running)) add('bad', `Briefing <b>${esc(t.title)}</b> failed: ${esc(t.lastError.slice(0, 120))}`, go('publish', 'Briefings'), act('Run again', `data-ovact="run" data-slug="${esc(t.slug)}"`));
+    for (const t of topics.filter((x) => x.lastError && !x.running)) {
+      const st = Health.briefingStatus(t), link = `<a href="#publish/${esc(t.slug)}" data-brief="${esc(t.slug)}">Open</a>`, again = act('Run again', `data-ovact="run" data-slug="${esc(t.slug)}"`);
+      if (st.label === 'Nothing new') add('info', `<b>${esc(t.title)}</b>: ${esc(st.headline)}`, link, again);
+      else add('bad', `Briefing <b>${esc(t.title)}</b> failed: ${esc(t.lastError.slice(0, 120))}`, link, again);
+    }
     for (const t of topics) for (const i of (t.issues ?? []).slice(0, 3)) {
       if (i.audio?.status === 'failed') add('warn', `Audio for <b>${esc(t.title)}</b> ${esc(i.id)} failed${i.audio.error ? `: ${esc(i.audio.error.slice(0, 80))}` : ''}`, go('publish', 'Briefings'), act('Make again', `data-ovact="audio" data-slug="${esc(t.slug)}" data-id="${esc(i.id)}"`));
       if (i.image?.status === 'failed') add('warn', `Picture for <b>${esc(t.title)}</b> ${esc(i.id)} failed`, go('publish', 'Briefings'), act('Make again', `data-ovact="image" data-slug="${esc(t.slug)}" data-id="${esc(i.id)}"`));
     }
-    const drafts = topics.flatMap((t) => (t.issues ?? []).filter((i) => i.status === 'draft' && Date.now() - i.created < 3 * 86400000).map(() => t.title));
-    if (drafts.length) add('info', `${drafts.length} draft${drafts.length === 1 ? '' : 's'} waiting for approval: ${esc([...new Set(drafts)].join(', '))}`, go('publish', 'Review'));
+    const brief = (t, label) => `<a href="#publish/${esc(t.slug)}" data-brief="${esc(t.slug)}">${label}</a>`;
+    for (const t of topics) {
+      const st = Health.briefingStatus(t, { watches: mon?.watches, flists: features.sources ? flists : undefined });
+      if (st.steps[0].level === 'bad') add('bad', `Briefing <b>${esc(t.title)}</b>: ${esc(st.steps[0].text)}`, `<a href="#pubsetup/${esc(t.slug)}" data-brief="${esc(t.slug)}" data-brieftab="pubsetup">Settings</a>`);
+      else if (st.draft && Date.now() - st.draft.created < 7 * 86400000) add(st.live ? 'info' : 'warn', `<b>${esc(t.title)}</b>: ${esc(st.headline)}`, brief(t, 'Read it'), act('Publish', `data-ovact="publish" data-slug="${esc(t.slug)}" data-id="${esc(st.draft.id)}"`));
+    }
+  }
+  if (sigd?.boards?.some((b) => b.public)) for (const g of sigd.groups ?? []) {
+    const st = Health.groupStatus(g, sigd.boards, 1);
+    if (st.addTo?.length && g.weight > 0) add('info', `Signal group <b>${esc(g.name)}</b>: ${esc(st.text)}`, go('signalsetup', 'Signal setup'), st.addTo.slice(0, 2).map((b) => `<button class="go ghost" data-baddgroup="${esc(g.key)}" data-board="${esc(b.id)}">Add to ${esc(b.title)}</button>`).join(''));
   }
   for (const j of (jobs ?? []).filter((x) => x.status === 'error')) add('warn', `Archive collection <b>${esc((j.query || '').slice(0, 60))}</b> stopped: ${esc((j.error || '').slice(0, 100))}`, go('history', 'Archives'), act('Resume', `data-ovact="resume" data-id="${esc(j.id)}"`));
   if (costs) {
@@ -3474,26 +3528,27 @@ async function loadCollectItems() {
   } catch (e) { if (my === CO.seq) { box.innerHTML = `<div class="err">Could not load the data: ${esc(e.message)}</div>`; $('#coPager').hidden = true; } }
 }
 
+const NAV_OF = { agent: 'summarize', library: 'lists', pubsetup: 'publish', signalsetup: 'signal' };   // pages reached through another page's tabs, and the sidebar entry they light up
 function show(tab) {
   if (tab === 'library') tab = 'lists';
   document.querySelectorAll('main > section').forEach((s) => (s.hidden = s.id !== tab));
-  const navTab = tab === 'agent' ? 'summarize' : tab;
+  const navTab = NAV_OF[tab] ?? tab;
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === navTab));
   document.querySelectorAll('input[name=askmode]').forEach((r) => { r.checked = r.value === tab; });
   if (tab === 'history') pollJobs();
   if (tab === 'monitor') { clearUnseen(); renderFeed(); if (features.signal && !sig) loadSignal(); }
   if (tab === 'signal' || tab === 'signalsetup') loadSignal();
-  if (tab === 'sources') { renderWatches(); if (features.signal && !sig) loadSignal(); }
+  if (tab === 'sources') { renderWatches(); loadReach(); }
   if (tab === 'budgets') loadBudgets();
   if (tab === 'collection') loadCollection();
   if (tab === 'views') loadViews();
-  // Briefings and Briefing setup share one topic list: it moves to the tab that is open, which says whether issues or settings show.
+  // Issues and Settings share one topic list: it moves to the tab that is open, which says whether issues or settings show.
   if (tab === 'publish' || tab === 'pubsetup') { window.pubMode = tab === 'pubsetup' ? 'setup' : 'issues'; (tab === 'pubsetup' ? $('#pubSetupHost') : $('#publish')).appendChild($('#pubLayout')); window.loadPublish?.(); }
   if (tab === 'lists') loadLists();
   if (tab === 'summarize') refreshSummarize();
   if (tab === 'costs') loadCosts();
   if (tab === 'overview') loadOverview();
-  if (location.hash.slice(1) !== tab && history.replaceState) history.replaceState(null, '', '#' + tab);
+  if (location.hash.slice(1).split('/')[0] !== tab && history.replaceState) history.replaceState(null, '', '#' + tab);
 }
 document.querySelectorAll('input[name=askmode]').forEach((r) => r.addEventListener('change', () => show(r.value)));
 document.addEventListener('click', (e) => { const g = e.target.closest('[data-tabgo]'); if (g) { e.preventDefault(); show(g.dataset.tabgo); } });
@@ -3522,10 +3577,11 @@ function sigSpark(arr, color) {
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Items per day, last ${arr.length} days"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
 }
 async function loadSignal() {
-  try { sig = await (await fetch(`/mon/signal?days=${sigDays}&board=${encodeURIComponent(sigBoard)}&steady=${$('#sigHideSteady').checked ? 0 : 1}`)).json(); } catch { return; }
+  try { sig = await (await fetch(`/mon/signal?days=${sigDays}&board=${encodeURIComponent($('#signalsetup').hidden ? sigBoard : '')}&steady=${$('#sigHideSteady').checked ? 0 : 1}`)).json(); } catch { return; }
   if (sig.error && sigBoard) { sigBoard = ''; return loadSignal(); }   // that Signal was deleted
   if (sig.error) return toast(sig.error);
   sig.groups.sort((a, b) => a.key.localeCompare(b.key));
+  sig.days = sigDays;
   renderSignal();
   if (sigPick) openSigPick();
 }
@@ -3578,12 +3634,33 @@ function renderSigAi() {
   clearTimeout(sigTimer);
   if (a.enabled && a.queued && !a.error && (!$('#signal').hidden || !$('#signalsetup').hidden)) sigTimer = setTimeout(loadSignal, 15000);   // follow the reading until it has caught up
 }
+// Whether readers see a group, and the button that puts it on a published Signal.
+function groupStatusHtml(g, inline) {
+  const st = Health.groupStatus(g, sig.boards, sigDays);
+  const noBoard = !st.addTo.length && st.level === 'warn' && g.weight > 0 && !st.boards?.length;
+  return `<span class="gstat l-${st.level}"${inline ? '' : ' style="display:block"'}>${esc(st.text)}${st.addTo.map((b) => addToSignalBtn(g.key, b)).join('')}${noBoard ? (sig.boards.length ? ' <a href="#ssSignals" data-sigjump="ssSignals">Publish a Signal</a>' : ' <button class="go ghost" data-bnew type="button">Create a Signal</button>') : ''}</span>`;
+}
+const addToSignalBtn = (key, b) => `<button class="go ghost" type="button" data-baddgroup="${esc(key)}" data-board="${esc(b.id)}">Add to ${esc(b.title)}</button>`;
+// One click from "not public" to public: the rest of the Signal stays as it is.
+async function addGroupToBoard(key, boardId) {
+  const data = sig ?? await (await fetch('/mon/signal?days=1')).json(), b = data.boards.find((x) => x.id === boardId);
+  if (!b) throw new Error('that Signal no longer exists');
+  await post('/mon/signal-board-save', { ...b, groups: [...new Set([...b.groups, key])] });
+  toast(`Added to ${b.title}. Its public page updates within a minute.`);
+  await loadSignal();
+}
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-baddgroup]'); if (!b) return;
+  b.disabled = true;
+  try { await addGroupToBoard(b.dataset.baddgroup, b.dataset.board); if (!$('#overview').hidden) loadOverview(); if (!$('#sources').hidden) renderWatches(); if (!$('#publish').hidden || !$('#pubsetup').hidden) window.loadPublish?.(); }
+  catch (err) { toast(err.message); b.disabled = false; }
+});
 function renderSetupFlow() {
   const srcs = sig.groups.reduce((n, g) => n + g.watches.length, 0), out = sig.excluded?.length ?? 0, bad = sig.groups.reduce((n, g) => n + g.watches.filter((w) => w.error).length, 0), muted = sig.groups.filter((g) => g.weight === 0).length;
-  const pub = sig.boards.filter((b) => b.public).length, a = sig.ai;
+  const pub = sig.boards.filter((b) => b.public).length, a = sig.ai, hidden = sig.groups.filter((g) => g.weight > 0 && !sig.boards.some((b) => b.public && b.groups.includes(g.key))).length;
   const tile = (href, n, label, sub, warn) => `<a href="${href}" data-sigjump="${href.slice(1)}"${warn ? ' class="warn"' : ''}><b>${n}</b><span>${label}</span><span>${sub}</span></a>`;
   $('#ssFlow').innerHTML = tile('#ssSources', srcs, 'sources counted', `${out ? out + ' left out' : 'none left out'}${bad ? ` · ${bad} with errors` : ''}`, bad > 0)
-    + tile('#ssGroups', sig.groups.length, 'groups', muted ? `${muted} muted` : 'all counting')
+    + tile('#ssGroups', sig.groups.length, 'groups', [muted && `${muted} muted`, hidden && `${hidden} not public`].filter(Boolean).join(' · ') || 'all counting and public', hidden > 0)
     + tile('#ssTopics', a?.enabled ? 'AI' : 'Words', 'topic detection', `${sig.filter?.words.length ?? 0} filtered word${(sig.filter?.words.length ?? 0) === 1 ? '' : 's'}`)
     + tile('#ssSignals', pub, `published Signal${pub === 1 ? '' : 's'}`, `${sig.boards.length - pub} draft${sig.boards.length - pub === 1 ? '' : 's'}`);
 }
@@ -3604,9 +3681,10 @@ function renderSignal() {
       <div class="note">${b.groups.length ? 'Groups: ' + esc(b.groups.map(gname).join(', ')) : 'No groups yet, so nothing is shown.'}</div>
       <div class="note">${b.public ? `Public address <code>/signal/${esc(b.slug)}</code>. Readers see group names, topics and scores${b.proof ? ', and the items and sources behind each topic' : ''}; never watch names, handles or feed addresses.` : 'Not visible to anyone but you until you publish it.'}</div></div>`).join('') : '<div class="note">None yet. Create one to bundle groups and publish them.</div>';
   const unused = sig.everyGroup.filter((g) => !sig.boards.some((b) => b.groups.includes(g.key)));
-  $('#sigBoards').innerHTML += sig.boards.length && unused.length ? `<div class="note">Not in any Signal: ${esc(unused.map((g) => g.name).join(', '))}.</div>` : '';
+  const pubBoards = sig.boards.filter((b) => b.public);
+  $('#sigBoards').innerHTML += sig.boards.length && unused.length ? `<div class="note" style="margin-top:10px"><b>Not in any Signal, so readers do not see them:</b>${unused.map((g) => `<div class="optrow" style="margin-top:6px"><span>${esc(g.name)}</span>${pubBoards.map((b) => addToSignalBtn(g.key, b)).join('')}</div>`).join('')}</div>` : '';
   $('#sigNames').innerHTML = sig.groups.map((g) => `<option value="${esc(g.name)}">`).join('');
-  $('#sigManageRows').innerHTML = (sig.groups.length ? sig.groups.map((g) => `<div class="ssgrp"><span class="sigdot" style="--gc:${sigCol(g.key)}"></span><b>${esc(g.name)}</b> <span class="note">${g.watches.length} source${g.watches.length === 1 ? '' : 's'}</span></div>`
+  $('#sigManageRows').innerHTML = (sig.groups.length ? sig.groups.map((g) => `<div class="ssgrp"><span class="sigdot" style="--gc:${sigCol(g.key)}"></span><b>${esc(g.name)}</b> <span class="note">${g.watches.length} source${g.watches.length === 1 ? '' : 's'}</span>${groupStatusHtml(g, true)}</div>`
     + g.watches.map((w) => sigWatchRow(w, g.name)).join('')).join('') : '<div class="note">No watches yet.</div>')
     + (sig.excluded?.length ? `<div class="ssgrp"><b>Left out of Signal</b> <span class="note">still watched in Live feed</span></div>${sig.excluded.map((w) => sigWatchRow(w, '', true)).join('')}` : '');
   renderSetupFlow();
@@ -3614,11 +3692,12 @@ function renderSignal() {
   $('#sigBody').hidden = !total;
   $('#sigGroups').innerHTML = sig.groups.length ? sig.groups.map((g) => `<div class="card siggrp${g.weight > 0 && g.items ? '' : ' off'}" style="--gc:${sigCol(g.key)}" data-gkey="${esc(g.key)}">
       <div class="gname"><span>${esc(g.name)}</span><span class="note">${g.watches.length} source${g.watches.length === 1 ? '' : 's'}</span></div>
+      ${groupStatusHtml(g)}
       <div><span class="gnum">${fmt(g.items)}</span> <span class="note">items in this window${g.weight === 0 ? ' · muted' : g.items ? '' : ' · nothing captured'}</span></div>
       <label class="wt">Weight <input type="range" min="0" max="3" step="0.25" value="${g.weight}" data-weight="${esc(g.key)}" aria-label="Weight of ${esc(g.name)}"><output>${g.weight === 0 ? 'off' : '×' + g.weight}</output></label>
       <div class="optrow"><input list="sigNames" value="${esc(g.name)}" maxlength="40" aria-label="Name of ${esc(g.name)}" style="width:150px"><button class="go ghost" data-gmove>Rename</button><button class="link" data-sgroup="${esc(g.key)}" title="See what this group talks about">View</button></div>
       <div class="optrow"><button class="link" data-greset title="Back to the feed list or kind of source each watch came from">Reset to default</button><button class="link" data-gdel style="color:var(--err)">Delete group</button></div></div>`).join('')
-    : '<div class="empty" style="grid-column:1/-1">Nothing is watched yet. Add watches (or watch a feed list) in the Live feed, and they appear here as groups.</div>';
+    : '<div class="empty" style="grid-column:1/-1">Nothing is watched yet. Add sources, or watch a feed list, under <a href="#sources" data-tabgo="sources">Sources</a>, and they appear here as groups.</div>';
   if (!total) { $('#sigRows').innerHTML = ''; $('#sigLists').innerHTML = ''; return; }
   if (act.length < 2) $('#sigNote').textContent += ' · only one group counts, so everything is “only” in it; watch another kind of source to compare';
 
@@ -3861,15 +3940,18 @@ async function loadReports() {
 $('#pubReports').addEventListener('click', (e) => { const b = e.target.closest('[data-report]'); if (b) { show('history'); analyzeJob(b.dataset.report); } });
 async function load() {
   loadReports();
-  topics = await call('topics');
+  topics = await call('topics'); window.briefTopics = topics;
+  // Open the briefing the address names, or the first one, rather than an empty page.
+  if (!sel && topics.length) sel = topics.some((t) => t.slug === window.pubWantSlug) ? window.pubWantSlug : topics[0].slug;
   renderList(); if (sel) renderDetail(false);
   if (document.activeElement !== $('#pubHeroSel')) loadHero();
   loadOrder();
   clearTimeout(timer); if (topics.some((t) => busy(t) || audioBusy(t))) timer = setTimeout(() => { if (!$('#publish').hidden || !$('#pubsetup').hidden) load().catch(() => {}); }, 5000);
 }
+const statusOf = (t) => Health.briefingStatus(t, { ...healthCtx(), busy: busy(t) });
 function renderList() {
-  $('#pubTopics').innerHTML = topics.map((t) => `<button class="t ${t.slug === sel ? 'on' : ''}" data-slug="${esc(t.slug)}">
-    <b>${esc(t.title)}</b><small>/${esc(t.slug)} · ${busy(t) ? 'running…' : t.enabled ? 'next ' + when(t.nextRun) : 'paused'}</small></button>`).join('') || '<p class="muted">No topics yet.</p>';
+  $('#pubTopics').innerHTML = topics.map((t) => { const st = statusOf(t); return `<button class="t ${t.slug === sel ? 'on' : ''}" data-slug="${esc(t.slug)}">
+    <span class="tline"><b>${esc(t.title)}</b><span class="hpill l-${st.level}">${esc(st.label)}</span></span><small>/${esc(t.slug)} · ${busy(t) ? 'running…' : t.enabled ? 'next ' + when(t.nextRun) : 'paused'}</small></button>`; }).join('') || '<p class="muted">No topics yet.</p>';
 }
 // The order of the briefings on the public Today page and in its menu. Only listed briefings with something published appear there, so only listed ones are offered.
 let briefingOrder = [];
@@ -3926,7 +4008,10 @@ $('#pubHeroSel').addEventListener('change', async (e) => {
     renderHero(r); toast('Saved. Today shows it within a minute.');
   } catch (err) { toast(err.message); loadHero(); }
 });
-$('#pubTopics').addEventListener('click', (e) => { const b = e.target.closest('[data-slug]'); if (b) { sel = b.dataset.slug; renderList(); renderDetail(true); } });
+$('#pubTopics').addEventListener('click', (e) => { const b = e.target.closest('[data-slug]'); if (!b) return; if (isDirty(settingsForm()) && !confirm('Leave without saving your changes to this briefing?')) return; sel = b.dataset.slug; renderList(); renderDetail(true); if (innerWidth <= 820) $('#pubDetail').scrollIntoView({ behavior: 'smooth' }); });
+// A link to one briefing from anywhere in the admin.
+window.openBriefing = (slug, tab = 'publish') => { sel = slug; show(tab); };
+document.addEventListener('click', (e) => { const a = e.target.closest('[data-brief]'); if (a) { e.preventDefault(); window.openBriefing(a.dataset.brief, a.dataset.brieftab || 'publish'); } });
 $('#pubNew').onclick = () => { sel = '+new'; if (window.pubMode !== 'setup') { show('pubsetup'); return; } renderList(); renderDetail(true); };
 
 // How an X list is read. "Best posts": X returns the period's top posts per list (no retweets or replies, at least N likes): 20 a page,
@@ -3980,14 +4065,14 @@ async function likesAction(btn) {
     renderLikes(panel, +input.value);
   } finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
 }
-const srcRow = (s = { type: 'search' }) => `<div class="src"><select data-f="type">${['search', 'list', ...(xlists.length ? ['xlist', 'xgroup'] : []), ...(features.sources ? ['flist'] : []), 'feed'].map((x) => `<option ${s.type === x ? 'selected' : ''} value="${x}">${{ search: 'Search', list: 'List', xlist: 'X list', xgroup: 'X list group', flist: 'Feed list', feed: 'Monitor feed' }[x]}</option>`).join('')}</select>
+const srcRow = (s = { type: 'search' }) => `<div class="src"><select data-f="type">${['search', 'list', ...(xlists.length ? ['xlist', 'xgroup'] : []), ...(features.sources ? ['flist'] : []), 'feed'].map((x) => `<option ${s.type === x ? 'selected' : ''} value="${x}">${{ search: 'X search', list: 'Account list', xlist: 'X list', xgroup: 'X list group', flist: 'Feed list', feed: 'Live feed' }[x]}</option>`).join('')}</select>
   ${s.type === 'xlist' ? `<select data-f="listId">${xlists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select>`
     : s.type === 'xgroup' ? `<select data-f="group">${xgroups().map((g) => `<option value="${esc(g)}" ${s.group === g ? 'selected' : ''}>${esc(g)} (${xlists.filter((l) => l.groups.includes(g)).length} lists, read together)</option>`).join('')}</select>`
     : s.type === 'flist' ? `<select data-f="listId">${flists.length ? flists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)} (${l.members.length} feeds)</option>`).join('') : '<option value="">No feed lists yet (Lists tab)</option>'}</select>`
     : s.type === 'list' ? `<select data-f="listId">${lists.map((l) => `<option value="${esc(l.id)}" ${s.listId === l.id ? 'selected' : ''}>${esc(l.name)} (${l.members.length})</option>`).join('')}</select>`
     : s.type === 'feed' ? `${features.sources ? `<select data-f="source" aria-label="Source" style="width:auto">${[['', 'All sources combined'], ['x', 'X only'], ['rss', 'RSS only'], ['hn', 'Hacker News only'], ['youtube', 'YouTube only'], ['arxiv', 'arXiv only']].map(([v, l]) => `<option value="${v}" ${(s.source ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}<input type="text" data-f="watch" placeholder="only this watch (optional)" value="${esc(s.watch)}">`
     : `<input type="text" data-f="query" placeholder="e.g. (Kristersson OR Andersson) lang:sv -filter:replies" value="${esc(s.query)}">`}
-  <button type="button" class="sec" data-rm>×</button>${s.type === 'xlist' || s.type === 'xgroup' ? srcOpts(s) : ''}</div>`;
+  <button type="button" class="sec" data-rm aria-label="Remove this source">×</button>${s.type === 'xlist' || s.type === 'xgroup' ? srcOpts(s) : ''}<div class="srchint" data-hint></div></div>`;
 
 const modelInfo = (id) => models.find((m) => m.id === id);
 const modelLabel = (id) => modelInfo(id)?.label ?? id ?? 'the site default';
@@ -4012,7 +4097,7 @@ function estimateTopic(f) {
   let tweets = 0, calls = 0, feed = false, lists1 = 0, pageCost = 0;
   const listPosts = (s) => (+s.pages || 2) * (s.mode === 'latest' ? 80 : 20);     // best: 20 a page; newest first: 80
   for (const s of f.sources) {
-    if (s.type === 'search') { tweets += 60; calls += 3; }
+    if (s.type === 'search') { if (String(s.query ?? '').trim()) { tweets += 60; calls += 3; } }     // an empty row costs nothing: it cannot be saved
     else if (s.type === 'list') { const l = lists.find((x) => x.id === s.listId), q = Math.min(12, Math.ceil((l ? l.members.filter((m) => !m.missing).length : 20) / 22)); tweets += q * 40; calls += q * 2; }
     else if (s.type === 'xlist') { tweets += listPosts(s); calls += +s.pages || 2; lists1 += 1; pageCost = Math.max(pageCost, (s.mode === 'latest' ? 80 : 20) * TW); }
     else if (s.type === 'xgroup') { const n = Math.min(20, xlists.filter((l) => l.groups.includes(s.group)).length); tweets += n * listPosts(s); calls += n * (+s.pages || 2); lists1 += n; pageCost = Math.max(pageCost, (s.mode === 'latest' ? 80 : 20) * TW); }
@@ -4033,7 +4118,21 @@ function syncEstimate(form) {
     <span class="muted">X data up to ${usd(e.twitter)} for at most ${e.tweets.toLocaleString()} tweets${e.cap && e.uncapped > e.cap ? ` (the budget of ${usd(e.cap)} limits it; without it up to ${usd(e.uncapped)})` : ''}${e.covers != null ? ` <span class="perr">The budget is less than one page per list, so only about ${e.covers} of ${e.lists} lists get read.</span>` : ''}${e.llm == null ? '; the model price is unknown, so it is not included' : ` + model ${usd(e.llm)}`}. Real runs usually cost less, since not every page is full.${e.perRun > 0.25 && !e.cap ? ' That is a lot for one run: lower the posts per list, use Best posts, or set a data budget.' : ''}</span>
     ${st ? `<br><b>Actual</b>: ${usd(st.avg)} per run on average over ${st.runs} run${st.runs === 1 ? '' : 's'}; ${usd(st.total30)} in the last 30 days.` : ''}`;
 }
-const refreshEstimate = () => { const f = $('#pubDetail form'); if (f) { syncEstimate(f); syncCollect(f); } };
+const healthCtx = () => ({ when, watches: mon?.watches, flists: features.sources ? flists : undefined, lists, xlists: features.xlists ? xlists : undefined, signal: sig });
+const settingsForm = () => $('#pubSettings');
+const rowSource = (row) => Object.fromEntries([...row.querySelectorAll('[data-f]')].map((x) => [x.dataset.f, x.value]));
+// Under each source: what it reads and costs, or why it reads nothing. Saved or not, so a mistake shows before the next run.
+function syncSourceHints(form) {
+  const ctx = healthCtx();
+  form.querySelectorAll('.src').forEach((row) => {
+    const c = Health.sourceCheck(rowSource(row), ctx), hint = row.querySelector('[data-hint]');
+    row.classList.toggle('bad', !!c.empty);
+    if (hint) { hint.className = `srchint l-${c.level}`; hint.textContent = c.text; }
+  });
+}
+const isDirty = (form) => !!form?.dataset.clean && JSON.stringify(readForm(form)) !== form.dataset.clean;
+function syncDirty(form) { const el = $('#pubDirty'); if (el) el.textContent = isDirty(form) ? 'Unsaved changes' : ''; }
+const refreshEstimate = () => { const f = settingsForm(); if (f) { syncEstimate(f); syncCollect(f); syncSourceHints(f); syncDirty(f); } };
 // What this briefing's sources add to the collection: which are already collected for someone else, and what the rest cost. Never blocks saving.
 let collectTimer, collectSeq = 0;
 function syncCollect(form) {
@@ -4043,7 +4142,7 @@ function syncCollect(form) {
     const my = ++collectSeq, f = readForm(form), el = $('#pubCollect');
     if (!el) return;
     try {
-      const r = await post('/collect/estimate', { slug: sel === '+new' ? '' : sel, sources: f.sources, intervalHours: f.intervalHours, maxCost: +f.maxCost || 0 });
+      const r = await post('/collect/estimate', { slug: sel === '+new' ? '' : sel, sources: f.sources.filter((s) => s.type !== 'search' || String(s.query ?? '').trim()), intervalHours: f.intervalHours, maxCost: +f.maxCost || 0 });
       const box = $('#pubCollect'); if (my !== collectSeq || !box) return;
       const have = (r.rows ?? []).filter((x) => x.collected);
       box.hidden = !(r.rows ?? []).length;
@@ -4066,7 +4165,8 @@ function renderDetail(resetForm) {
   const isNew = sel === '+new', t = isNew ? { sources: [{ type: 'search' }], intervalHours: 24, hourUtc: 6, length: 'standard', enabled: true, autoPublish: false, listed: true, model: '', maxCost: 0, audioTemplate: '', audioAuto: false } : topics.find((x) => x.slug === sel);
   if (!t) { $('#pubDetail').innerHTML = ''; return; }
   const d = $('#pubDetail'), mode = window.pubMode || 'issues';
-  // Briefings shows what a topic has written; Briefing setup shows its settings. A new topic only has settings.
+  if (!$(`#${mode === 'setup' ? 'pubsetup' : 'publish'}`).hidden && history.replaceState) history.replaceState(null, '', `#${mode === 'setup' ? 'pubsetup' : 'publish'}${isNew ? '' : '/' + encodeURIComponent(sel)}`);
+  // Issues shows what a topic has written; Settings shows its settings. A new topic only has settings.
   if (mode === 'issues') {
     if (isNew) { show('pubsetup'); return; }
     // The page refreshes itself while something runs: keep an open editor, and only redraw the header and the list.
@@ -4076,17 +4176,17 @@ function renderDetail(resetForm) {
     renderPubHead(t); renderIssues(t); return;
   }
   // While a run is in progress the page refreshes itself; do not wipe a form the user is typing in.
-  if (!resetForm && d.dataset.mode === 'setup' && d.querySelector('form') && d.querySelector('form').dataset.slug === String(sel)) return;
+  if (!resetForm && d.dataset.mode === 'setup' && settingsForm() && settingsForm().dataset.slug === String(sel)) { renderPubHead(t); syncSourceHints(settingsForm()); return; }
   d.dataset.mode = 'setup'; d.dataset.slug = String(sel);
-  d.innerHTML = `<div class="card"><h2>${isNew ? 'New topic' : esc(t.title)}</h2>
-  <form data-slug="${esc(sel)}">
+  d.innerHTML = `${isNew ? '' : '<div class="card" id="pubHead" style="margin-bottom:14px"></div>'}<div class="card">${isNew ? '<h2>New topic</h2>' : ''}
+  <form id="pubSettings" data-slug="${esc(sel)}">
     <div class="row">
       <label>Address ${isNew ? '<input type="text" name="slug" required placeholder="sweden-politics" pattern="[a-z0-9][a-z0-9\\-]{0,39}">' : `<input type="text" value="/${esc(t.slug)}" disabled>`}</label>
       <label>Title <input type="text" name="title" required maxlength="80" value="${esc(t.title)}"></label>
     </div>
     <label>Shown under the title (also tells the summarizer the scope) <input type="text" name="description" maxlength="300" value="${esc(t.description)}"></label>
     <details class="fold" data-fold="topic:sources" open><summary>Sources<span class="hint">what the briefing is written from</span></summary><div class="foldbody">
-      <p class="muted" style="margin:0">Items from the last run interval are fetched from each source and merged.</p>
+      <p class="muted" style="margin:0">Items from the last run interval are read from each source and merged. <b>Live feed</b> is what you watch under <a href="#sources" data-tabgo="sources">Sources</a>, including arXiv, RSS, YouTube and Hacker News, and is free.</p>
       <div id="pubSources" style="display:grid;gap:8px">${t.sources.map(srcRow).join('')}</div>
       <p style="margin:0"><button type="button" class="sec" id="pubAddSrc">Add source</button></p>
       <p class="muted" id="pubCollect" style="margin:0" hidden></p></div></details>
@@ -4130,22 +4230,29 @@ function renderDetail(resetForm) {
       <label>Signal group <input name="signalGroup" maxlength="40" value="${esc(t.signalGroup || '')}" placeholder="${esc(t.title || 'the briefing title')}"></label>
       <p class="muted" style="margin:0">The group starts with weight ×2 in Signal (these posts were already combined from many sources); change it on the Signal tab. Posts the briefing reads from the Monitor feed are not counted twice. A briefing that keeps only the best posts of a list (the default) gives Signal those posts, not the whole list.</p>
     </div></details>
-    <div class="actions"><button class="primary" type="submit">Save</button>
-      ${isNew ? '' : `<a href="#publish" data-tabgo="publish">See what it has written &rarr;</a><a href="/${esc(t.slug)}" target="_blank">Public page</a><button type="button" class="danger" id="pubDel" style="margin-left:auto">Delete topic</button>`}</div>
-    ${isNew ? '' : `<p class="muted" style="margin:0">Last run: ${when(t.lastRun)}${t.lastError ? ` · <span class="perr">${esc(t.lastError)}</span>` : ''} · Next: ${t.enabled ? when(t.nextRun) : 'paused'}</p>`}
+    <div class="actions savebar"><button class="primary" type="submit">Save</button><button class="sec" type="button" data-saverun title="Saves these settings, then writes a new issue from them">Save and run now</button><span id="pubDirty" aria-live="polite"></span>
+      ${isNew ? '' : '<button type="button" class="danger" id="pubDel">Delete topic</button>'}</div>
   </form></div>`;
-  syncModel($('form', d)); syncEstimate($('form', d)); syncCollect($('form', d)); syncAudioNote($('form', d)); syncImageNote($('form', d)); window.restoreFolds?.(d);
+  const form = settingsForm();
+  syncModel(form); syncEstimate(form); syncCollect(form); syncAudioNote(form); syncImageNote(form); syncSourceHints(form); window.restoreFolds?.(d);
+  form.dataset.clean = JSON.stringify(readForm(form));
+  if (!isNew) renderPubHead(t);
 }
-// The top of a topic on Briefings: its state and what can be done now. Its settings are on Briefing setup.
+// The top of a briefing, on Issues and on Settings alike: whether readers see it, why not if they do not, and the button that fixes it.
 function renderPubHead(t) {
   const el = $('#pubHead'); if (!el) return;
-  el.innerHTML = `<h2 style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">${esc(t.title)} <a href="#pubsetup" data-tabgo="pubsetup" style="font-size:14px;font-weight:400">Settings &rarr;</a></h2>
-    <p class="muted" style="margin:0 0 10px">${t.enabled ? `Runs ${t.intervalHours === 24 ? 'daily' : 'every ' + t.intervalHours + ' h'}, next ${when(t.nextRun)}` : 'Paused'} · last run ${when(t.lastRun)}${t.lastError ? ` · <span class="perr">${esc(t.lastError)}</span>` : ''}${t.autoPublish ? ' · publishes automatically' : ' · each run waits as a draft'}</p>
-    <div class="actions"><button type="button" class="${t.lastError ? 'primary' : 'sec'}" id="pubRun" ${busy(t) ? 'disabled' : ''} title="Writes a new issue from fresh posts">${busy(t) ? 'Running…' : t.lastError ? 'Run again' : 'Run now'}</button>
-      ${t.issues[0] ? `<button type="button" class="sec" data-rerun="${esc(t.issues[0].id)}" ${busy(t) ? 'disabled' : ''} title="Writes ${esc(t.issues[0].id)} again from fresh posts with the current settings, at the same address">Re-run and replace ${esc(t.issues[0].id)}</button>` : ''}
-      <button type="button" class="sec" id="pubImageLatest" title="Draws a picture for the newest briefing from the text already written: no new tweets, no new summary."></button>
-      <button type="button" class="sec" id="pubAudioLatest" title="Reads the newest briefing aloud from the text already written: no new tweets, no new summary."></button>
-      <a href="/${esc(t.slug)}" target="_blank">Public page</a></div>`;
+  const st = statusOf(t), run = busy(t), i = t.issues[0], onIssues = (window.pubMode || 'issues') === 'issues';
+  const stepFix = (x) => x.fix ? `<br><button type="button" class="go ghost" data-tabgo="${esc(x.fix.tab)}">${esc(x.fix.label)}</button>` : (x.addTo ?? []).map((b) => `<br><button type="button" class="go ghost" data-baddgroup="${esc(x.group)}" data-board="${esc(b.id)}">Add to ${esc(b.title)}</button>`).join('');
+  const publish = st.draft ? `<span data-id="${esc(st.draft.id)}"><button type="button" class="${st.next === 'publish' ? 'primary' : 'sec'}" data-a="published">Publish ${esc(st.draft.id)}</button></span>` : '';
+  el.innerHTML = `<div class="htop"><h2>${esc(t.title)}</h2><span class="hpill l-${st.level}">${esc(st.label)}</span>${st.live ? `<a class="hlink" href="/${esc(t.slug)}" target="_blank" rel="noopener">Open public page &#8599;</a>` : ''}</div>
+    <p class="hline" role="status">${esc(st.headline)}</p>
+    <ol class="hsteps">${st.steps.map((x) => `<li class="hstep l-${x.level}"><b>${esc(x.title)}</b>${esc(x.text)}${stepFix(x)}</li>`).join('')}</ol>
+    <div class="actions">${publish}
+      ${st.next === 'settings' && onIssues ? '<button type="button" class="primary" data-tabgo="pubsetup">Fix in Settings</button>' : ''}
+      <button type="button" class="${st.next === 'run' ? 'primary' : 'sec'}" id="pubRun" ${run ? 'disabled' : ''} title="Writes a new issue from fresh posts, with the settings on this page">${run ? 'Running…' : t.lastError ? 'Run again' : 'Run now'}</button>
+      ${i ? `<button type="button" class="sec" data-rerun="${esc(i.id)}" ${run ? 'disabled' : ''} title="Writes ${esc(i.id)} again from fresh posts with the current settings, at the same address">Re-run and replace ${esc(i.id)}</button>` : ''}
+      ${onIssues ? '<button type="button" class="sec" id="pubImageLatest" title="Draws a picture for the newest briefing from the text already written: no new tweets, no new summary."></button><button type="button" class="sec" id="pubAudioLatest" title="Reads the newest briefing aloud from the text already written: no new tweets, no new summary."></button>' : ''}</div>`;
+  if (onIssues) { syncAudioLatest(t); syncImageLatest(t); }
 }
 
 const audioCell = (a) => !a ? '<span class="muted">—</span>' : a.status === 'pending' ? '<span class="muted">creating…</span>'
@@ -4193,7 +4300,7 @@ function readForm(f) {
   return { ...v, fallback, sources, intervalHours: +v.intervalHours, hourUtc: +v.hourUtc, enabled: !!v.enabled, autoPublish: !!v.autoPublish, listed: !!v.listed, toSignal: !!v.toSignal, audioAuto: !!v.audioAuto, imageAuto: !!v.imageAuto, isNew: sel === '+new', slug: sel === '+new' ? v.slug : sel };
 }
 
-$('#pubDetail').addEventListener('input', (e) => { if (e.target.closest('form') && e.target.closest('.src')) refreshEstimate(); });
+$('#pubDetail').addEventListener('input', (e) => { const f = settingsForm(); if (f && f.contains(e.target)) { if (e.target.closest('.src')) refreshEstimate(); else syncDirty(f); } });
 $('#pubDetail').addEventListener('change', (e) => {
   if (e.target.closest('#pubTplForm') || e.target.closest('#pubImgForm')) return;      // the template forms have their own handlers (and their own `model` field)
   if (e.target.closest('form')) queueMicrotask(refreshEstimate);
@@ -4252,9 +4359,16 @@ $('#pubDetail').addEventListener('click', async (e) => {
     if (e.target.dataset.likes) await likesAction(e.target);
     else if (e.target.id === 'pubAddSrc') { $('#pubSources').insertAdjacentHTML('beforeend', srcRow()); refreshEstimate(); }
     else if (e.target.matches('[data-rm]')) { e.target.closest('.src').remove(); refreshEstimate(); }
-    else if (e.target.id === 'pubRun' || e.target.dataset.run === 'new') { await call('run', { slug: sel }); toast('Started. The issue appears under Briefings when it is ready.'); await load(); }
+    else if (e.target.id === 'pubRun' || e.target.matches('[data-saverun]')) {
+      // A run uses what is saved, so what is on screen is saved first: otherwise it quietly writes from the old settings.
+      const f = settingsForm(), saving = !!f && (e.target.matches('[data-saverun]') || isDirty(f));
+      if (saving && !(await saveForm(f))) return;
+      await call('run', { slug: sel }); toast(`${saving ? 'Saved and started' : 'Started'}. This page updates when the issue is ready.`); await load();
+    }
     else if (e.target.dataset.rerun) {
       const id = e.target.dataset.rerun, i = t.issues.find((x) => x.id === id);
+      const f = settingsForm();
+      if (f && isDirty(f) && !(await saveForm(f))) return;
       if (!confirm(`Write ${id} again with the current settings? It replaces that issue at the same address${i?.status === 'published' ? ' and stays published' : ''}; its picture and audio go and can be made again.`)) return;
       await call('run', { slug: sel, replace: id }); toast(`Started. ${id} is replaced when the run is done.`); await load();
     }
@@ -4288,15 +4402,17 @@ $('#pubDetail').addEventListener('click', async (e) => {
     else if (e.target.closest('[data-tplgo]')) { e.preventDefault(); openLibrary('audio'); }
   } catch (err) { toast(err.message); }
 });
+// Saves the settings form. Returns false when there is something to fix first, which it points out.
+async function saveForm(form) {
+  const empty = form.querySelector('.src.bad');
+  if (empty) { empty.closest('details')?.setAttribute('open', ''); empty.scrollIntoView({ behavior: 'smooth', block: 'center' }); empty.querySelector('input')?.focus(); toast('Fill in the empty search, or remove it with ×'); return false; }
+  const t = await call('save-topic', readForm(form)); sel = t.slug; await load(); renderDetail(true);
+  return true;
+}
 $('#pubDetail').addEventListener('submit', async (e) => {
+  if (e.target !== settingsForm()) return;
   e.preventDefault();
-  try {
-    const wasNew = sel === '+new', t = await call('save-topic', readForm(e.target)); sel = t.slug; toast('Saved'); await load(); renderDetail(true);
-    // A change of settings applies from the next run: offer to run it now, as a new issue or over the latest one.
-    const cur = topics.find((x) => x.slug === sel), latest = cur?.issues?.[0], card = $('#pubDetail .card');
-    if (card && cur) card.insertAdjacentHTML('afterbegin', `<div class="applybar"><span>Saved. ${wasNew ? 'The first issue is written at the next run' : 'The change applies from the next run'} (${cur.enabled ? when(cur.nextRun) : 'paused'}).</span>
-      <button type="button" class="sec" data-run="new">Run now</button>${latest ? `<button type="button" class="sec" data-rerun="${esc(latest.id)}">Re-run and replace ${esc(latest.id)}</button>` : ''}</div>`);
-  }
+  try { if (await saveForm(e.target)) toast('Saved'); }
   catch (err) { toast(err.message); }
 });
 
@@ -4306,6 +4422,11 @@ async function init() {
   try { feat = await (await fetch('/features')).json(); models = feat.summaryModels ?? []; } catch {}
   await loadTemplates(); await loadImgTemplates();
   await load().catch((err) => toast(err.message));
+  // What the status panel checks against: the watches and Signal groups, which the other tabs load.
+  if (!mon) await refreshMon();
+  if (features.signal && !sig) await loadSignal();
+  const open = topics.find((x) => x.slug === sel);
+  renderList(); if (open) { renderPubHead(open); const f = settingsForm(); if (f) syncSourceHints(f); }
 }
 // ---- Audio templates: a voice plus how it is read. Shared by all topics.
 const PAUSES = [['none', 'No pause tags'], ['short', 'A short pause between sections'], ['long', 'A long pause between sections']];
