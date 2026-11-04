@@ -360,6 +360,8 @@ table.guide .link { font-size: 14.5px; font-weight: 650; }
 #pubEditor textarea { min-height: 360px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
 
 /* ----- why something is or is not showing ----- */
+.prow { display: grid; grid-template-columns: minmax(120px, 170px) auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; } .prow:first-of-type { border-top: 0; } @media (max-width: 760px) { .prow { grid-template-columns: 1fr auto; } .prow > :nth-child(n+3) { grid-column: 1 / -1; } }
+.pspark { display: inline-flex; align-items: flex-end; gap: 2px; width: 128px; height: 28px; } .pspark i { flex: 1; min-width: 2px; background: var(--bar); border-radius: 1px; }
 a { color: var(--accent); }   /* the lowest specificity there is, so every link style elsewhere still wins */
 .subtabs { display: inline-flex; gap: 2px; padding: 3px; margin-top: 10px; border-radius: 11px; background: color-mix(in srgb, var(--text) 7%, transparent); }
 .subtabs button { font: inherit; font-size: 14px; color: var(--text); background: none; border: 0; border-radius: 8px; padding: 6px 16px; cursor: pointer; }
@@ -491,7 +493,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <button data-tab="account" data-feature="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5 19 4M15.5 7.5l2.5 2.5"/></svg><span>Post as X</span></button>
     <button data-tab="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h10"/></svg><span>Guide</span></button>
   </nav>
-  <div class="railfoot"><span id="who"></span><span id="balance"></span></div>
+  <div class="railfoot"><span id="who"></span><span id="balance"></span><span>Thank you to arXiv for use of its open access interoperability.</span></div>
 </aside>
 <main>
   <section id="overview" hidden>
@@ -671,6 +673,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
       <span class="note" id="sigNote"></span>
     </div>
     <div class="note" id="sigBoardInfo" style="margin:-4px 0 12px"></div>
+    <div class="card" id="pulseCard" style="margin-bottom:14px" hidden></div>
     <div id="sigBody">
       <div class="card" style="margin-bottom:14px">
         <h3 style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between">What is in the signal
@@ -729,7 +732,18 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
           <p class="note" id="sigBuiltIn" style="line-height:1.8"></p></div></details>
     </details>
 
-    <h2 class="ssh" id="ssSignals"><span>4</span> Signals &amp; publishing <small>what readers see</small></h2>
+    <h2 class="ssh" id="ssPulse"><span>4</span> Research pulse <small>how much is being published</small></h2>
+    <div class="card" style="margin-bottom:14px">
+      <div class="note" style="margin-bottom:10px">Counts new papers per topic on arXiv as a share of all AI papers, and flags a topic whose share is unusually high against the last 8 weeks. It is public at <a href="/research" target="_blank" rel="noopener">/research</a>. It needs no watches and costs nothing. arXiv allows one request every 3 seconds, so a new topic's history takes a minute or two to fill in. Changing a topic's search starts its history again. Thank you to arXiv for use of its open access interoperability.</div>
+      <div id="pulseStatus" class="note" style="margin-bottom:10px"></div>
+      <div id="pulseRows"></div>
+      <form id="pulseForm" class="optrow" style="margin:12px 0 0"><input type="hidden" name="id"><label>Name <input name="title" maxlength="60" style="width:170px" required></label>
+        <label class="grow" style="flex:1 1 320px">Search <input name="query" maxlength="300" style="width:100%" placeholder='cat:cs.MA  or  (ti:agent OR ti:agents) AND cat:cs.AI' required></label>
+        <label style="flex:1 1 220px">Shown under the name <input name="blurb" maxlength="160" style="width:100%"></label>
+        <button class="go" type="submit">Add topic</button><button class="go ghost" type="button" data-pulsecancel hidden>Cancel</button></form>
+    </div>
+
+    <h2 class="ssh" id="ssSignals"><span>5</span> Signals &amp; publishing <small>what readers see</small></h2>
     <div class="card" id="sigBoardsCard" style="margin-top:14px"><h3 style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">Top-level Signals <button class="go ghost" data-bnew type="button">New Signal</button></h3>
       <div class="note" style="margin:-6px 0 10px">A Signal is a named set of groups. Publish one to give it its own page on the public site, at <code>/signal/&lt;address&gt;</code>. The public page shows group names and topics; turn on <b>Show sources</b> to let each topic open the items behind it, with their sources and links to the originals.</div>
       <div id="sigBoards"></div><div id="sigBoardForm"></div></div>
@@ -3350,6 +3364,11 @@ async function loadOverview() {
       else if (st.draft && Date.now() - st.draft.created < 7 * 86400000) add(st.live ? 'info' : 'warn', `<b>${esc(t.title)}</b>: ${esc(st.headline)}`, brief(t, 'Read it'), act('Publish', `data-ovact="publish" data-slug="${esc(t.slug)}" data-id="${esc(st.draft.id)}"`));
     }
   }
+  if (features.signal) {
+    const p = await get('/mon/pulse');
+    for (const t of (p?.topics ?? []).filter((x) => x.state === 'spike')) add('info', `Research pulse: <b>${esc(t.title)}</b> is at ×${t.ratio.toFixed(2)} of its usual share of AI papers${t.sustained ? ', for a second week' : ''}`, go('signal', 'Signal'));
+    if (p?.error) add('warn', `Research pulse: ${esc(p.error)}`, go('signalsetup', 'Setup'));
+  }
   if (sigd?.boards?.some((b) => b.public)) for (const g of sigd.groups ?? []) {
     const st = Health.groupStatus(g, sigd.boards, 1);
     if (st.addTo?.length && g.weight > 0) add('info', `Signal group <b>${esc(g.name)}</b>: ${esc(st.text)}`, go('signalsetup', 'Signal setup'), st.addTo.slice(0, 2).map((b) => `<button class="go ghost" data-baddgroup="${esc(g.key)}" data-board="${esc(b.id)}">Add to ${esc(b.title)}</button>`).join(''));
@@ -3537,7 +3556,7 @@ function show(tab) {
   document.querySelectorAll('input[name=askmode]').forEach((r) => { r.checked = r.value === tab; });
   if (tab === 'history') pollJobs();
   if (tab === 'monitor') { clearUnseen(); renderFeed(); if (features.signal && !sig) loadSignal(); }
-  if (tab === 'signal' || tab === 'signalsetup') loadSignal();
+  if (tab === 'signal' || tab === 'signalsetup') { loadSignal(); loadPulse(); }
   if (tab === 'sources') { renderWatches(); loadReach(); }
   if (tab === 'budgets') loadBudgets();
   if (tab === 'collection') loadCollection();
@@ -3576,6 +3595,35 @@ function sigSpark(arr, color) {
   const pts = arr.map((v, i) => `${(i * step).toFixed(1)},${(h - 2 - (v / max) * (h - 6)).toFixed(1)}`).join(' ');
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Items per day, last ${arr.length} days"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
 }
+// ---------- Research pulse: papers per topic, on the Signal results page and in its setup
+let pulse = null;
+const PULSE_WORD = { building: 'Collecting history', normal: 'Usual level', rising: 'Rising', spike: 'Spike', falling: 'Falling' };
+const PULSE_LEVEL = { building: 'wait', normal: 'ok', rising: 'warn', spike: 'bad', falling: 'wait' };
+const pulseFacts = (t) => t.state === 'building' ? `${t.series.length} of 9 weeks read so far` : `${fmt(t.n)} papers, ${t.from} to ${t.end}: ${(t.share * 100).toFixed(1)}% of AI papers, usually ${(t.baseline * 100).toFixed(1)}% (×${t.ratio.toFixed(2)})`;
+async function loadPulse() {
+  try { pulse = await (await fetch('/mon/pulse')).json(); } catch { return; }
+  if (!pulse?.topics) return;
+  const pill = (t) => `<span class="hpill l-${PULSE_LEVEL[t.state]}">${PULSE_WORD[t.state]}${t.sustained ? ', second week' : ''}</span>`;
+  const spark = (t) => { const s = t.series.map((x) => x.share), top = Math.max(...s, 1e-9); return `<span class="pspark" title="Share of AI papers, week by week">${s.map((v) => `<i style="height:${Math.max(6, Math.round((v / top) * 100))}%"></i>`).join('')}</span>`; };
+  $('#pulseCard').hidden = false;
+  $('#pulseCard').innerHTML = `<h3 style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">Research pulse <a href="/research" target="_blank" rel="noopener" style="font-weight:400;font-size:13px">Public page &#8599;</a></h3>${pulse.field.surge ? `<div class="note" style="margin-bottom:8px">All of AI research had an unusually big week (×${pulse.field.ratio.toFixed(1)}). A topic only counts as spiking if it grew more than the field.</div>` : ''}
+    ${pulse.topics.map((t) => `<div class="prow"><b>${esc(t.title)}</b>${pill(t)}<span class="note">${esc(pulseFacts(t))}</span>${spark(t)}</div>`).join('')}<div class="note" style="margin-top:8px">Data from arXiv. Thank you to arXiv for use of its open access interoperability.</div>`;
+  $('#pulseStatus').innerHTML = pulse.error ? `<span style="color:var(--err)">arXiv: ${esc(pulse.error)}. It tries again by itself${pulse.retryAt > Date.now() ? ' at ' + new Date(pulse.retryAt).toLocaleTimeString() : ''}.</span>` : pulse.todo ? `Reading: ${fmt(pulse.todo)} counts to go, at arXiv's pace.` : `Up to date${pulse.updated ? `, read ${new Date(pulse.updated).toLocaleString()}` : ''}.`;
+  $('#pulseRows').innerHTML = pulse.topics.map((t) => `<div class="prow" data-pulse="${esc(t.id)}"><b>${esc(t.title)}</b>${pill(t)}<code class="note" style="overflow-wrap:anywhere">${esc(t.query)}</code><span class="optrow" style="justify-content:flex-end"><button class="go ghost" type="button" data-pulseedit>Edit</button><button class="link" type="button" data-pulsedel style="color:var(--err)">Delete</button></span></div>`).join('');
+}
+$('#pulseRows').addEventListener('click', async (e) => {
+  const id = e.target.closest('[data-pulse]')?.dataset.pulse, t = pulse?.topics.find((x) => x.id === id), f = $('#pulseForm'); if (!t) return;
+  if (e.target.closest('[data-pulseedit]')) { f.elements.id.value = t.id; f.elements.title.value = t.title; f.elements.query.value = t.query; f.elements.blurb.value = t.blurb; f.querySelector('[type=submit]').textContent = 'Save topic'; f.querySelector('[data-pulsecancel]').hidden = false; f.elements.title.focus(); }
+  if (e.target.closest('[data-pulsedel]') && confirm(`Delete “${t.title}” and its history?`)) { try { await post('/mon/pulse-topic-delete', { id }); toast('Deleted'); await loadPulse(); } catch (err) { toast(err.message); } }
+});
+const pulseFormReset = () => { const f = $('#pulseForm'); f.reset(); f.elements.id.value = ''; f.querySelector('[type=submit]').textContent = 'Add topic'; f.querySelector('[data-pulsecancel]').hidden = true; };
+$('#pulseForm').addEventListener('click', (e) => { if (e.target.closest('[data-pulsecancel]')) pulseFormReset(); });
+$('#pulseForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target, was = pulse?.topics.find((x) => x.id === f.elements.id.value);
+  if (was && was.query !== f.elements.query.value.trim() && !confirm('A different search has a different history, so this topic starts collecting again. Continue?')) return;
+  try { await post('/mon/pulse-topic-save', { id: f.elements.id.value || undefined, title: f.elements.title.value, query: f.elements.query.value, blurb: f.elements.blurb.value }); pulseFormReset(); toast('Saved. Its history fills in at arXiv\'s pace.'); await loadPulse(); } catch (err) { toast(err.message); }
+});
 async function loadSignal() {
   try { sig = await (await fetch(`/mon/signal?days=${sigDays}&board=${encodeURIComponent($('#signalsetup').hidden ? sigBoard : '')}&steady=${$('#sigHideSteady').checked ? 0 : 1}`)).json(); } catch { return; }
   if (sig.error && sigBoard) { sigBoard = ''; return loadSignal(); }   // that Signal was deleted

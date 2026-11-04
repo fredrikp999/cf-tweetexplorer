@@ -1,7 +1,7 @@
 // RSS 2.0 and Atom. Workers have no DOMParser, and feeds are regular enough that a small tolerant reader will do.
 import { isJsonFeed, parseJsonFeed, withDates } from './json.ts';
 import type { FetchResult, SourceItem } from './types';
-import { fetchArxiv, isArxivApi } from './arxiv.ts';
+import { arxivFetch, fetchArxiv, isArxivApi, isArxivHost } from './arxiv.ts';
 import { fetchYoutubeApi, hasYoutubeKey, isYoutubeFeed } from './youtube.ts';
 
 const MAX_BYTES = 3_000_000, MAX_JSON_BYTES = 12_000_000;
@@ -93,7 +93,7 @@ async function fetchFeedDirect(opts: { url: string; etag?: string; lastModified?
   const headers: Record<string, string> = { accept: 'application/rss+xml, application/json;q=0.9, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5', 'user-agent': 'TweetExplorer/1.0 (feed reader)' };
   if (opts.etag) headers['if-none-match'] = opts.etag;
   if (opts.lastModified) headers['if-modified-since'] = opts.lastModified;
-  const res = await fetch(withDates(opts.url), { headers, signal: AbortSignal.timeout(20_000), redirect: 'follow' });
+  const res = isArxivHost(opts.url) ? await arxivFetch(opts.url, headers) : await fetch(withDates(opts.url), { headers, signal: AbortSignal.timeout(20_000), redirect: 'follow' });
   if (res.status === 304) { await res.body?.cancel(); return { items: [], unchanged: true, title: '' }; }
   if (!res.ok) { await res.body?.cancel(); throw new Error(`the feed answered HTTP ${res.status}`); }
   const buf = await res.arrayBuffer();

@@ -4,7 +4,8 @@ import { DurableObject } from 'cloudflare:workers';
 import { json } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
 import { HN_TAGS, type HnTag } from '../sources/hn';
-import { arxivSearchQuery, isArxivApi, queryOfArxivUrl } from '../sources/arxiv';
+import { arxivCount, arxivSearchQuery, arxivThroughCollect, isArxivApi, queryOfArxivUrl, useArxivGate } from '../sources/arxiv';
+import { BASELINE_WEEKS, DEFAULT_PULSE_TOPICS, PULSE_BASE, PULSE_BASE_ID, fieldSurge, pulseOf, pulseWindows, pulseWork, windowStart, type PulseTopic } from '../signal/pulse';
 import { expandShorthand } from '../sources/presets';
 import { checkFeedUrl } from '../sources/rss';
 import { isYoutubeFeed, resolveYoutubeFeed } from '../sources/youtube';
@@ -90,9 +91,11 @@ export class MonitorDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API
+    useArxivGate(arxivThroughCollect(env));   // every request to arXiv goes through one place: its limit is for all of this app together
     useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     const sql = ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS watches (id TEXT PRIMARY KEY, data TEXT NOT NULL)');
+    sql.exec('CREATE TABLE IF NOT EXISTS pulse (topic TEXT NOT NULL, end TEXT NOT NULL, n INTEGER NOT NULL, checked TEXT NOT NULL, PRIMARY KEY (topic, end)) WITHOUT ROWID');   // Research pulse: papers per 7-day window
     sql.exec('CREATE TABLE IF NOT EXISTS seen (watch TEXT NOT NULL, tweet TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (watch, tweet))');
     sql.exec('CREATE TABLE IF NOT EXISTS feed (seq INTEGER PRIMARY KEY AUTOINCREMENT, watch TEXT NOT NULL, label TEXT NOT NULL, seen_at INTEGER NOT NULL, json TEXT NOT NULL)');
     try { sql.exec("ALTER TABLE feed ADD COLUMN source TEXT NOT NULL DEFAULT 'x'"); } catch { /* the column is already there */ }
@@ -151,6 +154,7 @@ export class MonitorDO extends DurableObject<Env> {
   private async reschedule(): Promise<void> {
     const wake = this.aiWake(), now = Date.now(), tidy = Date.parse(today() + 'T00:00:00Z') + 86_400_000 + 60_000;
     let next = wake ? Math.min(wake, tidy) : tidy;
+    const pulse = this.pulseWake(); if (pulse) next = Math.min(next, pulse);
     if (!this.collectReady()) next = Math.min(next, now + 60_000);
     await this.ctx.storage.setAlarm(Math.max(next, now + 1000));
   }
@@ -159,7 +163,56 @@ export class MonitorDO extends DurableObject<Env> {
     if (!this.collectReady()) await this.syncCollect();
     try { await this.processAi(Date.now() + 20_000); } catch (err) { console.error('signal topics failed', err instanceof Error ? err.message : String(err)); }
     this.pruneSignal();
+    try { await this.pulseStep(Date.now() + 25_000); } catch (err) { console.error('research pulse failed', err instanceof Error ? err.message : String(err)); }
     await this.reschedule();
+  }
+
+  // ---- Research pulse (src/signal/pulse.ts): counts of papers per topic, read a few at a time at the pace arXiv asks for
+  private pulseTopics(): PulseTopic[] { return this.getMeta<PulseTopic[]>('pulseTopics', DEFAULT_PULSE_TOPICS); }
+  private pulseStored(): Map<string, string> {
+    return new Map(this.ctx.storage.sql.exec<{ topic: string; end: string; checked: string }>('SELECT topic, end, checked FROM pulse').toArray().map((r) => [`${r.topic}\n${r.end}`, r.checked] as const));
+  }
+  private pulseTodo() { return pulseWork([PULSE_BASE_ID, ...this.pulseTopics().map((t) => t.id)], pulseWindows(Date.now()), this.pulseStored(), Date.now()); }
+  private pulseWake(): number | null {
+    if (!this.pulseTodo().length) return null;
+    return Math.max(this.getMeta<number>('pulseRetry', 0), Date.now() + 1000);
+  }
+  private async pulseStep(deadline: number): Promise<void> {
+    if (Date.now() < this.getMeta<number>('pulseRetry', 0)) return;
+    const queries = new Map([[PULSE_BASE_ID, PULSE_BASE], ...this.pulseTopics().map((t) => [t.id, t.query] as const)]), sql = this.ctx.storage.sql;
+    for (const job of this.pulseTodo()) {
+      if (Date.now() > deadline) return;
+      try {
+        const n = await arxivCount(queries.get(job.topic)!, windowStart(job.end), job.end), today_ = today();
+        sql.exec('INSERT INTO pulse (topic, end, n, checked) VALUES (?, ?, ?, ?) ON CONFLICT (topic, end) DO UPDATE SET n = excluded.n, checked = excluded.checked', job.topic, job.end, n, today_);
+        this.setMeta('pulseError', ''); this.setMeta('pulseRun', Date.now()); this.pubCache.delete('pulse');
+      } catch (err) {
+        this.setMeta('pulseError', err instanceof Error ? err.message : String(err));
+        this.setMeta('pulseRetry', Date.now() + 3_600_000);   // arXiv is down or busy: leave it alone for an hour
+        return;
+      }
+    }
+    sql.exec('DELETE FROM pulse WHERE end < ?', pulseWindows(Date.now(), 40).at(-1)!);
+  }
+  /** Every topic's state, from what has been read so far. The same for the admin and for readers: counts and the searches behind them, which are public anyway. */
+  private pulseView() {
+    const rows = this.ctx.storage.sql.exec<{ topic: string; end: string; n: number }>('SELECT topic, end, n FROM pulse').toArray(), by = new Map(rows.map((r) => [`${r.topic}\n${r.end}`, r.n] as const));
+    const ends = pulseWindows(Date.now()).reverse(), baseOf = (end: string) => by.get(`${PULSE_BASE_ID}\n${end}`) ?? 0;
+    const known = ends.filter((e) => by.has(`${PULSE_BASE_ID}\n${e}`));
+    return {
+      topics: this.pulseTopics().map((t) => ({ ...t, ...pulseOf(ends.filter((e) => by.has(`${t.id}\n${e}`) || e === ends.at(-1)).map((end) => ({ end, n: by.get(`${t.id}\n${end}`) ?? 0, base: by.has(`${t.id}\n${end}`) ? baseOf(end) : 0 }))) })),
+      field: { ...fieldSurge(known.map(baseOf)), n: baseOf(ends.at(-1)!) }, baseQuery: PULSE_BASE, baselineWeeks: BASELINE_WEEKS, updated: this.getMeta<number>('pulseRun', 0),
+    };
+  }
+  private cleanPulseTopic(raw: Record<string, unknown>, prev?: PulseTopic): PulseTopic {
+    const title = String(raw.title ?? '').replace(/\s+/g, ' ').trim().slice(0, 60), query = String(raw.query ?? '').trim();
+    if (!title) throw new Error('give the topic a name');
+    const q = query.length <= 300 ? arxivSearchQuery(query) : null;
+    if (!q) throw new Error('enter categories (cs.CL, cs.LG), words, or a search such as au:"Hinton" AND cat:cs.LG, in at most 300 characters');
+    const others = this.pulseTopics().filter((t) => t.id !== prev?.id);
+    const slug = prev?.slug ?? slugify(title);
+    if (!slug || others.some((t) => t.slug === slug)) throw new Error('another topic already has that name');
+    return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), slug, title, blurb: String(raw.blurb ?? '').replace(/\s+/g, ' ').trim().slice(0, 160), query: q };
   }
 
   private isSeen(watch: string, item: string): boolean {
@@ -917,6 +970,18 @@ export class MonitorDO extends DurableObject<Env> {
           return out ? json(out) : json({ error: 'not shown' }, 404);
         }
         if (name === 'signal-public-boards') return json(await this.publicBoards());
+        if (name === 'pulse-public') {   // the public page: kept for two minutes
+          const hit = this.pubCache.get('pulse');
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = this.pulseView(); this.pubCache.set('pulse', { at: Date.now(), v });
+          if (this.pulseTodo().length) await this.reschedule();   // a new day, or the first visit after a deploy: start reading
+          return json(v);
+        }
+        if (name === 'pulse') {
+          const todo = this.pulseTodo().length;
+          if (todo) await this.reschedule();
+          return json({ ...this.pulseView(), todo, error: this.getMeta<string>('pulseError', ''), retryAt: this.getMeta<number>('pulseRetry', 0) });
+        }
         if (name === 'signal-public-terms') {   // every topic of a published Signal in the last two weeks, for the public Topics page; kept for two minutes
           const slug = url.searchParams.get('slug') ?? '', k = `terms|${slug}`, hit = this.pubCache.get(k);
           if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
@@ -1005,6 +1070,20 @@ export class MonitorDO extends DurableObject<Env> {
         const group = cleanGroup(b.group); if (group) w.group = group;   // Signal: the group this watch votes in
         this.saveWatch(w); await this.reschedule();
         return json(this.view(w));
+      }
+      if (name === 'pulse-topic-save') {
+        const list = this.pulseTopics(), prev = list.find((t) => t.id === b.id);
+        if (!prev && list.length >= 12) throw new Error('at most 12 topics');
+        const t = this.cleanPulseTopic(b, prev);
+        this.setMeta('pulseTopics', prev ? list.map((x) => (x.id === t.id ? t : x)) : [...list, t]);
+        if (prev && prev.query !== t.query) this.ctx.storage.sql.exec('DELETE FROM pulse WHERE topic = ?', t.id);   // another search has another history: start it again
+        this.setMeta('pulseRetry', 0); await this.reschedule();
+        return json(t);
+      }
+      if (name === 'pulse-topic-delete') {
+        this.setMeta('pulseTopics', this.pulseTopics().filter((t) => t.id !== b.id));
+        this.ctx.storage.sql.exec('DELETE FROM pulse WHERE topic = ?', String(b.id ?? ''));
+        return json({ ok: true });
       }
       if (name === 'settings') {
         const cap = Number(b.dailyCap);

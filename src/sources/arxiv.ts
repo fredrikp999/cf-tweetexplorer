@@ -1,13 +1,15 @@
 // arXiv through its public API (https://info.arxiv.org/help/api/index.html): an Atom feed of papers, searched by field,
 // and single papers by id. Everything in it was written by strangers, so it is capped and flattened to plain text.
 import { decode } from './rss.ts';
-import { readArticle } from './read.ts';
 import type { FetchResult, SourceItem } from './types';
 
+// arXiv's wording, unchanged: https://info.arxiv.org/help/api/index.html asks for this statement on a product that uses its data.
+export const ARXIV_THANKS = 'Thank you to arXiv for use of its open access interoperability.';
 const HOST = 'export.arxiv.org';
 const MAX_RESULTS = 100;
 const GAP_MS = 3_000;   // the API terms ask for one request every three seconds
 const UA = 'TweetExplorer/1.0 (arXiv reader; https://github.com/fredrikp999)';
+const COOL_DOWN_MS = 5 * 60_000;   // after being told to slow down
 
 export const isArxivApi = (url: string): boolean => { try { const u = new URL(url); return u.hostname === HOST && u.pathname === '/api/query'; } catch { return false; } };
 
@@ -53,9 +55,12 @@ export function withWindow(url: string, sinceSec: number): string {
 }
 
 // ---- politeness: one request at a time, three seconds apart --------------------------------------
-let chain: Promise<unknown> = Promise.resolve(), last = 0;
+// arXiv's terms set this limit across all the machines you control, on one connection. A Worker runs in many places, so pacing inside each
+// would not hold it: every request goes through one place, the Collection Durable Object (see `useArxivGate`), which is the only one that calls arXiv.
+let chain: Promise<unknown> = Promise.resolve(), last = 0, blockedUntil = 0;
 function paced<T>(fn: () => Promise<T>): Promise<T> {
   const run = chain.then(async () => {
+    if (Date.now() < blockedUntil) throw new Error('arXiv is asking for fewer requests; try again in a few minutes');
     const wait = last + GAP_MS - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     try { return await fn(); } finally { last = Date.now(); }
@@ -63,6 +68,25 @@ function paced<T>(fn: () => Promise<T>): Promise<T> {
   chain = run.catch(() => undefined);
   return run;
 }
+/** The request itself, paced. Only for the one place that talks to arXiv: when it is told to slow down, it stops asking for a while. */
+export function arxivDirect(url: string, headers: Record<string, string> = {}): Promise<Response> {
+  return paced(async () => {
+    const res = await fetch(url, { headers: { 'user-agent': UA, ...headers }, signal: AbortSignal.timeout(25_000), redirect: 'follow' });
+    if (res.status === 429 || res.status === 503) blockedUntil = Date.now() + Math.max(COOL_DOWN_MS, (Number(res.headers.get('retry-after')) || 0) * 1000);
+    return res;
+  });
+}
+let gate: ((url: string, headers: Record<string, string>) => Promise<Response>) | null = null;
+/** Set once per Worker or Durable Object that is not the gate itself, like setYoutubeKey. */
+export function useArxivGate(fn: typeof gate): void { gate = fn; }
+/** Any request to arXiv, from anywhere. */
+export const arxivFetch = (url: string, headers: Record<string, string> = {}): Promise<Response> => (gate ? gate(url, headers) : arxivDirect(url, headers));
+export const isArxivHost = (url: string): boolean => { try { const h = new URL(url).hostname; return h === HOST || h === 'rss.arxiv.org'; } catch { return false; } };
+/** The gate everywhere else: ask the Collection Durable Object, the one place that calls arXiv. */
+export const arxivThroughCollect = (env: { COLLECT: DurableObjectNamespace<Rpc.DurableObjectBranded & { fetch: (r: Request) => Promise<Response> }> | DurableObjectNamespace }) => (url: string, headers: Record<string, string>): Promise<Response> =>
+  (env.COLLECT as unknown as { getByName(n: string): { fetch(r: Request): Promise<Response> } }).getByName('main').fetch(new Request(`https://internal/collect/arxiv-get?url=${encodeURIComponent(url)}`, { headers }));
+/** For the tests: forget what earlier requests did to the pacing. */
+export function resetArxivPacing(): void { last = 0; blockedUntil = 0; chain = Promise.resolve(); gate = null; }
 
 // ---- parsing --------------------------------------------------------------------------------
 const flat = (s: string) => decode(s.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
@@ -107,14 +131,26 @@ export function paperToItem(p: Paper): SourceItem {
 
 // ---- fetching -------------------------------------------------------------------------------
 async function get(url: string): Promise<string> {
-  return paced(async () => {
-    const res = await fetch(url, { headers: { accept: 'application/atom+xml, application/xml;q=0.9', 'user-agent': UA }, signal: AbortSignal.timeout(25_000), redirect: 'follow' });
-    if (res.status === 429 || res.status === 503) { await res.body?.cancel(); throw new Error('arXiv is asking for fewer requests; try again in a few minutes'); }
-    if (!res.ok) { await res.body?.cancel(); throw new Error(`arXiv answered HTTP ${res.status}`); }
-    const xml = await res.text();
-    if (xml.length > 6_000_000) throw new Error('the arXiv answer is larger than 6 MB');
-    return xml;
-  });
+  const res = await arxivFetch(url, { accept: 'application/atom+xml, application/xml;q=0.9' });
+  if (res.status === 429 || res.status === 503) { await res.body?.cancel(); throw new Error('arXiv is asking for fewer requests; try again in a few minutes'); }
+  if (!res.ok) { await res.body?.cancel(); throw new Error(`arXiv answered HTTP ${res.status}`); }
+  const xml = await res.text();
+  if (xml.length > 6_000_000) throw new Error('the arXiv answer is larger than 6 MB');
+  return xml;
+}
+
+/**
+ * How many papers a search has in a period, from the day `from` to the day `to` (YYYY-MM-DD), both included. One small request.
+ * It asks for one result, because arXiv answers HTTP 500 to `max_results=0`, and it needs the query to be sound: a rejected search also reports a total of one.
+ */
+export async function arxivCount(searchQuery: string, from: string, to: string): Promise<number> {
+  const day = (d: string) => d.replace(/-/g, '');
+  const q = `(${searchQuery}) AND submittedDate:[${day(from)}0000 TO ${day(to)}2359]`;
+  const xml = await get(`https://${HOST}/api/query?search_query=${encodeURIComponent(q)}&max_results=1`);
+  if (/<id>[^<]*\/api\/errors/.test(xml)) throw new Error(`arXiv rejected the search: ${flat(/<summary>([\s\S]*?)<\/summary>/.exec(xml)?.[1] ?? '').slice(0, 160)}`);
+  const m = /<opensearch:totalResults[^>]*>(\d+)/.exec(xml);
+  if (!m) throw new Error('arXiv gave no count');
+  return Number(m[1]);
 }
 
 /** An arXiv API address (see `isArxivApi`), read as papers. `since` (unix seconds) keeps it to what was submitted after that. */
@@ -142,17 +178,14 @@ export const queryOfArxivUrl = (url: string): string => {
   return cats.length > 0 && cats.every((c) => /^cat:[a-z-]+(\.[A-Za-z-]+)?$/.test(c)) ? cats.map((c) => c.slice(4)).join(', ') : q.replace(/^all:/, '');
 };
 
-/** One paper for the summarizer: its abstract, and with `full` its full text when arXiv has an HTML version of it. */
-export async function readArxivPaper(rawId: string, full = false, maxChars = 12_000): Promise<Paper & { fullText?: string; truncated?: boolean; note?: string }> {
+/**
+ * One paper for the summarizer: its abstract and other descriptive metadata, which arXiv's terms let anyone use and share.
+ * Deliberately not its full text: that is for personal or research use, and these summaries end up on a public site.
+ */
+export async function readArxivPaper(rawId: string): Promise<Paper> {
   const id = arxivId(rawId.replace(/^arxiv:/i, ''));
   if (!id) throw new Error('not an arXiv id');
   const p = parsePapers(await get(`https://${HOST}/api/query?id_list=${encodeURIComponent(id)}&max_results=1`))[0];
   if (!p) throw new Error('arXiv has no paper with that id');
-  if (!full) return p;
-  try {
-    const a = await readArticle(`https://arxiv.org/html/${id}`, maxChars);
-    return { ...p, fullText: a.text, truncated: a.truncated };
-  } catch {
-    return { ...p, note: 'arXiv has no readable HTML version of this paper; only the abstract is available' };
-  }
+  return p;
 }

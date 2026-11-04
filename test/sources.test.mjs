@@ -519,3 +519,54 @@ test('an arXiv window never starts later than a week back, so late-indexed paper
   const from = q.match(/\[(\d{12}) TO/)[1], week = new Date(Date.now() - 7 * 86_400_000).toISOString().replace(/[-:T]/g, '').slice(0, 12);
   assert.ok(from <= week, `${from} should not be later than ${week}`);
 });
+
+describe('reaching arXiv', () => {
+  const real = globalThis.fetch;
+  const feed = '<feed xmlns="http://www.w3.org/2005/Atom"><opensearch:totalResults xmlns:opensearch="x">42</opensearch:totalResults><entry><id>http://arxiv.org/abs/2401.00001v1</id><title>T</title></entry></feed>';
+  test('a count asks for one result, within the whole days it was given', async () => {
+    const { arxivCount, resetArxivPacing } = await import('../src/sources/arxiv.ts'); resetArxivPacing();
+    let seen; globalThis.fetch = async (u) => { seen = new URL(String(u)); return new Response(feed); };
+    try {
+      assert.equal(await arxivCount('cat:cs.MA', '2026-10-01', '2026-10-07'), 42);
+      assert.equal(seen.searchParams.get('max_results'), '1');
+      assert.equal(seen.searchParams.get('search_query'), '(cat:cs.MA) AND submittedDate:[202610010000 TO 202610072359]');
+    } finally { globalThis.fetch = real; resetArxivPacing(); }
+  });
+  test('a rejected search is an error, not a count of one', async () => {
+    const { arxivCount, resetArxivPacing } = await import('../src/sources/arxiv.ts'); resetArxivPacing();
+    globalThis.fetch = async () => new Response('<feed><opensearch:totalResults>1</opensearch:totalResults><entry><id>http://arxiv.org/api/errors#x</id><summary>malformed</summary></entry></feed>');
+    try { await assert.rejects(arxivCount('x', '2026-10-01', '2026-10-07'), /rejected the search: malformed/); }
+    finally { globalThis.fetch = real; resetArxivPacing(); }
+  });
+  test('when arXiv says slow down, it stops asking instead of asking again', async () => {
+    const { arxivDirect, resetArxivPacing } = await import('../src/sources/arxiv.ts'); resetArxivPacing();
+    let calls = 0; globalThis.fetch = async () => { calls++; return new Response('', { status: 429 }); };
+    try {
+      assert.equal((await arxivDirect('https://export.arxiv.org/api/query?x=1')).status, 429);
+      await assert.rejects(arxivDirect('https://export.arxiv.org/api/query?x=2'), /fewer requests/);
+      assert.equal(calls, 1);
+    } finally { globalThis.fetch = real; resetArxivPacing(); }
+  });
+  test('with a gate set, nothing goes to arXiv directly, RSS feeds included', async () => {
+    const { useArxivGate, resetArxivPacing, fetchArxivQuery } = await import('../src/sources/arxiv.ts'); const { fetchRss } = await import('../src/sources/rss.ts'); resetArxivPacing();
+    const through = []; let direct = 0;
+    globalThis.fetch = async () => { direct++; return new Response(''); };
+    useArxivGate(async (u) => { through.push(u); return new Response(feed, { headers: { 'content-type': 'application/xml' } }); });
+    try {
+      await fetchArxivQuery({ query: 'cs.CL, cs.LG' }); await fetchRss({ url: 'https://rss.arxiv.org/rss/cs.AI' });
+      assert.equal(direct, 0); assert.equal(through.length, 2); assert.match(through[1], /rss\.arxiv\.org/);
+    } finally { globalThis.fetch = real; resetArxivPacing(); }
+  });
+});
+
+test('every public page carries the statement arXiv asks for, in its own words, and the feature is not branded with its name', async () => {
+  // public.ts imports the Durable Objects, so Node cannot run it: the page itself was checked in a browser, and this holds the parts that must not change.
+  const { readFileSync } = await import('node:fs');
+  const { ARXIV_THANKS } = await import('../src/sources/arxiv.ts');
+  assert.equal(ARXIV_THANKS, 'Thank you to arXiv for use of its open access interoperability.');
+  const page = readFileSync(new URL('../src/site/public.ts', import.meta.url), 'utf8');
+  assert.match(page.slice(page.indexOf('function shell('), page.indexOf('function shell(') + 2500), /<p class="credit">\$\{ARXIV_THANKS\}<\/p><\/main>/);
+  assert.match(page, /shell\('Research pulse · Agent Cortex'/);
+  assert.match(page, /not affiliated with or endorsed by arXiv/);
+  assert.ok(readFileSync(new URL('../public/admin/index.html', import.meta.url), 'utf8').includes(ARXIV_THANKS));
+});

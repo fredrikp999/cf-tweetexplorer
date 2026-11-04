@@ -2,6 +2,7 @@
 // HTML (no client script, except the two picture pages in site/viz.ts), from issues the admin has published. Model output is untrusted, so the Markdown
 // renderer escapes everything first and only ever emits links to posts on x.com / twitter.com.
 import { SLUG } from '../durable-objects/publish';
+import { ARXIV_THANKS } from '../sources/arxiv';
 import { esc, inline, markdown } from './markdown';
 import { anchorOf as anchorOfTheme, continuity, inOrder, isMeta, langOf, normalizeThemes, readingMinutes, sectionsOf } from './brief';
 import { pageOfFeed } from '../sources/youtube';
@@ -174,6 +175,7 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .sgstrip{margin:18px 0 22px}.sgstrip h2{display:flex;justify-content:space-between;gap:10px;align-items:baseline;font-size:15px;margin:0 0 8px}.sgstrip h2 a{font-weight:400;font-size:13.5px;color:var(--muted)}
 .sgstrip div{display:flex;flex-wrap:wrap;gap:6px}.sgstrip div a{padding:4px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--text);text-decoration:none;font-size:14px}.sgstrip small.up{color:var(--accent,#c9265f)}
 .chip.react{color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}.stat{border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:var(--card)}.stat b{display:block;font-size:24px;letter-spacing:-.02em}.stat span{color:var(--muted);font-size:13px}
+.credit{margin:40px 0 0;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}.pulse{display:grid;gap:12px;margin:18px 0}.pulse article{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--card);display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,240px);gap:6px 18px;align-items:center}.pulse h2{margin:0;font-size:18px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}.pulse p{margin:2px 0 0;color:var(--muted);font-size:14px}.pulse svg{width:100%;height:56px;display:block}.pstate{font-size:12px;font-weight:600;padding:1px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}.pstate.spike{color:var(--accent);border-color:var(--accent)}.pstate.rising{color:var(--accent)}@media(max-width:560px){.pulse article{grid-template-columns:1fr}}
 .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px}
 .sgrow .hl{grid-column:1/-1;font-size:13.5px;color:var(--muted);margin-top:-2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sgrow .hl a{color:var(--muted)}.sgrow .hl small{margin-left:4px}
 .sgview>input{position:absolute;opacity:0;pointer-events:none}.sgtabs{display:inline-flex;gap:4px;margin:0 0 10px}.sgtabs label{padding:5px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:14px;cursor:pointer}
@@ -192,7 +194,7 @@ const vizLink = (href: string, title: string, text: string) => `<a class="vizlin
 /** A link to one of the other reports or Signals on a picture page. Only when there is more than one to choose from. */
 const vizSwitch = (label: string, items: Array<{ href: string; title: string; on: boolean }>) => (items.length > 1 ? `<nav class="chips" aria-label="${label}">${items.map((i) => `<a href="${i.href}"${i.on ? ' aria-current="page"' : ''}>${esc(i.title)}</a>`).join('')}</nav>` : '');
 
-function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy', board?: string): string {
+function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research', board?: string): string {
   const list = inOrder(ctx.topics, (a, b) => a.title.localeCompare(b.title));
   if (active && !list.some((t) => t.slug === active.slug)) list.push({ slug: active.slug, title: active.title } as PubTopic);   // an unlisted topic, reached by its link
   const items = list.map((t) => {
@@ -203,8 +205,8 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' |
   // The picture pages open on the first Signal that has groups to compare and on the newest report; each page can switch to the others.
   const firstBoard = ctx.boards.find(hasFirst);
   // Today, the briefings, Signal and Reports. The lists behind the briefings are linked from the foot and from each briefing's sources.
-  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Briefings</div>${items}` : ''}${ctx.views.length ? `<div class="grp">Watch and read</div>${ctx.views.map((v) => `<a href="/feeds/${esc(v.slug)}"${page === 'feeds' && board === v.slug ? ' aria-current="page"' : ''}>${esc(v.title)}</a>`).join('')}` : ''}${ctx.boards.length || ctx.reports.length || page === 'history' ? '<div class="grp">Analysis</div>' : ''}${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board && page === 'signal' ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>` : ''}${firstBoard ? `<a href="/signal/${esc(firstBoard.slug)}/first"${page === 'first' ? ' aria-current="page"' : ''}>Who said it first</a>` : ''}${ctx.boards.length ? `<a href="/topics"${page === 'topics' ? ' aria-current="page"' : ''}>Topics</a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${ctx.reports.length ? `<a href="/history/${esc(ctx.reports[0].slug)}/galaxy"${page === 'galaxy' ? ' aria-current="page"' : ''}>Tweet Galaxy</a>` : ''}${listTotal(ctx) ? `<div class="grp">Browse</div><a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}`;
-  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'first' ? 'Who said it first' : page === 'galaxy' ? 'Tweet Galaxy' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : page === 'feeds' ? ctx.views.find((v) => v.slug === board)?.title ?? 'Watch and read' : page === 'topics' ? 'Topics' : 'Today');
+  const links = `<a href="/"${active || page ? '' : ' aria-current="page"'}>Today</a>${items ? `<div class="grp">Briefings</div>${items}` : ''}${ctx.views.length ? `<div class="grp">Watch and read</div>${ctx.views.map((v) => `<a href="/feeds/${esc(v.slug)}"${page === 'feeds' && board === v.slug ? ' aria-current="page"' : ''}>${esc(v.title)}</a>`).join('')}` : ''}<div class="grp">Analysis</div><a href="/research"${page === 'research' ? ' aria-current="page"' : ''}>Research pulse</a>${ctx.boards.length ? `<a href="/signal"${page === 'signal' && !board ? ' aria-current="page"' : ''}${board && page === 'signal' ? ' class="on"' : ''}>Signal <small>${ctx.boards.length}</small></a>` : ''}${firstBoard ? `<a href="/signal/${esc(firstBoard.slug)}/first"${page === 'first' ? ' aria-current="page"' : ''}>Who said it first</a>` : ''}${ctx.boards.length ? `<a href="/topics"${page === 'topics' ? ' aria-current="page"' : ''}>Topics</a>` : ''}${ctx.reports.length || page === 'history' ? `<a href="/history"${page === 'history' ? ' aria-current="page"' : ''}>Reports${ctx.reports.length ? ` <small>${ctx.reports.length}</small>` : ''}</a>` : ''}${ctx.reports.length ? `<a href="/history/${esc(ctx.reports[0].slug)}/galaxy"${page === 'galaxy' ? ' aria-current="page"' : ''}>Tweet Galaxy</a>` : ''}${listTotal(ctx) ? `<div class="grp">Browse</div><a href="/lists"${page === 'lists' ? ' aria-current="page"' : ''}>Lists <small>${listTotal(ctx)}</small></a>` : ''}`;
+  const here = active?.title ?? (page === 'signal' ? 'Signal' : page === 'first' ? 'Who said it first' : page === 'galaxy' ? 'Tweet Galaxy' : page === 'history' ? 'Reports' : page === 'lists' ? 'Lists' : page === 'feeds' ? ctx.views.find((v) => v.slug === board)?.title ?? 'Watch and read' : page === 'topics' ? 'Topics' : page === 'research' ? 'Research pulse' : 'Today');
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Agent Cortex<small>Briefings and Signal</small></span></a>
 <nav class="full" aria-label="Site">${links}</nav>
 <details class="mnav"><summary><span>${esc(here)}</span> Menu</summary><nav aria-label="Site">${links}</nav></details>
@@ -222,7 +224,7 @@ ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}$
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Newsreader:opsz,wght@6..72,400..600&display=swap" rel="stylesheet">
 <style>${CSS}${VIZ_CSS}</style>${analyticsToken ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${esc(analyticsToken)}"}'></script>` : ''}</head><body>
-<div class="app">${railHtml}<main class="page">${body}</main></div></body></html>`;
+<div class="app">${railHtml}<main class="page">${body}<p class="credit">${ARXIV_THANKS}</p></main></div></body></html>`;
 }
 
 const NOTE = '<p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals.</p>';
@@ -257,6 +259,36 @@ function stripHtml(st: SigStrip, title: string): string {
 const SIG_COLORS = ['#1f7a8c', '#e3a008', '#7c5cbf', '#c2410c', '#2f9e6b', '#d6336c', '#4263eb', '#868e96'];
 const sigColor = (i: number) => SIG_COLORS[i % SIG_COLORS.length];
 const sigPct = (x: number) => { const p = x * 100; return (p < 10 ? p.toFixed(1) : String(Math.round(p))) + '%'; };
+
+// ---- Research pulse: counts of new papers per topic. Script-free, like the other public pages.
+interface PubPulseTopic { id: string; title: string; blurb: string; query: string; state: 'building' | 'normal' | 'rising' | 'spike' | 'falling'; sustained: boolean; from: string; end: string; n: number; share: number; baseline: number; ratio: number; series: Array<{ end: string; n: number; share: number }> }
+export interface PubPulse { topics: PubPulseTopic[]; field: { surge: boolean; ratio: number; n: number }; baseQuery: string; baselineWeeks: number }
+const PULSE_LABEL = { building: 'Collecting history', normal: 'Usual level', rising: 'Rising', spike: 'Spike', falling: 'Falling' };
+const pct1 = (x: number) => `${(x * 100).toFixed(1)}%`;
+/** The share of each week as a line, with the usual level as a dashed one. */
+function pulseSpark(t: PubPulseTopic): string {
+  const s = t.series; if (s.length < 2) return '';
+  const W = 240, H = 56, top = Math.max(...s.map((x) => x.share), t.baseline) * 1.1 || 1, x = (i: number) => (i / (s.length - 1)) * W, y = (v: number) => H - 3 - (v / top) * (H - 6);
+  const label = `Share of AI papers per week, from ${pct1(s[0].share)} to ${pct1(s[s.length - 1].share)}`;
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">${t.baseline ? `<line x1="0" x2="${W}" y1="${y(t.baseline).toFixed(1)}" y2="${y(t.baseline).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>` : ''}<polyline fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" points="${s.map((p, i) => `${x(i).toFixed(1)},${y(p.share).toFixed(1)}`).join(' ')}"/></svg>`;
+}
+export function researchHtml(d: PubPulse, ctx: Ctx): string {
+  const cards = d.topics.map((t) => {
+    const building = t.state === 'building';
+    const facts = building ? 'Collecting past weeks to compare with. This fills in by itself.'
+      : `${n(t.n)} new papers, ${esc(t.from)} to ${esc(t.end)}: ${pct1(t.share)} of AI papers, against a usual ${pct1(t.baseline)} (${t.ratio.toFixed(2)} times).`;
+    return `<article id="${esc(t.id)}"><div><h2>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h2>${t.blurb ? `<p>${esc(t.blurb)}</p>` : ''}<p>${facts}</p></div>${pulseSpark(t)}</article>`;
+  }).join('');
+  return shell('Research pulse · Agent Cortex', rail(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow">Analysis</div><h1>Research pulse</h1>
+<p class="lede">Which areas of AI research are getting more attention from researchers right now, measured by how many new papers they post.</p></header>
+${d.field.surge ? `<p class="note">All of AI research had an unusually big week: ${n(d.field.n)} papers, ${d.field.ratio.toFixed(1)} times the usual. A topic only counts as spiking if it grew more than the field did.</p>` : ''}
+<div class="pulse">${cards}</div>
+<h2>How this is measured</h2>
+<p>Each topic is a search of new papers on arXiv. It counts the papers from the last whole week, leaving out the newest two days because not all of their papers are listed yet, and divides by all papers in the AI categories (<code>${esc(d.baseQuery)}</code>). That share is compared with the ${d.baselineWeeks} weeks before. Using the share means a big week for the whole field does not read as a spike in every topic.</p>
+<p>A <b>spike</b> is a share at least 1.25 times the usual level, unusually far from it for that topic, on at least 20 papers. This counts papers. It says nothing about their quality, and it cannot tell why a topic grew.</p>
+<details><summary>The searches</summary><ul>${d.topics.map((t) => `<li><b>${esc(t.title)}</b>: <code>${esc(t.query)}</code></li>`).join('')}</ul></details>
+<p class="meta">Data from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>. This site is not affiliated with or endorsed by arXiv.</p>`, { description: 'Which areas of AI research are getting more attention, measured by how many new papers researchers post.' });
+}
 
 export function signalIndexHtml(ctx: Ctx): string {
   const cards = ctx.boards.map((b) => `<li class="pic"><a class="card" href="/signal/${esc(b.slug)}"><span class="eyebrow">${b.groups.length} group${b.groups.length === 1 ? '' : 's'}</span><h2>${esc(b.title)}</h2>${b.description ? `<p>${esc(b.description)}</p>` : ''}
@@ -795,6 +827,11 @@ async function render(env: Env, url: URL): Promise<Response> {
     return html(landingHtml(ctx, await signalStrip(env, ctx, 8), url.origin, lead));
   }
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
+  if (parts[0] === 'research' && parts.length === 1) {
+    const r = await env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/pulse-public'));
+    if (!r.ok) { await r.body?.cancel(); return missing(); }
+    return html(researchHtml((await r.json()) as PubPulse, ctx));
+  }
   if (parts[0] === 'topics' && parts.length === 1) {   // /topics[?q=]: every Signal topic of the published Signals
     const all = (await Promise.all(ctx.boards.map((b) => env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/signal-public-terms?slug=${b.slug}`))
       .then((r) => (r.ok ? (r.json() as Promise<PubTerms>) : null)).catch(() => null)))).filter((x): x is PubTerms => !!x);

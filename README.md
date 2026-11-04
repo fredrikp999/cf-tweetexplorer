@@ -122,3 +122,7 @@ npm run smoke -- https://tweets.example.com   # check a deployed site (reads onl
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the [MIT License](LICENSE).
+
+## Acknowledgements
+
+Thank you to arXiv for use of its open access interoperability.

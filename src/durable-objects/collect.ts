@@ -6,7 +6,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { json, OutOfCredits, search, slim, type Tweet } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
-import { fetchArxivQuery } from '../sources/arxiv';
+import { arxivDirect, fetchArxivQuery, isArxivHost } from '../sources/arxiv';
 import { fetchHn, type HnTag } from '../sources/hn';
 import { fetchRss } from '../sources/rss';
 import { setYoutubeKey } from '../sources/youtube';
@@ -595,6 +595,15 @@ export class CollectDO extends DurableObject<Env> {
     const url = new URL(request.url), name = url.pathname.replace(/^\/collect\//, '');
     try {
       if (request.method === 'GET') {
+        if (name === 'arxiv-get') {   // the one place that calls arXiv: see useArxivGate
+          const target = url.searchParams.get('url') ?? '';
+          if (!isArxivHost(target)) return json({ error: 'only arXiv addresses' }, 400);
+          const pass: Record<string, string> = {};
+          for (const h of ['accept', 'if-none-match', 'if-modified-since']) { const v = request.headers.get(h); if (v) pass[h] = v; }
+          const res = await arxivDirect(target, pass);
+          const keep = new Headers(); for (const h of ['content-type', 'etag', 'last-modified', 'retry-after']) { const v = res.headers.get(h); if (v) keep.set(h, v); }
+          return new Response(res.status === 304 ? null : res.body, { status: res.status, headers: keep });
+        }
         if (name === 'overview') return json({ ...this.overview(), drift: await this.drift().catch(() => []) });
         if (name === 'items') return json(this.browse(url.searchParams));
         return json({ error: 'unknown collection route' }, 404);

@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { json } from '../lib/twitterapi';
 import { HN_TAGS, type HnTag } from '../sources/hn';
 import { checkFeedUrl } from '../sources/rss';
+import { arxivThroughCollect, useArxivGate } from '../sources/arxiv';
 import { setYoutubeKey } from '../sources/youtube';
 import { MAX_MEMBERS as MAX_FEED_MEMBERS, memberKey, readMembers, resolveLines, type FeedMember } from '../sources/feedlist';
 import { useGateway } from '../llm/gateway.ts';
@@ -89,6 +90,7 @@ export class ListsDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API
+    useArxivGate(arxivThroughCollect(env));   // every request to arXiv goes through one place: its limit is for all of this app together
     useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS lists (id TEXT PRIMARY KEY, updated INTEGER NOT NULL, data TEXT NOT NULL)');
     ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS xlists (id TEXT PRIMARY KEY, ord INTEGER NOT NULL, data TEXT NOT NULL)');

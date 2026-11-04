@@ -87,6 +87,12 @@ function buildServer(env: Env): McpServer {
     annotations: readOnly,
   }, (a) => ask(env.COLLECT, '/collect/items', a));
 
+  server.registerTool('get_research_pulse', {
+    description: 'Research pulse: for each research topic, how many new arXiv papers it had in the last whole week, its share of all AI papers, and whether that share is a spike against the 8 weeks before. Thank you to arXiv for use of its open access interoperability.',
+    inputSchema: {},
+    annotations: readOnly,
+  }, () => ask(env.MONITOR, '/mon/pulse'));
+
   server.registerTool('list_user_lists', {
     description: 'Your curated lists of accounts.',
     annotations: readOnly,

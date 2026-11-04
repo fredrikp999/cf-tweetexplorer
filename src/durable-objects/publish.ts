@@ -26,6 +26,7 @@ import { mockX } from '../collect/mock.ts';
 import { MAX_MIN_FAVES } from '../collect/likes.ts';
 import { screenTweets } from '../summarize/screen.ts';
 import { pickHero, sectionsOf, themesOf } from '../site/brief.ts';
+import { arxivThroughCollect, useArxivGate } from '../sources/arxiv';
 import { setYoutubeKey } from '../sources/youtube';
 import { useGateway } from '../llm/gateway.ts';
 
@@ -98,7 +99,7 @@ export interface Issue {
   links?: string[];
 }
 
-export const RESERVED = new Set(['admin', 'custom', 'lists', 'signal', 'report', 'feeds', 'topics', 'audio', 'image', 'history', 'api', 'static', 'assets', 'feed', 'rss', 'sitemap', 'robots', 'favicon', 'health', 'ai-plugin']);
+export const RESERVED = new Set(['admin', 'custom', 'lists', 'signal', 'research', 'report', 'feeds', 'topics', 'audio', 'image', 'history', 'api', 'static', 'assets', 'feed', 'rss', 'sitemap', 'robots', 'favicon', 'health', 'ai-plugin']);
 export const SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const INTERVALS = [6, 12, 24, 48, 168];
 const MAX_TOPICS = 40, MAX_SOURCES = 8, MAX_TWEETS = 150, STALE_RUN_MS = 20 * 60_000;
@@ -249,6 +250,7 @@ export class PublishDO extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     setYoutubeKey(env.YOUTUBE_API_KEY);   // a channel whose feed fails is read through the API
+    useArxivGate(arxivThroughCollect(env));   // every request to arXiv goes through one place: its limit is for all of this app together
     useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     const sql = ctx.storage.sql;
     sql.exec('CREATE TABLE IF NOT EXISTS topics (slug TEXT PRIMARY KEY, data TEXT NOT NULL)');

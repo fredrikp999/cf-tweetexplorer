@@ -16,6 +16,7 @@ It only reads. Nothing that starts a job, changes a setting or spends money is e
 | --- | --- | --- |
 | `list_briefing_topics` | Briefing topics with schedule, sources and the 30 most recent issues (drafts included) | |
 | `get_briefing_issue` | The full text of one issue (`slug`, `id`) | |
+| `get_research_pulse` | Research pulse: new arXiv papers per research topic, and whether a topic's share of AI papers is spiking | |
 | `get_signal` | Signal: topics across all watched sources, one weighted score each; top, rising, shared and single-group terms | **Signal dashboard** |
 | `get_signal_items` | The items behind a Signal topic (title, link, source, date), with counts per group and source | |
 | `get_tweet_galaxy` | A History collection summarised by theme, kind and stance | **Tweet Galaxy** |
