@@ -68,7 +68,7 @@ const CSS = `
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0d1718;--card:#142224;--text:#e8efee;--muted:#93a8a6;--line:#243a3c;--accent:#ff7aa1;--soft:#3a1626;--bar:#4cb5c6;--rail:#06151a;--rail-on:rgba(255,255,255,.08);color-scheme:dark}}
 :root[data-theme=dark]{--bg:#0d1718;--card:#142224;--text:#e8efee;--muted:#93a8a6;--line:#243a3c;--accent:#ff7aa1;--soft:#3a1626;--bar:#4cb5c6;--rail:#06151a;--rail-on:rgba(255,255,255,.08);color-scheme:dark}
 :root[data-theme=light]{color-scheme:light}
-.themebtn{margin-top:10px;background:none;border:1px solid rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:5px 10px;font:inherit;font-size:12.5px;cursor:pointer}.themebtn:hover{background:var(--rail-on);color:#fff}
+.themebar{padding:0 10px}.themebtn{margin-top:10px;background:none;border:1px solid rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:5px 10px;font:inherit;font-size:12.5px;cursor:pointer}.themebtn:hover{background:var(--rail-on);color:#fff}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 var(--ui)}
 a{color:var(--accent)}a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .app{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:100vh}
@@ -219,7 +219,7 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' |
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Agent Cortex<small>Briefings and Signal</small></span></a>
 <nav class="full" aria-label="Site">${links}</nav>
 <details class="mnav"><summary><span>${esc(here)}</span> Menu</summary><nav aria-label="Site">${links}</nav></details>
-<div class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.${listTotal(ctx) ? ` <a href="/lists">The ${listTotal(ctx)} lists behind them</a>.` : ''}<br>${THEME_BTN}</div></aside>`;
+<div class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.${listTotal(ctx) ? ` <a href="/lists">The ${listTotal(ctx)} lists behind them</a>.` : ''}</div><div class="themebar">${THEME_BTN}</div></aside>`;
 }
 
 /** Cloudflare Web Analytics for the public pages, from the CF_ANALYTICS_TOKEN secret: page views without cookies. Empty: no script at all. */
