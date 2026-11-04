@@ -199,9 +199,16 @@ const vizLink = (href: string, title: string, text: string) => `<a class="vizlin
 /** A link to one of the other reports or Signals on a picture page. Only when there is more than one to choose from. */
 const vizSwitch = (label: string, items: Array<{ href: string; title: string; on: boolean }>) => (items.length > 1 ? `<nav class="chips" aria-label="${label}">${items.map((i) => `<a href="${i.href}"${i.on ? ' aria-current="page"' : ''}>${esc(i.title)}</a>`).join('')}</nav>` : '');
 
-const THEME_INIT = `<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>`;
+/** The colour theme script, served from this site (the page policy allows no inline script): applies the saved choice at once, then wires the button. */
+const THEME_JS = `(function(){var r=document.documentElement,o=['auto','light','dark'],L={auto:'Theme: automatic',light:'Theme: light',dark:'Theme: dark'};
+function g(){try{var t=localStorage.getItem('theme');return t==='light'||t==='dark'?t:'auto'}catch(e){return'auto'}}
+function a(t,b){if(t==='auto')r.removeAttribute('data-theme');else r.setAttribute('data-theme',t);if(b)b.textContent=L[t]}
+a(g());
+document.addEventListener('DOMContentLoaded',function(){var b=document.getElementById('themebtn');if(!b)return;a(g(),b);
+b.onclick=function(){var t=o[(o.indexOf(g())+1)%3];try{if(t==='auto')localStorage.removeItem('theme');else localStorage.setItem('theme',t)}catch(e){}a(t,b)}})})();`;
+const THEME_INIT = '<script src="/viz/theme.js"></script>';
 /** Cycles Auto, Light, Dark; the choice is kept in this browser only. */
-const THEME_BTN = `<button type="button" class="themebtn" id="themebtn" aria-label="Colour theme"></button><script>(function(){var b=document.getElementById('themebtn'),r=document.documentElement,o=['auto','light','dark'],L={auto:'Theme: automatic',light:'Theme: light',dark:'Theme: dark'};function g(){try{var t=localStorage.getItem('theme');return t==='light'||t==='dark'?t:'auto'}catch(e){return'auto'}}function a(t){if(t==='auto')r.removeAttribute('data-theme');else r.setAttribute('data-theme',t);b.textContent=L[t]}a(g());b.onclick=function(){var t=o[(o.indexOf(g())+1)%3];try{if(t==='auto')localStorage.removeItem('theme');else localStorage.setItem('theme',t)}catch(e){}a(t)}})()</script>`;
+const THEME_BTN = '<button type="button" class="themebtn" id="themebtn" aria-label="Colour theme">Theme</button>';
 
 function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map', board?: string): string {
   const list = inOrder(ctx.topics, (a, b) => a.title.localeCompare(b.title));
@@ -797,11 +804,11 @@ export const notFoundHtml = (ctx: Ctx) => shell('Not found', rail(ctx), '<header
 // ---- routing
 const NO_STORE = { 'cache-control': 'no-store' };
 const NOT_FOUND_JSON = () => new Response('{"error":"not found"}', { status: 404, headers: { 'content-type': 'application/json', ...NO_STORE } });
-// The only script a public page may load is Cloudflare Web Analytics (no cookies), and only when its token is set. Forms post only to this site (the error report).
+// The only scripts a public page may load are this site's own theme script and Cloudflare Web Analytics (no cookies), and only when its token is set. Forms post only to this site (the error report).
 // The picture pages (viz: site/viz.ts) may also load this site's own script, read its JSON and show its sandboxed frames.
 export const PUBLIC_HEADERS_FOR = (analytics: boolean, viz = false) => ({
   'content-type': 'text/html; charset=utf-8',
-  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self' https://i.ytimg.com; frame-src ${viz ? "'self'" : 'https://www.youtube-nocookie.com'}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${analytics || viz ? `; script-src${viz ? " 'self'" : ''}${analytics ? ' https://static.cloudflareinsights.com' : ''}; connect-src${viz ? " 'self'" : ''}${analytics ? ' https://cloudflareinsights.com' : ''}` : ''}`,
+  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self' https://i.ytimg.com; frame-src ${viz ? "'self'" : 'https://www.youtube-nocookie.com'}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'${analytics ? ' https://static.cloudflareinsights.com' : ''}${viz || analytics ? `; connect-src${viz ? " 'self'" : ''}${analytics ? ' https://cloudflareinsights.com' : ''}` : ''}`,
   'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin',
 });
 let PUBLIC_HEADERS = PUBLIC_HEADERS_FOR(false);
@@ -825,6 +832,7 @@ async function signalStrip(env: Env, ctx: Ctx, n: number, text?: string): Promis
 async function vizData(env: Env, parts: string[]): Promise<Response | undefined> {
   const jsonOf = async (r: Response) => { if (!r.ok) { await r.body?.cancel(); return NOT_FOUND_JSON(); } return new Response(r.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } }); };
   if (parts[0] === 'viz' && parts.length === 2) {
+    if (parts[1] === 'theme.js') return new Response(THEME_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
     if (parts[1] === 'host.js') return new Response(HOST_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
     const view = Object.hasOwn(VIZ_VIEWS, parts[1]) ? VIZ_VIEWS[parts[1]] : undefined;
     if (!view) return new Response('Not found', { status: 404, headers: NO_STORE });
