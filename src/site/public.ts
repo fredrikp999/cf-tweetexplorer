@@ -65,7 +65,10 @@ const every = (h: number) => (h < 24 ? `every ${h} hours` : h === 24 ? 'daily' :
 const CSS = `
 :root{--bg:#f6f5f1;--card:#fff;--text:#16201f;--muted:#5d6b6a;--line:#e0ddd4;--accent:#b0214f;--soft:#f9e9ee;--bar:#1f7a8c;--rail:#0c2a31;--rail-text:#b7cfd2;--rail-dim:#7b9ca1;--rail-on:rgba(255,255,255,.1);
 --ui:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;--read:Newsreader,"Iowan Old Style",Georgia,serif}
-@media(prefers-color-scheme:dark){:root{--bg:#0d1718;--card:#142224;--text:#e8efee;--muted:#93a8a6;--line:#243a3c;--accent:#ff7aa1;--soft:#3a1626;--bar:#4cb5c6;--rail:#06151a;--rail-on:rgba(255,255,255,.08)}}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0d1718;--card:#142224;--text:#e8efee;--muted:#93a8a6;--line:#243a3c;--accent:#ff7aa1;--soft:#3a1626;--bar:#4cb5c6;--rail:#06151a;--rail-on:rgba(255,255,255,.08);color-scheme:dark}}
+:root[data-theme=dark]{--bg:#0d1718;--card:#142224;--text:#e8efee;--muted:#93a8a6;--line:#243a3c;--accent:#ff7aa1;--soft:#3a1626;--bar:#4cb5c6;--rail:#06151a;--rail-on:rgba(255,255,255,.08);color-scheme:dark}
+:root[data-theme=light]{color-scheme:light}
+.themebtn{margin-top:10px;background:none;border:1px solid rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:5px 10px;font:inherit;font-size:12.5px;cursor:pointer}.themebtn:hover{background:var(--rail-on);color:#fff}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 var(--ui)}
 a{color:var(--accent)}a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .app{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:100vh}
@@ -196,6 +199,10 @@ const vizLink = (href: string, title: string, text: string) => `<a class="vizlin
 /** A link to one of the other reports or Signals on a picture page. Only when there is more than one to choose from. */
 const vizSwitch = (label: string, items: Array<{ href: string; title: string; on: boolean }>) => (items.length > 1 ? `<nav class="chips" aria-label="${label}">${items.map((i) => `<a href="${i.href}"${i.on ? ' aria-current="page"' : ''}>${esc(i.title)}</a>`).join('')}</nav>` : '');
 
+const THEME_INIT = `<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>`;
+/** Cycles Auto, Light, Dark; the choice is kept in this browser only. */
+const THEME_BTN = `<button type="button" class="themebtn" id="themebtn" aria-label="Colour theme"></button><script>(function(){var b=document.getElementById('themebtn'),r=document.documentElement,o=['auto','light','dark'],L={auto:'Theme: automatic',light:'Theme: light',dark:'Theme: dark'};function g(){try{var t=localStorage.getItem('theme');return t==='light'||t==='dark'?t:'auto'}catch(e){return'auto'}}function a(t){if(t==='auto')r.removeAttribute('data-theme');else r.setAttribute('data-theme',t);b.textContent=L[t]}a(g());b.onclick=function(){var t=o[(o.indexOf(g())+1)%3];try{if(t==='auto')localStorage.removeItem('theme');else localStorage.setItem('theme',t)}catch(e){}a(t)}})()</script>`;
+
 function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map', board?: string): string {
   const list = inOrder(ctx.topics, (a, b) => a.title.localeCompare(b.title));
   if (active && !list.some((t) => t.slug === active.slug)) list.push({ slug: active.slug, title: active.title } as PubTopic);   // an unlisted topic, reached by its link
@@ -212,7 +219,7 @@ function rail(ctx: Ctx, active?: Active, page?: 'lists' | 'history' | 'signal' |
   return `<aside class="rail"><a class="brand" href="/">${MARK}<span>Agent Cortex<small>Briefings and Signal</small></span></a>
 <nav class="full" aria-label="Site">${links}</nav>
 <details class="mnav"><summary><span>${esc(here)}</span> Menu</summary><nav aria-label="Site">${links}</nav></details>
-<div class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.${listTotal(ctx) ? ` <a href="/lists">The ${listTotal(ctx)} lists behind them</a>.` : ''}</div></aside>`;
+<div class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.${listTotal(ctx) ? ` <a href="/lists">The ${listTotal(ctx)} lists behind them</a>.` : ''}<br>${THEME_BTN}</div></aside>`;
 }
 
 /** Cloudflare Web Analytics for the public pages, from the CF_ANALYTICS_TOKEN secret: page views without cookies. Empty: no script at all. */
@@ -225,7 +232,7 @@ function shell(title: string, railHtml: string, body: string, opts: { descriptio
 ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}${opts.feed ? `<link rel="alternate" type="application/rss+xml" title="${esc(opts.feedTitle ?? title)}" href="${esc(opts.feed)}">` : ''}${opts.image ? `<meta property="og:image" content="${esc(opts.image)}"><meta name="twitter:card" content="summary_large_image">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Newsreader:opsz,wght@6..72,400..600&display=swap" rel="stylesheet">
-<style>${CSS}${VIZ_CSS}</style>${analyticsToken ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${esc(analyticsToken)}"}'></script>` : ''}</head><body>
+${THEME_INIT}<style>${CSS}${VIZ_CSS}</style>${analyticsToken ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${esc(analyticsToken)}"}'></script>` : ''}</head><body>
 <div class="app">${railHtml}<main class="page">${body}<p class="credit">${ARXIV_THANKS}</p></main></div></body></html>`;
 }
 
