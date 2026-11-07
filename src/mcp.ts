@@ -10,6 +10,7 @@ import firstHtml from './apps/first';
 import galaxyHtml from './apps/galaxy';
 import signalHtml from './apps/signal';
 import { GALAXY_PAGE } from './history/galaxy';
+import { registerAgentTools } from './agentMcp';
 
 const MAX_TWEETS = 200;
 const COSTS_UI = 'ui://tweet-explorer/costs-v7.html';
@@ -20,7 +21,7 @@ const FIRST_UI = 'ui://tweet-explorer/first-v1.html';
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
 const failure = (message: string) => ({ isError: true, content: [{ type: 'text' as const, text: message }] });
 
-function buildServer(env: Env): McpServer {
+function buildServer(env: Env, origin: string): McpServer {
   const server = new McpServer({ name: 'tweet-explorer', version: '0.1.0' });
 
   // The Durable Objects take the same internal requests the admin app's routes forward to them.
@@ -181,6 +182,9 @@ function buildServer(env: Env): McpServer {
   registerAppResource(server, 'Tweet Galaxy', GALAXY_UI, { mimeType: RESOURCE_MIME_TYPE },
     async () => ({ contents: [{ uri: GALAXY_UI, mimeType: RESOURCE_MIME_TYPE, text: galaxyHtml }] }));
 
+  // The public server's tools and prompts too (src/agentMcp.ts), so one connector is enough for the owner.
+  registerAgentTools(server, env, origin, { owner: true });
+
   return server;
 }
 
@@ -189,6 +193,6 @@ export async function handleMcp(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: { Allow: 'POST' } });
   // Stateless: a fresh server per request, no session to keep, plain JSON answers instead of an event stream.
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-  await buildServer(env).connect(transport);
+  await buildServer(env, new URL(request.url).origin).connect(transport);
   return transport.handleRequest(request);
 }

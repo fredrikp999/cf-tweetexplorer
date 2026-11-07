@@ -202,6 +202,73 @@ The view can only reach this server's tools, through the host, and the tools are
    `registerAppResource(server, '<Name>', resourceUri, { mimeType: RESOURCE_MIME_TYPE }, …)`.
 3. Deploy, reconnect the connector, open a new chat, and ask for something that calls the tool.
 
+## The public server: `/agent/mcp`
+
+A second, **public** MCP server gives an agent the same three zoom levels as the site: overview, topic, source. It is separate from `/mcp` above (which stays owner-only
+behind Access). The site explains it at [`/agent`](../src/site/public.ts) with the lines to copy:
+
+```
+claude mcp add --transport http agent-cortex https://<site>/agent/mcp
+```
+
+and, for the Claude app or claude.ai, a custom connector with the same address (no sign-in).
+
+- Code: `src/agentMcp.ts` (the endpoint, the tools and prompts), `src/site/agentText.ts` (the Markdown and JSON of each answer; pure, tested in `test/agenttext.test.mjs`),
+  `src/site/overview.ts` (`loadOverview`, shared with the landing page), `src/site/topicData.ts` (`loadTopic`, shared with `/t/<slug>`), and three read-only Monitor routes:
+  `topic-items-public`, `papers-public`, `paper-public`.
+- Route: `POST /agent/mcp` in `src/index.ts`, handled before and outside `/mcp` (its address does not start with `/mcp`, so the Access application does not cover it).
+  Streamable HTTP, stateless, plain JSON answers; other methods get `405`.
+- **What it shows:** exactly what the public site shows (published briefings, published Signals, public research). No `/adm/` or other private route is read, and a Signal
+  that does not show its sources gives no item list here either. **What it never does:** call a model, start a job or spend money. Topic summaries are written ahead of
+  time by the Monitor's alarm; the server only reads them (it asks for `topic-public` with `quiet=1`, so it does not even wake the summary writer).
+- **Rate limit:** 60 requests a minute per client address (`cf-connecting-ip`), with the Workers Rate Limiting binding `AGENT_LIMIT` in `wrangler.jsonc` (production and
+  staging each have their own namespace). Over it: `429`, a JSON-RPC error and `Retry-After: 60`. The binding counts per Cloudflare location, so the limit is approximate.
+  Without the binding (an old deployment) there is no limit. Answers are also kept in the edge cache for two minutes (key: tool, arguments and the deployed version).
+- **Browsers:** unlike the private server, `Origin` is not refused. The server holds nothing private, sets no cookies and takes no credentials, so any web page may call it
+  (`Access-Control-Allow-Origin: *`, `OPTIONS` answers `204`); there is no login for a page to ride on.
+- **Text answers:** Markdown that leads with the answer in two to four lines, then short sections, about 1,500 tokens (`detail: "brief"`, 6,000 characters) or four times that
+  (`detail: "full"`). Sections that do not fit are dropped from the end, with a line saying so; the closing **Next:** line is always kept. Every claim links to the original and to
+  the topic page (absolute addresses, from the request's origin). Evidence is per kind of source in its own unit (X in ranges with distinct accounts, Hacker News points and
+  comments, YouTube views, blogs by outlet, papers by uptake), never one blended number. Titles and quotes are third-party text and the answers say so. The same data is in
+  `structuredContent`; no `outputSchema` is declared.
+- Papers are abstracts only, with the link to the original abstract page (never a PDF), and every paper answer carries the thank-you sentence.
+
+| Tool | Arguments | Answer |
+| --- | --- | --- |
+| `list_lenses` | | Both areas (AI, Politics) and their lenses, and whether each has anything published |
+| `get_overview` (MCP App: Landscape) | `area` (`ai` or `politics`; AI by default, and an AI answer never includes politics topics), `lens` (of the same area), `window` (1, 3 or 7 days; other numbers use the next window up), `detail` | In brief, new and rising topics, the top topics (one line, score and where it comes from), research, what is big outside the lens |
+| `get_topic` (MCP App: Topic hub) | `topic` (address or name), `area` (hint, only for a name that is a topic in both areas), `window` (days for the count of mentions), `detail` | Summary, state, evidence per kind, top items, papers, briefings, related topics; `area` in `structuredContent` and in the text for a politics topic |
+| `get_topic_items` | `topic`, `kind` (`x`, `hn`, `youtube`, `rss`), `sort` (`new`, `top`), `area` (hint), `cursor`, `detail` | 25 items a page with author, time, reactions and links; `nextCursor` for the next page |
+| `search` | `query` (2 to 80 letters, up to six words), `kinds` (`topics`, `items`, `papers`, `briefings`; all when left out), `area` (`ai` or `politics`; the areas are searched apart, and a politics search has no papers), `lens`, `window` (1, 3, 7, 14 or 30 days; other numbers use 14), `detail` | Results grouped by kind, topics first, best match first, with the links to the originals and (items) to their topic page; counts per kind; a `Next:` line naming `get_topic`, `get_paper` or `get_briefing`. A lens puts its topics and papers first among equally good matches and hides nothing. Same search as the site's `/search`; 5 results per kind (`brief`) or 10 (`full`) |
+| `get_briefing` | `topic` (the briefing topic's address), `day` (an issue id), `detail` | A briefing with themes and sources; an unknown topic answers with the list of briefing topics |
+| `get_papers` (MCP App: Research map) | `topic`, `cluster`, `query`, `discussed_only`, `detail` | Papers of the last 30 days with abstract and uptake; the clusters of the Research map when no filter is given |
+| `get_paper` | `id` | Abstract, links, every post that names it |
+
+**Areas.** `area: "politics"` on `get_overview` gives the politics landing page's data (first published politics Signal, politics briefings, politics lenses; `research` and `read` are `null`: papers and feed pages are AI's). `structuredContent.area` says which area an answer is from, and a politics topic's `url` ends in `?area=politics`. The `catch_up` prompt takes `area` too. The Landscape view keeps the area of its data and sends it back to `get_overview`, so its lens list is the area's own.
+
+**The Landscape view** (`src/apps/landscape.ts`, `ui://agent-cortex/landscape-v3.html`, bump the suffix when the page changes): `get_overview` carries `_meta.ui.resourceUri`, on both `/agent/mcp` and the private `/mcp` (it is registered by `registerAgentTools`). Hosts without MCP Apps get the same text and `structuredContent` as before. The view reads `structuredContent.landscape`:
+
+```
+landscape: { w, h,                                      // the box the coordinates are in (1000 x 640)
+  clusters: [{ id, name, x, y, r, members: [slug] }],   // named groups of topics talked about together (two or more topics)
+  bubbles:  [{ slug, label, url, x, y, r, cluster,      // cluster is '' for a topic with no partner
+              state: 'new'|'rising'|'falling'|null, change, score,
+              lensColor: 'orange'|…|null, inLens: bool|null, mix: 'X 50%, Hacker News 33%'|null }],
+  lens: { key, name } | null, lenses: [{ key, name, color, light, dark }] } | null
+```
+
+The view draws it as SVG (hover or focus gives label, state, score, source mix and the topics it goes with; Tab moves between bubbles, Enter opens the topic page). It follows `hostContext.theme` and has a fullscreen button (`ui/request-display-mode`). Its **lens** and **window** controls call `tools/call get_overview` with `{ window, lens? }` through the host and redraw from the reply (`structuredContent`, or the JSON text when a host gives only text; on the site `/viz/host.js` answers from `/overview.json`). A click on a bubble depends on the host (`act` in the view): where the host lets a view message Claude (`hostCapabilities.message`) it sends `ui/message` "Show me the topic <slug>", which makes Claude call `get_topic` and draw the Topic hub (a view cannot swap itself for another tool's view); where it cannot (the site's host.js lists only `openLinks`) it calls `ui/open-link` with the bubble's `url`, the topic page. After the message a button *Open the page instead* is shown. *Pick topics* switches clicks to selecting bubbles; the picks go to Claude's context with `ui/update-model-context` and *Ask Claude about these* sends `ui/message`. These two are shown unless the host lists its capabilities without `message` and `updateModelContext` (the site's host does, so the site has neither buttons); on the site host.js answers both harmlessly anyway.
+
+**The Topic hub view** (`src/apps/topichub.ts`, `ui://agent-cortex/topic-v2.html`): `get_topic` carries `_meta.ui.resourceUri`; its text answer is unchanged. The view reads `structuredContent` of `get_topic` (header: label, state with a symbol and word, written summary, evidence strip with each source kind in its own unit, a sparkline of `series`). Tabs (the list `TABS` and the map `PANES` in the view): **Who said it first** (`first`: the sentence, the order with when and how long after, the first item per kind, the caveat; no ripple, which compares groups across topics) and **Watch** (`watch`: videos as text and links, no pictures, because a host decides what images a view may load), **Talk** pages through `tools/call get_topic_items` (`topic`, `kind` filter, `sort`, `cursor`; "Show more" follows `nextCursor`; the unit of reactions comes from each item's `reactionsText`), **Briefings** and **Papers** (with `papers.thanks`, the arXiv thank-you line) read the `get_topic` data. A title opens its original with `ui/open-link`; *Open on the site* opens `url`. Related topics switch the view with `tools/call get_topic` (a Back button returns). Items, papers and related topics have a tick: the ticks go to Claude's context with `ui/update-model-context` and *Ask Claude about these* sends `ui/message` (both hidden where the host lists its capabilities without `message` and `updateModelContext`). Without a Signal that shows its sources the Talk tab says so. `get_topic_items` data items also carry `reactionsText`, and `get_topic` `talk` items too.
+
+**The Research map view** (`src/apps/map.ts`, `ui://agent-cortex/research-map-v2.html`, the same page the site shows at `/research/map`): `get_papers` carries `_meta.ui.resourceUri`. In an MCP host the first result is the answer of `get_papers` (a few papers), so the view asks for the whole month with `tools/call get_research_map` and starts with the call's scope applied: `query` fills the search box, `discussed_only` switches on *Getting attention only*, `topic` keeps only that research topic (`cluster` is not applied). **`get_research_map`** is a view-only tool (`_meta.ui.visibility: ["app"]`, no arguments, read only): the JSON of `/research/map.json` plus `thanks` (the arXiv line the view prints under the list); it reads the same public data, never starts a job. Abstracts come from `tools/call get_paper` (`structuredContent`, or JSON text on the site). v2 adds a **lens filter** (buttons from `lenses`; each paper row carries a bit mask of the lenses whose words are in its title or abstract, `paperLensMask` in `src/signal/lens.ts`; `lens` in the JSON preselects one, set by `/research/map.json?lens=<key>`), **uptake marks** (a diamond and "Being discussed" with the counts of posts, Hacker News points and upvotes on a paper named by any of them, a neutral "not discussed yet" otherwise; a count per cluster; a *Being discussed* filter, which is what `discussed_only` switches on), and **light and dark** by `hostContext.theme` and `host-context-changed` (the site passes its own theme through `host.js`). On the site `/research/map?lens=<key>` starts the map on that lens (the frame gets `data-lens`; `lens` is in the page cache key). On the site `/viz/host.js` still hands over `/research/map.json` as the first result (that has `state`, so no tool call is made) and answers `get_paper` from `/research/map/paper/<id>.json`.
+
+`search` (step 8) is not there yet. **`get_who_said_first`** (public): `topic` (optional), `area` (which area's Signals to compare without a topic; the area to prefer with one), `window` (1 to 14 days, default 7), `detail`. With a topic, the order the kinds of source had it in, in words ("First seen on Hacker News (6 Nov 09:12 UTC), then X from 10:40, ..."), the first item per kind when the Signal shows sources, whether the latest wave began inside the window, and the caveat; `structuredContent` has `order`, `sentence`, `caveat`, `openEnded`, `thin`. Without a topic, which groups of the first published Signal with two or more groups tend to be early across all topics (`/mon/first-public`) and the latest topic starts. Text and JSON only: the ripple view draws waves across groups, which is not the shape of the per-topic answer (the topic hub's tab draws it). `get_topic` also carries `first`, `timeline` and `watch` (with thumbnail addresses) in `structuredContent` and a "Who had it first" and a "Watch" section in the text. **Name on the two servers:** the private server (`/mcp`) keeps its own owner-only `get_who_said_first` (`days`, `board`, all groups, the `ui://tweet-explorer/first-v1.html` ripple view); `registerAgentTools(..., { owner: true })` does not register the public one there, so there is no clash and the owner's tool is unchanged. Prompts: `catch_up` (`lens`, `since`) and `dig_into` (`topic`) return a message that tells the agent
+which tools to call, in which order. Every tool is marked `readOnlyHint` and `openWorldHint: false`.
+
+**On the private server too.** `registerAgentTools` in `src/agentMcp.ts` registers the same tools and prompts on `/mcp`, so one connector is enough for the owner. The names do not
+clash with the private tools (`get_briefing_issue`, `get_research_papers`...). After a deploy, reconnect the connector to see them.
+
 ## Troubleshooting
 
 | Symptom | Cause |
@@ -210,6 +277,7 @@ The view can only reach this server's tools, through the host, and the tools are
 | `403 Wrong audience` | `MCP_POLICY_AUD` holds the AUD tag of another application (for example the admin one) |
 | The Claude app gets a login page instead of the OAuth sign-in | Managed OAuth is off on the `/mcp` application |
 | Signed in, but Access says you are not allowed | The application's Allow policy does not include your email |
-| `403 browsers are not accepted here` | The request had an `Origin` header: it came from a web page, not an MCP client |
+| `403 browsers are not accepted here` | The request to the private `/mcp` had an `Origin` header: it came from a web page, not an MCP client (`/agent/mcp` accepts browsers) |
+| `429` from `/agent/mcp` | More than 60 requests in a minute from one address; wait and retry (`Retry-After`) |
 | The view stays at "rendering widget", or shows an old version | Reconnect the connector and use a new chat; bump the `ui://` address if the page changed |
 | A view shows "no reply from the host" | The host did not answer a `tools/call` within 15–20 seconds; try again |

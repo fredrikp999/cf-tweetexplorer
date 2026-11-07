@@ -6,6 +6,7 @@
 // decides who may reach which (src/index.ts).
 import { DurableObject } from 'cloudflare:workers';
 import { json } from '../lib/twitterapi';
+import { areaOf, parseArea, type Area } from '../signal/area';
 import { fetchSource, streamSummary } from '../summarize/agent.ts';
 import { llmCost, newMeter, TWEET_PRICE } from '../summarize/pricing.ts';
 import type { Meter } from '../summarize/pricing.ts';
@@ -26,6 +27,7 @@ import { mockX } from '../collect/mock.ts';
 import { MAX_MIN_FAVES } from '../collect/likes.ts';
 import { screenTweets } from '../summarize/screen.ts';
 import { pickHero, sectionsOf, themesOf } from '../site/brief.ts';
+import { cleanQuery, hasAll, queryWords, snippetAround, tokens, windowOfSearch, type SearchBriefing } from '../site/search.ts';
 import { arxivThroughCollect, useArxivGate } from '../sources/arxiv';
 import { setYoutubeKey } from '../sources/youtube';
 import { useGateway } from '../llm/gateway.ts';
@@ -67,6 +69,7 @@ export interface Topic {
   slug: string; title: string; description: string; instruction: string; length: Length; model: string;
   imageTemplate?: string; imageAuto?: boolean;   // the same for the briefing's picture
   audioTemplate?: string; audioAuto?: boolean;   // the delivery template for this topic's audio ('' = the first one), and whether to make audio when a briefing is written
+  area?: Area;                                 // the area of the public site it belongs to (none stored: AI); politics briefings show under /politics only
   toSignal?: boolean; signalGroup?: string;    // hand the posts this briefing fetches to Signal (free: already paid for), as a group of this name
   maxCost?: number;                            // data budget per run in USD; 0 or unset = no limit. The run stops fetching when it is spent.
   fallback?: string;                           // OpenRouter model to use if `model` cannot start; '' = none; unset (older topics) = the site default
@@ -99,7 +102,7 @@ export interface Issue {
   links?: string[];
 }
 
-export const RESERVED = new Set(['admin', 'custom', 'lists', 'signal', 'research', 'report', 'feeds', 'topics', 'audio', 'image', 'history', 'api', 'static', 'assets', 'feed', 'rss', 'sitemap', 'robots', 'favicon', 'health', 'ai-plugin']);
+export const RESERVED = new Set(['admin', 'custom', 'lists', 'signal', 'research', 'report', 'feeds', 'topics', 'briefings', 't', 'audio', 'image', 'history', 'api', 'static', 'assets', 'feed', 'rss', 'sitemap', 'robots', 'favicon', 'health', 'ai-plugin', 'politics', 'agent', 'search']);
 export const SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const INTERVALS = [6, 12, 24, 48, 168];
 const MAX_TOPICS = 40, MAX_SOURCES = 8, MAX_TWEETS = 150, STALE_RUN_MS = 20 * 60_000;
@@ -173,6 +176,7 @@ function cleanTopic(b: Record<string, unknown>, prev: Topic | undefined, env: En
   const t: Topic = {
     slug, title, description: str(b.description, 300), instruction: str(b.instruction, INSTRUCTION_MAX),
     length: b.length === 'brief' || b.length === 'detailed' ? b.length : 'standard', model, ...(fallback === undefined ? {} : { fallback }),
+    area: b.area === undefined ? areaOf(prev) : parseArea(b.area),
     toSignal: typeof b.toSignal === 'boolean' ? b.toSignal : prev?.toSignal === true, signalGroup: typeof b.signalGroup === 'string' ? str(b.signalGroup, 40) : prev?.signalGroup ?? '',
     audioTemplate: str(b.audioTemplate, 40), audioAuto: b.audioAuto === true, imageTemplate: str(b.imageTemplate, 40), imageAuto: b.imageAuto === true,
     sources: cleanSources(b.sources), intervalHours, hourUtc, maxCost: Math.min(5, Math.max(0, Math.round((Number(b.maxCost) || 0) * 1000) / 1000)),
@@ -295,7 +299,7 @@ export class PublishDO extends DurableObject<Env> {
   /** The picture at the top of Today. A briefing you chose counts even if it is not listed: its page is public all the same. */
   private hero() {
     const choice = this.heroChoice();
-    const pictures = this.topics().filter((t) => t.listed || t.slug === choice).flatMap((t) => {
+    const pictures = this.topics().filter((t) => areaOf(t) === 'ai' && (t.listed || t.slug === choice)).flatMap((t) => {   // the picture on the AI briefings page is an AI one
       const i = this.newestPicture(t.slug);
       return i?.image ? [{ slug: t.slug, title: t.title, id: i.id, publishedAt: i.publishedAt, v: i.image.created }] : [];
     });
@@ -466,7 +470,7 @@ export class PublishDO extends DurableObject<Env> {
     const { cost: _c, audio, image, ...rest } = i;
     return { ...rest, ...(audio?.status === 'ready' ? { audio: { seconds: audio.seconds ?? 0, v: audio.created } } : {}), ...(image?.status === 'ready' ? { image: { v: image.created, aspect: image.aspect ?? '16:9' } } : {}) };
   };
-  private publicTopic = (t: Topic) => ({ slug: t.slug, title: t.title, description: t.description, intervalHours: t.intervalHours });
+  private publicTopic = (t: Topic) => ({ slug: t.slug, title: t.title, description: t.description, intervalHours: t.intervalHours, area: areaOf(t) });
 
   // ---- scheduling
   private async arm(): Promise<void> {
@@ -689,9 +693,9 @@ export class PublishDO extends DurableObject<Env> {
       // Which recent published briefings mention any of these names (a Signal topic and the names counted under it), newest first.
       if (path === '/pub/mentions') {
         const names = (q.get('q') ?? '').split('|').map((x) => x.trim().toLowerCase()).filter((x) => x.length >= 3).slice(0, 8);
-        const since = Date.now() - 14 * 86_400_000, out: Array<{ slug: string; title: string; id: string; publishedAt: number; tldr: string; theme?: string; anchor?: string }> = [];
+        const since = Date.now() - 14 * 86_400_000, area = parseArea(q.get('area')), out: Array<{ slug: string; title: string; id: string; publishedAt: number; tldr: string; theme?: string; anchor?: string }> = [];   // only briefings of the topic's own area
         const has = (text: string, n: string) => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u').test(text);
-        if (names.length) for (const t of this.topics().filter((x) => x.listed)) {
+        if (names.length) for (const t of this.topics().filter((x) => x.listed && areaOf(x) === area)) {
           for (const i of this.issues(t.slug, 'published', 14)) {
             if (i.publishedAt < since) break;
             const text = i.markdown.toLowerCase();
@@ -701,6 +705,25 @@ export class PublishDO extends DurableObject<Env> {
           }
         }
         return json(out.sort((a, b) => b.publishedAt - a.publishedAt).slice(0, 6));
+      }
+      if (path === '/pub/search') {   // search across the published briefings of listed topics for /search and the public MCP tool: headline and themes first, then the text; bounded to the window and 40 issues a topic
+        const words = queryWords(cleanQuery(q.get('q'))), days = windowOfSearch(q.get('window')), per = Math.max(1, Math.min(25, Number(q.get('per')) || 5)), offset = Math.max(0, Math.min(400, Number(q.get('offset')) || 0));
+        const since = Date.now() - days * 86_400_000, area = parseArea(q.get('area')), found: SearchBriefing[] = [];
+        if (words.length) for (const t of this.topics().filter((x) => x.listed && areaOf(x) === area)) {
+          for (const i of this.issues(t.slug, 'published', 40)) {
+            if (i.publishedAt < since) break;
+            const secs = sectionsOf(i.markdown), inText = (s: { title: string; body: string }) => words.every((w) => `${s.title}\n${s.body}`.toLowerCase().includes(w));
+            const byTitle = secs.find((s) => hasAll(tokens(s.title), words) || words.every((w) => s.title.toLowerCase().includes(w)));
+            const headline = words.every((w) => i.tldr.toLowerCase().includes(w));
+            const byBody = byTitle ?? secs.find(inText);
+            const quality = byTitle ? 3 : headline ? 2 : byBody || words.every((w) => i.markdown.toLowerCase().includes(w)) ? 1 : 0;
+            if (!quality) continue;
+            const sec = byBody;
+            found.push({ slug: t.slug, title: t.title, id: i.id, publishedAt: i.publishedAt, headline: snippetAround(i.tldr, words, 220), ...(sec ? { theme: sec.title, anchor: sec.anchor } : {}), quality });
+          }
+        }
+        found.sort((a, b) => b.quality - a.quality || b.publishedAt - a.publishedAt);
+        return json({ total: found.length, list: found.slice(offset, offset + per) });
       }
       if (path === '/pub/report' && request.method === 'POST') {   // from the public report form (the Worker checked the form and hashed the address)
         const b = (await request.json().catch(() => ({}))) as Record<string, unknown>;

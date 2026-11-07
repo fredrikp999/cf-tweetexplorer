@@ -1,0 +1,33 @@
+// The Topic hub and the Research map views: their inline scripts parse, the views keep to the house rules, and the hub speaks only the messages the host knows.
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { Script } from 'node:vm';
+import hub from '../src/apps/topichub.ts';
+import map from '../src/apps/map.ts';
+import land from '../src/apps/landscape.ts';
+
+const script = (html) => /<script>([\s\S]*)<\/script>/.exec(html)[1];
+
+describe('view scripts', () => {
+  for (const [name, html] of [['topic hub', hub], ['research map', map], ['landscape', land]]) {
+    it(`${name}: one classic inline script that parses`, () => {
+      assert.equal((html.match(/<script/g) ?? []).length, 1);
+      assert.doesNotMatch(html, /type="module"/);
+      new Script(script(html));
+    });
+  }
+  it('the hub asks only for what the server offers', () => {
+    const s = script(hub);
+    const names = [...s.matchAll(/name: '([a-z_]+)'/g)].map((m) => m[1]).sort();
+    assert.deepEqual([...new Set(names)], ['get_topic', 'get_topic_items']);
+    for (const m of ['ui/open-link', 'ui/message', 'ui/update-model-context', 'ui/request-display-mode', 'ui/initialize']) assert.ok(s.includes(m), m);
+  });
+  it('the map asks for its data with the app-only tool and keeps the thank-you line', () => {
+    const s = script(map);
+    assert.ok(s.includes("name: 'get_research_map'"));
+    assert.ok(s.includes('d.thanks'));
+  });
+  it('the landscape asks Claude to show a topic where the host can message', () => {
+    assert.match(script(land), /host\.message[\s\S]{0,200}ui\/message[\s\S]*Show me the topic/);
+  });
+});

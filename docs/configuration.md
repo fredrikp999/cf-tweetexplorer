@@ -85,6 +85,7 @@ Bindings in `wrangler.jsonc`: the six Durable Objects, the R2 bucket `AUDIO` (cr
 | Schedule | Every 6, 12, 24 or 48 hours, or weekly, from a UTC hour. |
 | Data budget | A cap on twitterapi.io spend per run. Also editable for every briefing at once under Budgets. |
 | Auto-publish, Listed | Publish at once or keep a draft; show on the landing page or only by link. |
+| Area | AI (default) or Politics. A politics briefing shows under `/politics` (In brief, `/politics/briefings`, the menu) and never on the AI pages; its own address (`/<slug>`) does not change. Stored in the topic (`area`, none stored means AI). The slug `politics` (and `agent`, `search`) is reserved for new topics; a briefing already called `politics` is hidden by the area page at `/politics`, so rename it. |
 | Audio, Picture | A template (voice, style, model; image model, shape, prompt), made automatically or by hand. |
 | Signal | Also count the posts this briefing fetches in Signal (free), as a group of this name (starts at weight ×2). |
 
@@ -99,7 +100,7 @@ button. Desktop notifications are set here too. New items show in Live feed.
 
 **Signal setup** (`/admin` → Signal → Setup and publishing): sources and the group each votes in; group weights (0 mutes, 3 triples); topic rules (words or AI,
 the model, filtered words, and hide, merge or rename a topic, which applies everywhere and also to what was counted before); and the top-level
-Signals, each with its groups, its public address, and whether it is published and shows its sources.
+Signals, each with its groups, its public address, its **Area** (AI, the default, or Politics) and whether it is published and shows its sources. The area decides where it shows: an AI Signal on the AI pages, a Politics Signal under `/politics`; the landing page of an area takes its numbers from the first published Signal of that area. Stored in the board (`area`, none stored means AI), so nothing needs migrating.
 
 **Feed pages** (`/admin` → Feed pages): public pages at `/feeds/<address>` that show items from what is watched. Each has a name, an address and a
 line under the name; **From** (everything, all sources of one kind, or one feed list, account list or X List); **Only** (one kind: YouTube videos,
@@ -116,6 +117,18 @@ run, each next to what has been spent.
 **Retrying and re-running**: see [deployment.md](deployment.md#retrying-and-re-running).
 
 ---
+
+**Lenses** (`/admin` → Signal → setup → Lenses)
+
+The card has an **Area** chooser (AI, Politics): each area has its own lenses, colours (one lens per colour within an area), starting set and suggestions (the model sorts the topics of that area's Signals only).
+
+| Setting | Meaning |
+| --- | --- |
+| Name, key, one line | What readers see; the key is the address (`?lens=security`) and cannot change once saved. |
+| Colour | One of six, each used by one lens per area. |
+| Starting lenses | An area that was never saved gets its own once: AI has Security, Agentic engineering, Observability, Data, Models; Politics has Elections, Economy, War and security, Law and rights, Climate and energy (`seedLenses`). Change or delete them freely. |
+| Terms | Topic names and words, one per line. A topic is in the lens when a term is its name or whole words of it. |
+| Suggest topics | Asks the Signal topic model which current topics belong where; you tick what to add. Costs a few cents inside the daily cap (Costs: "Lens suggestions (AI)"). |
 
 ## Costs
 

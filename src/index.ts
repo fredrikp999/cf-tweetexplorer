@@ -5,6 +5,7 @@ import { handlePublic } from './site/public';
 import { arxivThroughCollect, useArxivGate } from './sources/arxiv';
 import { setYoutubeKey } from './sources/youtube';
 import { handleMcp } from './mcp';
+import { handleAgentMcp } from './agentMcp';
 import { recordCost } from './lib/costs';
 import { serveAudio, serveImage } from './media/audio-serve';
 import { PROFILE_PRICE, tweetCallCost } from './summarize/pricing.ts';
@@ -70,6 +71,8 @@ export default {
     useArxivGate(arxivThroughCollect(env));   // every request to arXiv goes through one place: its limit is for all of this app together
     useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     const url = new URL(request.url);
+    // The public MCP server: no sign-in, read only, rate limited per address. It comes before the private one and is not behind Access (its address does not start with /mcp).
+    if (url.pathname === '/agent/mcp') return await handleAgentMcp(request, env);
     // The MCP server has its own Access application (and audience), so a service token for it reaches nothing else.
     if (url.pathname === '/mcp') {
       const who = await verifyAccess(request, env, env.MCP_POLICY_AUD);

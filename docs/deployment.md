@@ -5,7 +5,7 @@ How to deploy the Worker to Cloudflare (the examples use `tweets.example.com`; u
 The site has three parts:
 - **Public** (no login): `/` is **Today** (each briefing's headline and themes, and what Signal says is talked about now); `/<topic>` a topic's
   latest briefing, `/<topic>/<date>` an earlier one, `/<topic>/archive` the list of earlier days, `/<topic>/feed.xml` its RSS feed;
-  `/report/<topic>/<date>` the "Report an error" form; `/signal`, `/signal/<address>`, `/signal/<address>/t/<topic>` and `/signal/method` for Signal;
+  `/report/<topic>/<date>` the "Report an error" form; `/signal`, `/signal/<address>`, `/t/<topic>` (and the old `/signal/<address>/t/<topic>`, which redirects) and `/signal/method` for Signal;
   `/history` for reports and `/lists` for the lists behind the briefings.
 - **`/admin`** (Access): one private page, opening on **Overview** (what needs attention, with a button to fix or retry each thing). Its tabs are
   grouped by what you do there:
@@ -271,7 +271,7 @@ shared document (`public/admin/x-lists-scoble.json`, grouped as in the document;
     quiet lists. The likes threshold is a trade-off: it hides quiet but important posts, so lower it (3 to 5) for lists of small
     accounts.
 - **A group can be viewed or summarized together** as one pool. Very busy lists are cut off at the depth you choose.
-- **Public Lists page** (`/lists`, linked from the public sidebar and landing page): the X lists grouped by theme, each with its
+- **Public Lists page** (`/lists`, linked from the More menu and landing page): the X lists grouped by theme, each with its
   description and a link out to x.com. Each list has a **Public** switch in `/admin` → Lists → X Lists (plus "Show all publicly" /
   "Hide all" per group). Lists from Scoble's document start public (they are public lists on X); lists you add yourself start hidden
   unless you tick "Show on the public Lists page". Only the id, name, group and description are exposed. `lists` is a reserved address.
@@ -307,6 +307,10 @@ Notes
 Access application. The Claude app signs in with your Access login through **Managed OAuth**; Claude Code and scripts use a **service
 token**. `get_signal` and `get_costs` open as interactive views (MCP Apps) in the Claude app. Setup, the tools and how the views work:
 [mcp.md](mcp.md).
+
+**The public MCP server** (`/agent/mcp`, explained for readers at `/agent`) needs no Access application and no secret. Its only setup is the Workers Rate Limiting binding
+`AGENT_LIMIT` (60 requests a minute per address), already in `wrangler.jsonc` for production and staging (separate `namespace_id`s); the next deploy creates it. Nothing to
+create by hand. Both Access applications stay as they are: `/agent/mcp` does not start with `/mcp`, so it is outside the MCP one.
 
 ## Security model
 - Every request, including static files, must carry a valid Cloudflare Access JWT (checked in the Worker).

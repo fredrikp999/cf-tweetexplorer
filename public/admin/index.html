@@ -742,6 +742,15 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
           <p class="note" id="sigBuiltIn" style="line-height:1.8"></p></div></details>
     </details>
 
+    <details class="card" id="sigLens" open style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Lenses <span class="note" id="sigLensNote" style="font-weight:400"></span></summary>
+      <div class="note" style="margin:8px 0">A lens is an area of interest (Security, Observability…). Readers choose one on the public Topics and Signal pages: its topics come first and are highlighted, everything else stays below, dimmed, and one or two big topics from outside still show. A lens is a list of <b>terms</b>: a topic is in it when a term is its name, or whole words of its name (“mcp” holds “mcp auth bypass”). At most six per area, each with its own colour.</div>
+      <label style="display:block;margin-bottom:8px">Area <select id="sigLensArea" aria-label="Area of the lenses"><option value="ai">AI</option><option value="politics">Politics (under /politics)</option></select></label>
+      <div id="sigLensList" style="margin-bottom:10px"></div>
+      <div id="sigLensForm"></div>
+      <div class="optrow" style="margin-top:10px"><button class="go ghost" id="sigLensNew" type="button">New lens</button>
+        <button class="go ghost" id="sigLensSuggest" type="button" title="Asks the topic model (it costs a few cents, inside the daily cap) which current Signal topics belong to which lens. Nothing is changed until you accept.">Suggest topics</button></div>
+      <div id="sigLensSug" style="margin-top:10px"></div>
+    </details>
     <h2 class="ssh" id="ssPulse"><span>4</span> Research pulse <small>how much is being published</small></h2>
     <div class="card" style="margin-bottom:14px">
       <div class="note" style="margin-bottom:10px">Counts new papers per topic on arXiv as a share of all AI papers, and flags a topic whose share is unusually high against the last 8 weeks. It is public at <a href="/research" target="_blank" rel="noopener">/research</a>. It needs no watches and costs nothing. arXiv allows one request every 3 seconds, so a new topic's history takes a minute or two to fill in. Changing a topic's search starts its history again. Thank you to arXiv for use of its open access interoperability.</div>
@@ -3677,6 +3686,64 @@ async function sigSetFilter(words) {
   const r = await post('/mon/signal-filter-set', { words });
   sig.filter = r; renderSigFilter(); await loadSignal();
 }
+// ---- Lenses: areas of interest the public Topics and Signal pages order and highlight by (src/signal/lens.ts).
+let lensData = null, lensEdit = null, lensArea = 'ai';   // lensArea: the area whose lenses the card shows
+async function loadLenses() {
+  try { lensData = await (await fetch('/mon/lenses')).json(); } catch { return; }
+  renderLenses();
+}
+function renderLenses() {
+  if (!lensData) return;
+  const list = lensData.lenses[lensArea] || [], hex = (c) => (lensData.palette[c] || {}).light || '#888';
+  $('#sigLensNote').textContent = `· ${list.length} of ${lensData.max}`;
+  $('#sigLensList').innerHTML = list.length ? list.map((l) => `<div class="optrow" style="margin-bottom:6px" data-lkey="${esc(l.key)}"><span aria-hidden="true" style="width:14px;height:14px;border-radius:4px;background:${hex(l.color)};display:inline-block"></span>
+    <b>${esc(l.name)}</b> <span class="note">${esc(l.color)} · ?lens=${esc(l.key)} · ${l.terms.length} term${l.terms.length === 1 ? '' : 's'}</span>
+    <button class="go ghost" data-ledit type="button">Edit</button><button class="link" data-ldel type="button" style="color:var(--err)">Delete</button></div>`).join('') : '<span class="note">No lenses. Readers see the plain lists.</span>';
+  $('#sigLensNew').disabled = list.length >= lensData.max;
+  const l = lensEdit;
+  $('#sigLensForm').innerHTML = !l ? '' : `<div class="card" style="border-style:dashed"><div class="optrow" style="margin-bottom:8px">
+    <label>Name <input name="name" value="${esc(l.name)}" maxlength="30" style="width:180px"></label>
+    <label>Key <input name="key" value="${esc(l.key)}" maxlength="20" ${l.isNew ? '' : 'readonly'} placeholder="security" style="width:140px" title="Part of the address: ?lens=security. It cannot change once saved."></label>
+    <label>Colour <select name="color">${Object.entries(lensData.palette).map(([k, c]) => `<option value="${k}"${k === l.color ? ' selected' : ''}>${esc(c.label)}${list.some((x) => x.color === k && x.key !== l.key) ? ' (taken)' : ''}</option>`).join('')}</select></label></div>
+    <label style="display:block;margin-bottom:8px">One line (shown to readers) <input name="description" value="${esc(l.description)}" maxlength="120" style="width:100%"></label>
+    <label style="display:block">Terms, one per line or separated by commas <textarea name="terms" rows="6" maxlength="6000">${esc(l.terms.join('\n'))}</textarea></label>
+    <div class="optrow" style="margin-top:10px"><button class="go" data-lsave type="button">Save</button><button class="go ghost" data-lcancel type="button">Cancel</button></div></div>`;
+}
+async function lensSave(lens) { await post('/mon/lens-save', { ...lens, area: lensArea }); await loadLenses(); }
+function renderLensSuggest(r) {
+  const list = lensData.lenses[lensArea];
+  $('#sigLensSug').innerHTML = `<div class="note" style="margin-bottom:6px">The model looked at ${r.topics} topics (cost $${(r.cost || 0).toFixed(4)}). Tick the ones to add; nothing is saved until you press Add.</div>`
+    + list.filter((l) => r.suggestions[l.key]).map((l) => `<div class="card" style="margin-bottom:8px" data-skey="${esc(l.key)}"><b>${esc(l.name)}</b>
+      <div class="optrow" style="margin:6px 0">${r.suggestions[l.key].map((t) => `<label class="chk"><input type="checkbox" value="${esc(t.term)}"${t.already ? ' disabled' : ' checked'}> ${esc(t.label)}${t.already ? ' <span class="note">(already in)</span>' : ''}</label>`).join('')}</div>
+      <button class="go" data-sadd type="button">Add ticked to ${esc(l.name)}</button></div>`).join('');
+}
+$('#sigLens').addEventListener('click', async (e) => {
+  const row = e.target.closest('[data-lkey]'), cur = (key) => lensData.lenses[lensArea].find((x) => x.key === key);
+  try {
+    if (e.target.closest('#sigLensNew')) { const used = lensData.lenses[lensArea].map((x) => x.color); lensEdit = { isNew: true, key: '', name: '', description: '', color: Object.keys(lensData.palette).find((c) => !used.includes(c)) || 'blue', terms: [] }; renderLenses(); }
+    else if (e.target.closest('[data-ledit]')) { lensEdit = { ...cur(row.dataset.lkey) }; renderLenses(); }
+    else if (e.target.closest('[data-lcancel]')) { lensEdit = null; renderLenses(); }
+    else if (e.target.closest('[data-lsave]')) {
+      const f = $('#sigLensForm'), v = (n) => f.querySelector(`[name=${n}]`).value;
+      await lensSave({ key: v('key'), name: v('name'), description: v('description'), color: v('color'), terms: v('terms') });
+      lensEdit = null; renderLenses(); toast('Lens saved');
+    }
+    else if (e.target.closest('[data-ldel]')) {
+      if (!confirm(`Delete the lens “${cur(row.dataset.lkey).name}”? Readers who chose it see the plain lists.`)) return;
+      await post('/mon/lens-delete', { key: row.dataset.lkey, area: lensArea }); await loadLenses(); toast('Lens deleted');
+    }
+    else if (e.target.closest('#sigLensSuggest')) {
+      const b = e.target.closest('#sigLensSuggest'); b.disabled = true; $('#sigLensSug').innerHTML = '<span class="note">Asking the model…</span>';
+      try { renderLensSuggest(await post('/mon/lens-suggest', { area: lensArea })); } catch (err) { $('#sigLensSug').innerHTML = ''; toast(err.message); } finally { b.disabled = false; }
+    }
+    else if (e.target.closest('[data-sadd]')) {
+      const box = e.target.closest('[data-skey]'), l = cur(box.dataset.skey), add = [...box.querySelectorAll('input:checked')].map((i) => i.value);
+      if (!add.length) return toast('Tick at least one topic');
+      await lensSave({ ...l, terms: [...l.terms, ...add] }); box.remove(); toast(`Added ${add.length} to ${l.name}`);
+    }
+  } catch (err) { toast(err.message); }
+});
+$('#sigLensArea').addEventListener('change', (e) => { lensArea = e.target.value; lensEdit = null; $('#sigLensSug').innerHTML = ''; renderLenses(); });
 let sigTimer;
 function renderSigAi() {
   const a = sig.ai, box = $('#sigAi');
@@ -3735,11 +3802,12 @@ function renderBoardInfo() {
 }
 function renderSignal() {
   renderSigAi(); renderSigFilter(); renderBoardInfo();
+  if (!lensData) loadLenses();
   const act = sigActive(), total = sig.groups.reduce((n, g) => n + g.items, 0);
   $('#sigBoardSel').innerHTML = '<option value="">Everything</option>' + sig.boards.map((b) => `<option value="${esc(b.id)}"${b.id === sigBoard ? ' selected' : ''}>${esc(b.title)}</option>`).join('');
   const gname = (k) => sig.everyGroup.find((g) => g.key === k)?.name ?? '(removed group)';
   $('#sigBoards').innerHTML = sig.boards.length ? sig.boards.map((b) => `<div class="ssboard" data-bid="${esc(b.id)}"><div class="top"><b>${esc(b.title)}</b>
-      ${b.public ? '<span class="badge active">Published</span>' : '<span class="badge">Draft · not public</span>'}${b.public && b.proof ? '<span class="badge">with sources</span>' : ''}
+      ${b.public ? '<span class="badge active">Published</span>' : '<span class="badge">Draft · not public</span>'}${b.public && b.proof ? '<span class="badge">with sources</span>' : ''}${b.area === 'politics' ? '<span class="badge">Politics</span>' : ''}
       <div class="acts"><button class="go ghost" data-bopen>View results</button><button class="go ghost" data-bedit>Edit</button>${b.public ? `<a class="go ghost" href="/signal/${esc(b.slug)}" target="_blank" rel="noopener">Open public page</a>` : ''}</div></div>
       <div class="note">${b.groups.length ? 'Groups: ' + esc(b.groups.map(gname).join(', ')) : 'No groups yet, so nothing is shown.'}</div>
       <div class="note">${b.public ? `Public address <code>/signal/${esc(b.slug)}</code>. Readers see group names, topics and scores${b.proof ? ', and the items and sources behind each topic' : ''}; never watch names, handles or feed addresses.` : 'Not visible to anyone but you until you publish it.'}</div></div>`).join('') : '<div class="note">None yet. Create one to bundle groups and publish them.</div>';
@@ -3864,6 +3932,7 @@ function sigBoardForm(b) {
     <div class="optrow" style="margin-bottom:8px"><label>Name <input name="title" value="${esc(b.title)}" maxlength="60" placeholder="AI" style="width:200px"></label>
       <label>Address <input name="slug" value="${esc(b.slug)}" maxlength="40" placeholder="from the name" style="width:170px" title="Lowercase letters, digits and dashes. The public page is /signal/address"></label></div>
     <label style="display:block;margin-bottom:8px">Description (shown on the public page) <input name="description" value="${esc(b.description)}" maxlength="300" style="width:100%"></label>
+    <label style="display:block;margin-bottom:8px" title="The public site keeps the areas apart: an AI Signal shows on the AI pages, a Politics Signal under /politics. The landing page of an area takes its numbers from the first published Signal of that area.">Area <select name="area"><option value="ai"${b.area === 'politics' ? '' : ' selected'}>AI (the main site)</option><option value="politics"${b.area === 'politics' ? ' selected' : ''}>Politics (under /politics)</option></select></label>
     <div class="note" style="margin-bottom:4px">Groups in this Signal</div>
     <div class="optrow" style="margin-bottom:8px">${sig.everyGroup.map((g) => `<label class="pill"><input type="checkbox" name="bg" value="${esc(g.key)}"${b.groups.includes(g.key) ? ' checked' : ''}><span>${esc(g.name)}</span></label>`).join('') || '<span class="note">No groups yet.</span>'}</div>
     <label class="chk"><input type="checkbox" name="public"${b.public ? ' checked' : ''}> Published on the public site</label>
@@ -3933,7 +4002,7 @@ sigOn('click', async (e) => {
     else if (e.target.closest('[data-bsave]')) {
       const f = $('#sigBoardForm'), q = (n) => f.querySelector(`[name=${n}]`);
       const saved = await post('/mon/signal-board-save', { id: f.querySelector('[data-bid]').dataset.bid || undefined, title: q('title').value, slug: q('slug').value, description: q('description').value,
-        groups: [...f.querySelectorAll('[name=bg]:checked')].map((i) => i.value), public: q('public').checked, proof: q('proof').checked });
+        groups: [...f.querySelectorAll('[name=bg]:checked')].map((i) => i.value), public: q('public').checked, proof: q('proof').checked, area: q('area').value });
       f.innerHTML = ''; await loadSignal(); toast(saved.public ? `Published at /signal/${saved.slug}` : 'Saved');
     } else if (e.target.closest('[data-bdel]')) {
       const f = $('#sigBoardForm'), id = f.querySelector('[data-bid]').dataset.bid;
@@ -4287,7 +4356,8 @@ function renderDetail(resetForm) {
     <details class="fold" data-fold="topic:publishing" open><summary>Publishing<span class="hint">schedule, drafts, visibility</span></summary><div class="foldbody">
     <label class="check"><input type="checkbox" name="enabled" ${t.enabled ? 'checked' : ''}> Run on schedule</label>
     <label class="check"><input type="checkbox" name="autoPublish" ${t.autoPublish ? 'checked' : ''}> Publish automatically (otherwise each run waits as a draft for you to approve)</label>
-    <label class="check"><input type="checkbox" name="listed" ${t.listed ? 'checked' : ''}> Show on the landing page (off: only people with the link find it)</label></div></details>
+    <label class="check"><input type="checkbox" name="listed" ${t.listed ? 'checked' : ''}> Show on the landing page (off: only people with the link find it)</label>
+    <label class="check" style="display:block" title="Politics briefings show under /politics (In brief, the briefings list) and never on the AI pages. The address of the briefing itself does not change."><span>Area</span> <select name="area"><option value="ai"${t.area === 'politics' ? '' : ' selected'}>AI (the main site)</option><option value="politics"${t.area === 'politics' ? ' selected' : ''}>Politics (under /politics)</option></select></label></div></details>
     <details class="fold" data-fold="topic:signal"><summary>Signal<span class="hint">${t.toSignal ? 'feeds Signal' : 'off'}</span></summary><div class="foldbody">
       <label class="check"><input type="checkbox" name="toSignal" ${t.toSignal ? 'checked' : ''}> Also count the posts this briefing fetches in Signal (free: they are already paid for, so Signal does not fetch them again)</label>
       <label>Signal group <input name="signalGroup" maxlength="40" value="${esc(t.signalGroup || '')}" placeholder="${esc(t.title || 'the briefing title')}"></label>

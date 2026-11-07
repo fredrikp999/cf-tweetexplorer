@@ -20,15 +20,15 @@ describe('the frame of a view', () => {
 });
 
 /** Runs host.js against a fake page: what it sends the frame, fetches and opens. */
-function host(kind, base) {
+function host(kind, base, readyState = 'complete') {
   const sent = [], fetched = [], opened = [], listeners = [], classes = new Set(), contentWindow = { postMessage: (m) => sent.push(m) };
   const f = { dataset: { kind, base }, contentWindow, style: {}, classList: { contains: (c) => classes.has(c), toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)) } };
   const window = { addEventListener: (_, fn) => listeners.push(fn), open: (...a) => opened.push(a) };
   const fetch = (path) => { fetched.push(path); return Promise.resolve({ ok: !path.includes('missing'), text: () => Promise.resolve('{"a":1}') }); };
   let listeningWhenLoaded = null;
   Object.defineProperty(f, 'src', { set(v) { f.loaded = v; listeningWhenLoaded = listeners.length > 0; } });
-  vm.runInNewContext(HOST_JS, { document: { getElementById: () => f }, window, fetch, Number, String, Math });
-  assert.equal(listeningWhenLoaded, true, 'the view says hello once, so the host must listen before the frame loads');
+  vm.runInNewContext(HOST_JS, { document: { getElementById: () => f, readyState }, window, fetch, Number, String, Math });
+  if (readyState === 'complete') assert.equal(listeningWhenLoaded, true, 'the view says hello once, so the host must listen before the frame loads');
   const say = (data, source = contentWindow) => listeners[0]({ source, data });
   return { say, sent, fetched, opened, f, settle: () => new Promise((r) => setTimeout(r)) };
 }
@@ -85,5 +85,33 @@ describe('the host script', () => {
     h.say({ id: 9, method: 'ui/request-display-mode', params: { mode: 'fullscreen' } }); assert.equal(h.sent.at(-1).result.mode, 'fullscreen');
     h.say({ method: 'ui/notifications/size-changed', params: { height: 300 } }); assert.equal(h.f.style.height, '800px');
     h.say({ id: 10, method: 'ui/request-display-mode', params: { mode: 'inline' } }); assert.equal(h.sent.at(-1).result.mode, 'inline');
+  });
+});
+
+describe('the host script, for the landscape', () => {
+  test('gives the view its first data from the full address, and answers get_overview from the public JSON only for valid arguments', async () => {
+    const h = host('landscape', '/overview.json?window=3&lens=security');
+    assert.equal(h.f.loaded, '/viz/landscape.html');
+    h.say({ method: 'ui/notifications/initialized' }); await h.settle();
+    assert.deepEqual(h.fetched, ['/overview.json?window=3&lens=security']);
+    h.say({ id: 3, method: 'tools/call', params: { name: 'get_overview', arguments: { window: 7, lens: 'agentic' } } }); await h.settle();
+    h.say({ id: 4, method: 'tools/call', params: { name: 'get_overview', arguments: { window: 1 } } }); await h.settle();
+    assert.deepEqual(h.fetched.slice(1), ['/overview.json?window=7&lens=agentic', '/overview.json?window=1']);
+    const before = h.fetched.length;
+    for (const args of [{ window: 5 }, { window: '3' }, { lens: '../x' }, { lens: 'A' }, { window: 1, lens: 'x&window=7' }]) {
+      h.say({ id: 5, method: 'tools/call', params: { name: 'get_overview', arguments: args } });
+      assert.equal(h.fetched.length, before, JSON.stringify(args)); assert.ok(h.sent.at(-1).error);
+    }
+    h.say({ id: 6, method: 'tools/call', params: { name: 'get_topic', arguments: {} } }); assert.ok(h.sent.at(-1).error);
+  });
+  test('loads the frame only after the page has loaded, so the text comes first', () => {
+    const h = host('landscape', '/overview.json', 'loading');
+    assert.equal(h.f.loaded, undefined);
+  });
+  test('answers ui/message and ui/update-model-context harmlessly, and offers no way to message', () => {
+    const h = host('landscape', '/overview.json');
+    h.say({ id: 7, method: 'ui/update-model-context', params: {} }); h.say({ id: 8, method: 'ui/message', params: {} });
+    assert.ok(!h.sent[0].error && !h.sent[1].error);
+    h.say({ id: 1, method: 'ui/initialize' }); assert.equal(h.sent.at(-1).result.hostCapabilities.message, undefined);
   });
 });

@@ -18,6 +18,13 @@ import { distinctive, findEvergreen, notSteady, rising, scoreTerms, type Counts,
 import { boostByEngagement, indexItems, mergeTopics, nestTopics, partsAfterParents, REACTION_CAP, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
 import { QUIET_MS, findWaves, foldTerm, publicFirst, rankWaves, watchStartMs, scoreFirsts, type FirstItem } from '../signal/first';
 import { cleanTitle, isBait } from '../signal/clean';
+import { cleanLayout, coCounts, layoutKeys, layoutLandscape, type Layout } from '../signal/landscape';
+import { firstByKind, pickWatch, timelineDots, type TopicWatch } from '../signal/topicview';
+import { evidenceSegments, fallbackSummary, topicSlug, topicState, usualLevel, type EvItem, type EvKind, type TopicData, type TopicPaper } from '../signal/topicpage';
+import { areaHint, areaOf, parseArea, rankByArea, type Area } from '../signal/area';
+import { LENS_AREAS, LENS_PALETTE, MAX_LENSES, SUGGEST_TOPICS, cleanLens, lensMatch, lensesOfTopic, paperLensMask, parseSuggestions, seedLenses, suggestSystem, suggestUser, type Lens, type LensArea } from '../signal/lens';
+import { cleanQuery, itemQuality, likeOf, paperQuality, queryWords, rankItems, rankPapers, rankTopics, snippetAround, topicFor, topicQuality, windowOfSearch, type SearchItem, type SearchPaper, type SearchTopic } from '../site/search';
+import { SUMMARY_ITEMS, parseSummary, pickSummaryItems, summaryFresh, summarySystem, summaryUser } from '../signal/summary';
 import { setYoutubeKey } from '../sources/youtube';
 import { AI_BATCH, VAGUE, estimatePer1000, parseTopics, topicSystem, topicUser } from '../signal/ai';
 import { DEFAULT_FILTER, cleanFilter, makeBlocker, type FilterWord } from '../signal/filter';
@@ -65,7 +72,16 @@ interface Spend { day: string; cost: number }
 
 const today = () => new Date().toISOString().slice(0, 10); // UTC day
 /** A top-level Signal: a named set of groups, with its own page when published (/signal/<slug>). */
-interface Board { id: string; slug: string; title: string; description: string; groups: string[]; public: boolean; /** Addresses it had before: they redirect to the current one. */ oldSlugs?: string[]; /** The public page may show the items behind each topic, with their sources. */ proof?: boolean }
+interface Board { id: string; slug: string; title: string; description: string; groups: string[]; public: boolean; /** Addresses it had before: they redirect to the current one. */ oldSlugs?: string[]; /** The public page may show the items behind each topic, with their sources. */ proof?: boolean; /** The area this Signal belongs to; none stored means AI. */ area?: Area }
+/** A topic as Signal lists it (see `describeTopics`): the lead term with its names, what goes with it and the items it comes from. */
+interface Described extends ScoredTerm { label: string; members: string[]; related: string[]; reactions: number; parent?: string }
+/** A published Signal over its last 7 days, as the topic pages and summaries read it. */
+interface BoardView {
+  board: Board; shown: GroupInfo[]; bySlug: Map<string, ScoredTerm>;
+  c: { terms: ScoredTerm[]; of: Map<string, string>; groups: GroupInfo[]; from: string; to: string; days: number; baselineOk: boolean; items: Record<string, number> };
+  top?: { top: Described[]; describe: (t: ScoredTerm) => Described };
+}
+const SUMMARY_TOPICS = 24, SUMMARY_PER_BOARD = 12, SUMMARY_KEEP_DAYS = 3, SUMMARY_RETRY_MS = 10 * 60_000;
 /**
  * A feed page: a public page that shows items from what is watched, defined in the admin. `source` is a list ("f:<id>" feed list, "a:<id>" account list,
  * "x:<id>" X List), a kind of source ("src:youtube"), or "all". It shows the newest, or the most reacted in the last `days`, at most `count`, and with
@@ -80,6 +96,11 @@ const BOARD_SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/, BOARD_RESERVED = new Set(['admin
 const slugify = (t: string) => t.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
 /** How much people reacted to an item: likes (HN points, stars and upvotes arrive as likes), plus replies, retweets and quotes counted double. */
 const reactionsOf = (j: unknown): number => { const x = j as { likeCount?: number; replyCount?: number; retweetCount?: number; quoteCount?: number }; return Math.max(0, Math.round((Number(x.likeCount) || 0) + 2 * ((Number(x.replyCount) || 0) + (Number(x.retweetCount) || 0) + (Number(x.quoteCount) || 0)))); };
+/** Likes (HN: points), replies (HN: comments) and views of an item, each -1 when the source did not give it. */
+const itemNumbers = (j: unknown): [number, number, number] => {
+  const x = j as { likeCount?: unknown; replyCount?: unknown; viewCount?: unknown }, num = (v: unknown) => (v === undefined || v === null || !Number.isFinite(Number(v)) ? -1 : Math.max(0, Math.round(Number(v))));
+  return [num(x.likeCount), num(x.replyCount), num(x.viewCount)];
+};
 const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 /** Merged and renamed topics from the browser: lowercase names of at most 80 characters, chains followed to their end, no name pointing at itself. */
 function cleanAliases(raw: unknown): Record<string, string> {
@@ -126,8 +147,14 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('CREATE TABLE IF NOT EXISTS item_log (watch TEXT NOT NULL, item TEXT NOT NULL, day TEXT NOT NULL, ts INTEGER NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, disc TEXT NOT NULL, by TEXT NOT NULL, match TEXT NOT NULL, PRIMARY KEY (watch, item)) WITHOUT ROWID');
     sql.exec('CREATE INDEX IF NOT EXISTS item_log_day ON item_log (day)');
     try { sql.exec('ALTER TABLE item_log ADD COLUMN eng INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }   // reactions (likes, replies, shares) when the item was logged
+    for (const col of ['likes', 'replies', 'views']) { try { sql.exec(`ALTER TABLE item_log ADD COLUMN ${col} INTEGER NOT NULL DEFAULT -1`); } catch { /* already there */ } }   // the numbers behind `eng`, one by one (-1: not recorded), for the topic page's evidence strip
+    // Topic summaries (section 8 of INTENT.md): one paragraph per topic per day, written by the Signal topic model from the topic's items, with the items it says it used.
+    sql.exec('CREATE TABLE IF NOT EXISTS topic_summary (slug TEXT NOT NULL, day TEXT NOT NULL, term TEXT NOT NULL, text TEXT NOT NULL, items TEXT NOT NULL, n INTEGER NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (slug, day)) WITHOUT ROWID');
+    // The landscape of the landing page: one layout per Signal, window and day, so tomorrow's starts from today's and the picture stays steady.
+    sql.exec('CREATE TABLE IF NOT EXISTS landscape (board TEXT NOT NULL, win INTEGER NOT NULL, day TEXT NOT NULL, at INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (board, win, day)) WITHOUT ROWID');
     this.backfillSignal();
     this.backfillItemLog();
+    this.backfillItemNumbers();
   }
 
   // ---- storage helpers
@@ -168,6 +195,7 @@ export class MonitorDO extends DurableObject<Env> {
   private async reschedule(): Promise<void> {
     const wake = this.aiWake(), now = Date.now(), tidy = Date.parse(today() + 'T00:00:00Z') + 86_400_000 + 60_000;
     let next = wake ? Math.min(wake, tidy) : tidy;
+    const sums = this.summaryWake(); if (sums) next = Math.min(next, sums);
     const pulse = this.pulseWake(); if (pulse) next = Math.min(next, pulse);
     next = Math.min(next, this.researchWake());
     const map = this.mapWake(); if (map) next = Math.min(next, map);
@@ -177,6 +205,7 @@ export class MonitorDO extends DurableObject<Env> {
 
   async alarm(): Promise<void> {
     if (!this.collectReady()) await this.syncCollect();
+    try { await this.summaryStep(Date.now() + 20_000); } catch (err) { console.error('topic summaries failed', err instanceof Error ? err.message : String(err)); }   // before the naming work: a day's summaries cost cents, and the cap is shared
     try { await this.processAi(Date.now() + 20_000); } catch (err) { console.error('signal topics failed', err instanceof Error ? err.message : String(err)); }
     this.pruneSignal();
     const researchUntil = Date.now() + 25_000;
@@ -348,13 +377,184 @@ export class MonitorDO extends DurableObject<Env> {
     const bit = new Map(topics.map((t, i) => [t.id, 1 << i] as const)), masks = new Map<string, number>();
     for (const x of sql.exec<{ topic: string; paper: string }>('SELECT topic, paper FROM research_topic_papers')) masks.set(x.paper, (masks.get(x.paper) ?? 0) | (bit.get(x.topic) ?? 0));
     const start = Date.parse(m.from), papers: unknown[] = [];
-    for (const p of sql.exec<{ id: string; title: string; published: number; authors: string; signals: string }>('SELECT id, title, published, authors, signals FROM research_papers ORDER BY published DESC')) {
+    const lenses = this.lenses('ai').slice(0, MAX_LENSES);   // the lenses of the AI area; each paper carries the ones its title or abstract uses the words of
+    for (const p of sql.exec<{ id: string; title: string; published: number; authors: string; signals: string; abstract: string }>('SELECT id, title, published, authors, signals, abstract FROM research_papers ORDER BY published DESC')) {
       const leaf = m.assign[p.id], mask = masks.get(p.id) ?? 0;
       if (leaf === undefined || !mask || p.published < start) continue;
       const a = attentionOf(JSON.parse(p.signals) as PaperSignals, JSON.parse(p.authors) as string[]);
-      papers.push([p.id, p.title, Math.floor((p.published - start) / 86_400_000), mask, leaf, a.top ? 1 : 0, Math.round(a.score * 10) / 10, a.hf?.upvotes ?? 0, a.hn?.points ?? 0, a.mentions.length]);
+      papers.push([p.id, p.title, Math.floor((p.published - start) / 86_400_000), mask, leaf, a.top ? 1 : 0, Math.round(a.score * 10) / 10, a.hf?.upvotes ?? 0, a.hn?.points ?? 0, a.mentions.length, paperLensMask(lenses, p.title, p.abstract)]);
     }
-    return { state: 'ready' as const, built: row.built, from: m.from, days: Math.floor((row.built - start) / 86_400_000), lagDays: 2, topics: shown, leaves: m.leaves, joins: m.joins, papers };
+    return { state: 'ready' as const, built: row.built, from: m.from, days: Math.floor((row.built - start) / 86_400_000), lagDays: 2, topics: shown, leaves: m.leaves, joins: m.joins, papers, lenses: lenses.map((l) => ({ key: l.key, name: l.name })) };
+  }
+  /**
+   * What the landing page needs besides Signal: the latest written summaries (by topic address), the last 14 days of mentions for the topics asked for (`spark`: topic names),
+   * the papers of the last week with how much attention each has had, the research topics that are rising, and the most reacted articles and Hacker News stories of public feed pages.
+   * Numbers only from public Signals' groups and public feed pages, like the other public reads. Never starts a model call.
+   */
+  private async landingPublic(spark: string[], boardSlug = '') {
+    const sql = this.ctx.storage.sql, now = Date.now(), lines: Record<string, string> = {};
+    for (const r of sql.exec<{ slug: string; text: string }>('SELECT slug, text FROM topic_summary WHERE day >= ? ORDER BY day ASC', dayOf(now - 86_400_000))) lines[r.slug] = r.text.slice(0, 400);
+    // The daily counts of a card: only the groups of the Signal it is on, so a politics card does not count AI sources.
+    const pub = new Set(this.boards().filter((b) => b.public && (!boardSlug || b.slug === boardSlug)).flatMap((b) => b.groups)), { of } = await this.groups();
+    const days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), series: Record<string, number[]> = {};
+    for (const term of spark) {
+      const counts = days.map(() => 0);
+      for (const r of sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${this.tables().terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify(this.namesOf(term)), days[0])) {
+        const g = of.get(r.watch), i = days.indexOf(r.day);
+        if (g && pub.has(g) && i >= 0) counts[i] += r.n;
+      }
+      series[term] = counts;
+    }
+    const papers = sql.exec<{ id: string; title: string; published: number; signals: string; authors: string }>('SELECT id, title, published, signals, authors FROM research_papers WHERE published >= ? ORDER BY published DESC LIMIT 600', now - 7 * 86_400_000).toArray().map((r) => {
+      const a = attentionOf(JSON.parse(r.signals) as PaperSignals, JSON.parse(r.authors) as string[]);
+      return { id: r.id, title: r.title, published: r.published, score: Math.round(a.score * 10) / 10, talked: !!(a.hf || a.hn || a.mentions.length) };
+    });
+    const risingResearch = this.pulseView().topics.filter((t) => t.state === 'rising' || t.state === 'spike').map((t) => ({ slug: t.slug, title: t.title, state: t.state }));
+    const reads = new Map<string, ReturnType<MonitorDO['viewItems']>[number]>();
+    for (const v of this.views().filter((x) => x.public)) for (const i of this.viewItems({ ...v, count: 60, show: 'top', days: 7, perSource: false })) if (i.url && (i.kind === 'rss' || i.kind === 'hn') && !reads.has(i.url)) reads.set(i.url, i);
+    return { lines, series, days, papers, risingResearch, reads: [...reads.values()].slice(0, 80) };
+  }
+  /**
+   * A topic's items for the public MCP server (`get_topic_items`), 25 a page, by kind of source and newest or most reacted first. Only for a Signal that shows its sources (like the Talk angle);
+   * for the others it says so. `offset` is the cursor. Read only.
+   */
+  private async topicItemsPublic(p: URLSearchParams) {
+    const found = await this.findTopic((p.get('slug') ?? '').toLowerCase().slice(0, 64), areaHint(p.get('area')));
+    if (!found) return { found: false as const };
+    const { v, topic } = found, slug = topicSlug(topic.term), proof = v.board.proof === true;
+    if (!proof) return { found: true as const, slug, label: topic.label, area: areaOf(v.board), proof, total: 0, items: [] as EvItem[] };
+    const kind = p.get('kind') ?? '', sort = p.get('sort') === 'top' ? 'top' : 'new', offset = Math.max(0, Math.min(5000, Number(p.get('offset')) || 0));
+    const { items } = await this.topicItems(v, [topic.term, ...topic.members]);
+    const weight = (i: EvItem) => Math.max(0, i.likes) + 2 * Math.max(0, i.replies) + Math.max(0, i.views) / 100;
+    const of = items.filter((i) => !kind || i.kind === kind).sort(sort === 'top' ? (a, b) => weight(b) - weight(a) || b.ts - a.ts : (a, b) => b.ts - a.ts);
+    const counts: Record<string, number> = {};
+    for (const i of items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
+    return { found: true as const, slug, label: topic.label, area: areaOf(v.board), proof, total: of.length, counts, items: of.slice(offset, offset + 25) };
+  }
+  /** Papers of the last 30 days for the public MCP server: filtered by words (all of them, in title or abstract), by a cluster of the Research map, or by "being discussed". Attention first, then newest. */
+  private papersPublic(p: URLSearchParams) {
+    const sql = this.ctx.storage.sql, now = Date.now(), limit = Math.max(1, Math.min(25, Number(p.get('limit')) || 12));
+    const words = (p.get('q') ?? '').toLowerCase().split(/[^\p{L}\p{N}+#.]+/u).filter((w) => w.length >= 2).slice(0, 6);
+    const cluster = p.get('cluster') === null || p.get('cluster') === '' ? -1 : Number(p.get('cluster')), discussed = p.get('discussed') === '1';
+    const row = sql.exec<{ built: number; json: string }>('SELECT built, json FROM research_map WHERE id = 1').toArray()[0];
+    const m = row ? (JSON.parse(row.json) as { leaves: Array<{ name: string; summary: string; terms: string[] }>; assign: Record<string, number> }) : null;
+    const clusters = (m?.leaves ?? []).map((l, id) => ({ id, name: l.name, summary: l.summary, terms: l.terms.slice(0, 6), papers: 0, discussed: 0 }));
+    const out: Array<ReturnType<MonitorDO['paperLine']> & { score: number; cluster?: { id: number; name: string } }> = [];
+    let total = 0;
+    for (const r of sql.exec<{ id: string; published: number; title: string; authors: string; cats: string; abstract: string; signals: string }>('SELECT id, published, title, authors, cats, abstract, signals FROM research_papers WHERE published >= ? ORDER BY published DESC LIMIT 3000', now - 30 * 86_400_000)) {
+      const authors = JSON.parse(r.authors) as string[], a = attentionOf(JSON.parse(r.signals) as PaperSignals, authors), talked = !!(a.hf || a.hn || a.mentions.length), leaf = m?.assign[r.id];
+      if (leaf !== undefined && clusters[leaf]) { clusters[leaf].papers++; if (talked) clusters[leaf].discussed++; }
+      if (cluster >= 0 && leaf !== cluster) continue;
+      if (discussed && !talked) continue;
+      if (words.length) { const text = (r.title + ' ' + r.abstract).toLowerCase(); if (!words.every((w) => text.includes(w))) continue; }
+      total++;
+      out.push({ ...this.paperLine(r, authors, a), ...(leaf !== undefined && clusters[leaf] ? { cluster: { id: leaf, name: clusters[leaf].name } } : {}), score: a.score });
+    }
+    out.sort((x, y) => y.score - x.score || y.published - x.published);
+    return { built: row?.built ?? 0, total, clusters: clusters.filter((c) => c.papers > 0), papers: out.slice(0, limit).map(({ score: _s, ...x }) => x) };
+  }
+  /**
+   * Search for the public site (/search) and the public MCP server (`search`): topics, items and papers. Only what the public pages already show:
+   * topics of published Signals, items of the groups of a published Signal that shows its sources and of public feed pages (a feed page only as far back as it shows), papers of the last 30 days.
+   * Every query is bounded (a day range, a row limit); the ranking is in src/site/search.ts. Read only.
+   */
+  private async searchPublic(q: string, window: number, lensKey: string, kinds: Set<string>, per: number, offset: number, area: Area = 'ai') {
+    const words = queryWords(q), empty = { topics: { total: 0, list: [] as SearchTopic[] }, items: { total: 0, list: [] as SearchItem[] }, papers: { total: 0, list: [] as SearchPaper[] } };
+    if (!words.length) return empty;
+    const lens = this.lenses(area).find((l) => l.key === lensKey), all = this.lenses(area);
+    const out = { ...empty };
+    const named: Array<{ slug: string; label: string; names: string[] }> = [];   // for linking an item to its topic page
+    if (kinds.has('topics') || kinds.has('items')) {
+      const summaries = new Map<string, string>(), day = dayOf(Date.now() - 86_400_000);
+      for (const r of this.ctx.storage.sql.exec<{ slug: string; day: string; text: string }>('SELECT slug, day, text FROM topic_summary WHERE day >= ? ORDER BY day ASC', day)) summaries.set(r.slug, r.text);
+      const found = new Map<string, SearchTopic>();
+      for (const b of this.boards().filter((x) => x.public && areaOf(x) === area)) {
+        const v = await this.boardView(b);
+        if (!v.shown.length) continue;
+        const tops = this.boardTop(v).top, covered = new Set<string>();
+        const put = (t: { term: string; label: string; members: string[]; signal: number; isNew: boolean; change: number | null }, summary?: string) => {
+          const slug = topicSlug(t.term);
+          if (v.bySlug.get(slug)?.term !== t.term && !tops.some((x) => x.term === t.term)) return;
+          named.push({ slug, label: t.label, names: [t.label, t.term, ...t.members] });
+          const m = topicQuality(words, { term: t.term, label: t.label, members: t.members, summary });
+          if (!m.quality) return;
+          const because = m.field === 'member' ? t.members.find((x) => topicQuality(words, { term: x, label: x, members: [], summary: '' }).quality) : m.field === 'summary' && summary ? snippetAround(summary, words, 160) : undefined;
+          const row: SearchTopic = { slug, label: t.label, term: t.term, members: t.members.slice(0, 6), state: topicState(t), signal: t.signal, quality: m.quality, field: m.field, ...(because ? { because } : {}),
+            lenses: lensesOfTopic(all, { term: t.term, label: t.label, members: t.members }).map((l) => l.key), ...(lens ? { inLens: lensMatch(lens, { term: t.term, label: t.label, members: t.members }) } : {}) };
+          const prev = found.get(slug);
+          if (!prev || row.signal > prev.signal) found.set(slug, row);
+        };
+        for (const t of tops) { covered.add(t.term); for (const m of t.members) covered.add(m); put({ term: t.term, label: t.label ?? t.term, members: t.members ?? [], signal: t.signal, isNew: t.isNew, change: t.change }, summaries.get(topicSlug(t.term))); }
+        // The topics below the top: only those whose own name fits, so a page of thousands of names costs a scan and no more.
+        for (const raw of v.c.terms) {
+          if (covered.has(raw.term)) continue;
+          if (!topicQuality(words, { term: raw.term, label: raw.term, members: [], summary: '' }).quality) continue;
+          put({ term: raw.term, label: raw.term, members: [], signal: raw.signal, isNew: raw.isNew, change: raw.change });
+        }
+      }
+      const ranked = rankTopics([...found.values()]);
+      out.topics = { total: ranked.length, list: kinds.has('topics') ? ranked.slice(offset, offset + per) : [] };
+    }
+    if (kinds.has('items')) {
+      const DAY = 86_400_000, now = Date.now(), from = dayOf(now - (Math.min(window, SIGNAL_MAX_DAYS) - 1) * DAY), allowed = new Map<string, number>();   // source -> the oldest time it may show an item from
+      const { of } = await this.groups(), watches = this.watches().filter((w) => !w.briefing && sourceOf(w) !== 'arxiv');
+      for (const b of this.boards().filter((x) => x.public && x.proof === true && areaOf(x) === area)) {
+        const keys = new Set((await this.boardView(b)).shown.map((g) => g.key));
+        for (const w of watches) if (keys.has(of.get(w.id) ?? '')) allowed.set(w.id, 0);
+      }
+      if (area === 'ai') for (const fv of this.views().filter((x) => x.public)) for (const w of this.viewWatches(fv))   /* feed pages and papers are not tagged with an area: they belong to AI */ if (sourceOf(w) !== 'arxiv' && allowed.get(w.id) !== 0) allowed.set(w.id, Math.min(allowed.get(w.id) ?? Infinity, now - fv.days * DAY));
+      const kindOf = new Map(watches.map((w) => [w.id, w] as const));
+      if (allowed.size) {
+        const rows = this.ctx.storage.sql.exec<{ watch: string; ts: number; title: string; url: string; disc: string; by: string; match: string; likes: number; replies: number; views: number }>(
+          `SELECT watch, ts, title, url, disc, by, match, likes, replies, views FROM item_log WHERE day >= ? AND watch IN (SELECT value FROM json_each(?)) AND ${words.map(() => "(lower(title) || ' ' || lower(match)) LIKE ? ESCAPE '\\'").join(' AND ')} ORDER BY ts DESC LIMIT 400`,
+          from, JSON.stringify([...allowed.keys()]), ...words.map(likeOf)).toArray();
+        const seen = new Set<string>(), hits: Array<SearchItem & { text: string }> = [];
+        for (const r of rows) {
+          const w = kindOf.get(r.watch);
+          if (!w || r.ts < (allowed.get(r.watch) ?? 0) || (!r.url && !r.title)) continue;
+          const key = r.url || `${r.watch}|${r.title}`;
+          if (seen.has(key)) continue;
+          const title = cleanTitle(r.title, 200), quality = itemQuality(words, title, r.match);
+          if (!quality) continue;
+          seen.add(key);
+          hits.push({ kind: sourceOf(w) as SearchItem['kind'], title, url: r.url, discussionUrl: r.disc, source: w.label, by: r.by.replace(/^@$/, ''), ts: r.ts, likes: r.likes, replies: r.replies, views: r.views, quality, text: `${title} ${r.match.slice(0, 600)}` });
+        }
+        const ranked = rankItems(hits);
+        out.items = { total: ranked.length, list: ranked.slice(offset, offset + per).map(({ text, ...i }) => { const topic = topicFor(text, named); return topic ? { ...i, topic } : i; }) };
+      }
+    }
+    if (kinds.has('papers') && area === 'ai') {
+      const sql = this.ctx.storage.sql, since = Date.now() - Math.min(window, 30) * 86_400_000;
+      const rows = sql.exec<{ id: string; published: number; title: string; authors: string; cats: string; abstract: string; signals: string }>(
+        `SELECT id, published, title, authors, cats, abstract, signals FROM research_papers WHERE published >= ? AND ${words.map(() => "(lower(title) || ' ' || lower(abstract)) LIKE ? ESCAPE '\\'").join(' AND ')} ORDER BY published DESC LIMIT 300`, since, ...words.map(likeOf)).toArray();
+      const hits: SearchPaper[] = [];
+      for (const r of rows) {
+        const quality = paperQuality(words, r.title, r.abstract);
+        if (!quality) continue;
+        const authors = JSON.parse(r.authors) as string[], a = attentionOf(JSON.parse(r.signals) as PaperSignals, authors);
+        hits.push({ id: r.id, title: r.title, published: r.published, authors: authors.slice(0, 4), categories: (JSON.parse(r.cats) as string[]).slice(0, 3), absUrl: `https://arxiv.org/abs/${r.id}`, snippet: snippetAround(r.abstract, words, 240), quality, score: a.score,
+          ...(lens ? { inLens: paperLensMask([lens], r.title, r.abstract) !== 0 } : {}), attention: { accounts: a.mentions.length, hf: a.hf ? { upvotes: a.hf.upvotes, url: a.hf.url } : null, hn: a.hn ? { points: a.hn.points, comments: a.hn.comments, url: a.hn.url } : null } });
+      }
+      const ranked = rankPapers(hits);
+      out.papers = { total: ranked.length, list: ranked.slice(offset, offset + per) };
+    }
+    return out;
+  }
+  private paperLine(r: { id: string; published: number; title: string; cats: string; abstract: string }, authors: string[], a: ReturnType<typeof attentionOf>) {
+    return { id: r.id, published: r.published, title: r.title, authors: authors.slice(0, 6), categories: JSON.parse(r.cats) as string[], abstract: r.abstract.length > 420 ? r.abstract.slice(0, 419).replace(/\s+\S*$/, '') + '…' : r.abstract, absUrl: `https://arxiv.org/abs/${r.id}`,
+      attention: { top: a.top, ...(a.hf ? { hf: a.hf } : {}), ...(a.hn ? { hn: a.hn } : {}), accounts: a.mentions.length, posts: a.mentions.length } as { top: boolean; hf?: { upvotes: number; url: string }; hn?: { points: number; comments: number; url: string }; accounts: number; posts: number } };
+  }
+  /** One paper for the public MCP server: the abstract (the full text is never read), the arXiv abstract page, every post that names it (not the authors' own), and the research topics and cluster it is in. */
+  private paperPublic(id: string) {
+    const sql = this.ctx.storage.sql, r = sql.exec<{ id: string; published: number; title: string; authors: string; cats: string; abstract: string; signals: string }>('SELECT id, published, title, authors, cats, abstract, signals FROM research_papers WHERE id = ?', id).toArray()[0];
+    if (!r) return null;
+    const authors = JSON.parse(r.authors) as string[], a = attentionOf(JSON.parse(r.signals) as PaperSignals, authors);
+    const topics = new Map(this.pulseTopics().map((t) => [t.id, t] as const));
+    const also = sql.exec<{ topic: string }>('SELECT topic FROM research_topic_papers WHERE paper = ?', id).toArray().map((x) => topics.get(x.topic)).filter((t): t is PulseTopic => !!t).map((t) => ({ slug: t.slug, title: t.title }));
+    const row = sql.exec<{ json: string }>('SELECT json FROM research_map WHERE id = 1').toArray()[0], m = row ? (JSON.parse(row.json) as { leaves: Array<{ name: string }>; assign: Record<string, number> }) : null, leaf = m?.assign[id];
+    return { id: r.id, published: r.published, title: r.title, authors: authors.slice(0, 20), categories: JSON.parse(r.cats) as string[], abstract: r.abstract, absUrl: `https://arxiv.org/abs/${r.id}`, also,
+      ...(leaf !== undefined && m?.leaves[leaf] ? { cluster: { id: leaf, name: m.leaves[leaf].name } } : {}),
+      attention: { top: a.top, ...(a.hf ? { hf: a.hf } : {}), ...(a.hn ? { hn: a.hn } : {}), accounts: a.mentions.length, mentions: a.mentions.slice(0, 40).map(({ by, url, reactions }) => ({ by, url, reactions })) } };
   }
   private mapPaper(id: string) {
     const r = this.ctx.storage.sql.exec<{ id: string; published: number; title: string; authors: string; cats: string; abstract: string; signals: string }>('SELECT id, published, title, authors, cats, abstract, signals FROM research_papers WHERE id = ?', id).toArray()[0];
@@ -553,9 +753,22 @@ export class MonitorDO extends DurableObject<Env> {
     const x = !j.source, text = String(j.text ?? ''), user = String(j.author?.userName ?? '');
     const safe = (u: unknown) => (/^https:\/\//.test(String(u ?? '')) ? String(u).slice(0, 400) : '');
     const url = safe(j.url) || (x && /^\d+$/.test(id) ? `https://x.com/${user || 'i'}/status/${id}` : '');
-    this.ctx.storage.sql.exec('INSERT OR IGNORE INTO item_log (watch, item, day, ts, title, url, disc, by, match, eng) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', watch, id, day, ts,
+    const [likes, replies, views] = itemNumbers(f.json);
+    this.ctx.storage.sql.exec('INSERT OR IGNORE INTO item_log (watch, item, day, ts, title, url, disc, by, match, eng, likes, replies, views) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', watch, id, day, ts,
       cleanTitle(x ? text : String(j.title ?? '') || text.split('\n')[0], 200), url, safe(j.discussionUrl), (x ? '@' : '') + user.slice(0, 60),
-      String(j.source === 'youtube' && j.title ? j.title : text).slice(0, 600), reactionsOf(f.json));
+      String(j.source === 'youtube' && j.title ? j.title : text).slice(0, 600), reactionsOf(f.json), likes, replies, views);
+  }
+  /** Once: the separate numbers for the items the live feed still holds (older logged items keep -1, "not recorded"). */
+  private backfillItemNumbers(): void {
+    if (this.getMeta('itemNumbers1', false)) return;
+    const sql = this.ctx.storage.sql;
+    this.ctx.storage.transactionSync(() => {
+      for (const r of sql.exec<{ watch: string; json: string }>('SELECT watch, json FROM feed').toArray()) {
+        const j = JSON.parse(r.json) as { id?: unknown }, [likes, replies, views] = itemNumbers(j);
+        if (j.id) sql.exec('UPDATE item_log SET likes = ?, replies = ?, views = ? WHERE watch = ? AND item = ? AND likes < 0', likes, replies, views, r.watch, String(j.id));
+      }
+      this.setMeta('itemNumbers1', true);
+    });
   }
   /** Once: log what the live feed already holds. */
   private backfillItemLog(): void {
@@ -864,7 +1077,30 @@ export class MonitorDO extends DurableObject<Env> {
     const clusters = mergeTopics(pool.slice(0, 60), post, nTop);
     const ordered = boostByEngagement(clusters, clusters.map((cl) => topicEngagement(cl.members.map((m) => m.term), items, post, REACTION_CAP)));
     const described = ordered.map((cl) => describe(cl.lead, cl.label, cl.members.map((m) => m.term))), parents = nestTopics(described);
-    return { top: partsAfterParents(described.map((t) => ({ ...t, parent: parents.get(t.term) }))), describe };
+    return { top: partsAfterParents(described.map((t) => ({ ...t, parent: parents.get(t.term) }))), describe, items };
+  }
+  /**
+   * The landscape of a published Signal for a window of 1, 3 or 7 days: a bubble for each of the biggest topics (not the ones that are part of a bigger one), grouped by which topics share items.
+   * The layout is kept per day: it is drawn again (starting from the last one kept) when it is three hours old or the topics changed, never more often. No model is involved.
+   */
+  private async landscapePublic(slug: string, daysIn: number): Promise<Layout | null> {
+    const board = this.boards().find((b) => b.public && b.slug === slug), win = daysIn === 3 || daysIn === 7 ? daysIn : 1;
+    if (!board) return null;
+    const c = await this.compute(win, new Set(board.groups)), shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
+    if (!shown.length) return null;
+    const { top, items } = this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), 30);
+    const seen = new Set<string>(), own = top.filter((t) => !t.parent).sort((a, b) => b.signal - a.signal).filter((t) => { const k = topicSlug(t.term); return seen.has(k) ? false : (seen.add(k), true); }).slice(0, 24);
+    if (!own.length) return null;
+    const sql = this.ctx.storage.sql, day = today(), now = Date.now(), want = own.map((t) => topicSlug(t.term)).sort().join('|');
+    const read = (q: string, ...a: Array<string | number>) => { const r = sql.exec<{ at: number; json: string }>(q, ...a).toArray()[0]; try { return r ? { at: r.at, layout: cleanLayout(JSON.parse(r.json)) } : null; } catch { return null; } };
+    const kept = read('SELECT at, json FROM landscape WHERE board = ? AND win = ? AND day = ?', board.id, win, day);
+    if (kept?.layout && now - kept.at < 3 * 3_600_000 && layoutKeys(kept.layout) === want) return kept.layout;
+    const prev = kept?.layout ?? read('SELECT at, json FROM landscape WHERE board = ? AND win = ? AND day < ? ORDER BY day DESC LIMIT 1', board.id, win, day)?.layout ?? null;
+    const topics = own.map((t) => ({ key: topicSlug(t.term), label: t.label, score: t.signal }));
+    const layout = layoutLandscape(topics, coCounts(own.map((t) => ({ key: topicSlug(t.term), names: [t.term, ...t.members] })), items), prev);
+    sql.exec('INSERT OR REPLACE INTO landscape (board, win, day, at, json) VALUES (?, ?, ?, ?, ?)', board.id, win, day, now, JSON.stringify(layout));
+    sql.exec('DELETE FROM landscape WHERE day < ?', dayOf(now - 14 * 86_400_000));
+    return layout;
   }
   private async signalOverview(daysIn: number, boardRef = '', hideSteady = true) {
     const board = boardRef ? this.findBoard(boardRef) : undefined;
@@ -909,10 +1145,14 @@ export class MonitorDO extends DurableObject<Env> {
     return 'src:' + sourceOf(w);
   }
   /** The items a feed page shows, from the item log (30 days): newest or most reacted, filtered by its source and kind. */
+  /** The sources a feed page draws from (briefing sources never). */
+  private viewWatches(v: FeedView): Watch[] {
+    const fit = (w: Watch) => (v.source === 'all' || (v.source.startsWith('src:') ? sourceOf(w) === v.source.slice(4) : this.listKey(w) === v.source)) && (!v.kind || sourceOf(w) === v.kind);
+    return this.watches().filter((w) => !w.briefing && fit(w));
+  }
   private viewItems(v: FeedView) {
     const from = dayOf(Date.now() - (v.days - 1) * 86_400_000), watches = new Map(this.watches().filter((w) => !w.briefing).map((w) => [w.id, w] as const));
-    const fit = (w: Watch) => (v.source === 'all' || (v.source.startsWith('src:') ? sourceOf(w) === v.source.slice(4) : this.listKey(w) === v.source)) && (!v.kind || sourceOf(w) === v.kind);
-    const ids = [...watches.values()].filter(fit).map((w) => w.id);
+    const ids = this.viewWatches(v).map((w) => w.id);
     if (!ids.length) return [];
     const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; by: string; eng: number }>(
       `SELECT watch, item, ts, title, url, by, eng FROM item_log WHERE day >= ? AND watch IN (SELECT value FROM json_each(?)) ORDER BY ${v.show === 'top' ? 'eng DESC, ts DESC' : 'ts DESC'} LIMIT 2000`,
@@ -953,13 +1193,13 @@ export class MonitorDO extends DurableObject<Env> {
     if (this.boards().some((b) => b.slug === slug && b.id !== prev?.id)) throw new Error('another Signal already has that address');
     const groups = [...new Set((Array.isArray(raw.groups) ? raw.groups : []).map((g) => String(g).slice(0, 80)).filter(Boolean))].slice(0, 40);
     const oldSlugs = [...new Set([...(prev && prev.slug !== slug ? [prev.slug] : []), ...(prev?.oldSlugs ?? [])])].filter((x) => x !== slug).slice(0, 10);
-    return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), slug, title, description: String(raw.description ?? '').trim().slice(0, 300), groups, public: raw.public === true, proof: raw.proof === true, ...(oldSlugs.length ? { oldSlugs } : {}) };
+    return { id: prev?.id ?? crypto.randomUUID().slice(0, 8), slug, title, description: String(raw.description ?? '').trim().slice(0, 300), groups, public: raw.public === true, proof: raw.proof === true, area: raw.area === undefined ? areaOf(prev) : parseArea(raw.area), ...(oldSlugs.length ? { oldSlugs } : {}) };
   }
   /** The published Signals, for the public rail and index: names only, and only groups that count. */
   private async publicBoards() {
     const live = new Map((await this.groups()).groups.filter((g) => g.weight > 0).map((g) => [g.key, g.name] as const));
     // The first Signal was made at /signal/overview by a migration, before old addresses were remembered: that one is known here.
-    return this.boards().filter((b) => b.public).map((b) => ({ slug: b.slug, aliases: [...(b.oldSlugs ?? []), ...(b.id === 'main' && b.slug !== 'overview' ? ['overview'] : [])], title: b.title, description: b.description, proof: b.proof === true, groups: b.groups.map((k) => live.get(k)).filter((n): n is string => !!n) })).filter((b) => b.groups.length);
+    return this.boards().filter((b) => b.public).map((b) => ({ slug: b.slug, aliases: [...(b.oldSlugs ?? []), ...(b.id === 'main' && b.slug !== 'overview' ? ['overview'] : [])], title: b.title, description: b.description, proof: b.proof === true, area: areaOf(b), groups: b.groups.map((k) => live.get(k)).filter((n): n is string => !!n) })).filter((b) => b.groups.length);
   }
   /** What the public page may see: group names, weights and counts, and terms. No watch names, addresses, handles or items. */
   private async signalPublic(slug: string, daysIn: number) {
@@ -1006,21 +1246,21 @@ export class MonitorDO extends DurableObject<Env> {
    * The proof for a topic: every logged item in the window that mentions one of its terms, with the sources and groups they come from.
    * `filter` narrows the list (and only the list) to one group or one source; the counts always cover the whole window.
    */
-  private async signalItems(q: { terms: string[]; days: number; group: string; watch: string; offset: number; limit: number; only?: Set<string> }) {
+  private async signalItems(q: { terms: string[]; days: number; group: string; watch: string; offset: number; limit: number; only?: Set<string>; /** Also give every matching item (for the topic page's evidence), not just the page asked for. */ all?: boolean }) {
     const days = Math.min(SIGNAL_MAX_DAYS, Math.max(1, Math.floor(q.days) || 7)), now = Date.now();
     const from = dayOf(now - (days - 1) * 86_400_000), to = dayOf(now);
     const { of, groups } = await this.groups(), names = new Map(groups.map((g) => [g.key, g.name] as const));
     const labels = new Map(this.watches().map((w) => [w.id, w.label] as const)), ai = this.aiTopics(from);
     const alias = this.aliasFn(), want = new Set(q.terms.map((t) => alias(t.toLowerCase().trim())).filter(Boolean));
     if (!want.size) throw new Error('term required');
-    const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number }>(
-      'SELECT watch, item, ts, title, url, disc, by, match, eng FROM item_log WHERE day >= ? AND day <= ? ORDER BY ts DESC LIMIT 8000', from, to).toArray();
-    const hits: Array<{ watch: string; group: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number; matched: string[] }> = [];
+    const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number; likes: number; replies: number; views: number }>(
+      'SELECT watch, item, ts, title, url, disc, by, match, eng, likes, replies, views FROM item_log WHERE day >= ? AND day <= ? ORDER BY ts DESC LIMIT 8000', from, to).toArray();
+    const hits: Array<{ watch: string; group: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number; likes: number; replies: number; views: number; matched: string[] }> = [];
     for (const r of rows) {
       const g = of.get(r.watch); if (!g || (q.only && !q.only.has(g))) continue;
       const have = new Set((ai ? ai.get(`${r.watch}\n${r.item}`) ?? [] : extractTerms(r.match)).map(alias));
       const matched = [...want].filter((t) => have.has(t));
-      if (matched.length) hits.push({ watch: r.watch, group: g, ts: r.ts, title: r.title, url: r.url, disc: r.disc, by: r.by, match: r.match, eng: r.eng, matched });
+      if (matched.length) hits.push({ watch: r.watch, group: g, ts: r.ts, title: r.title, url: r.url, disc: r.disc, by: r.by, match: r.match, eng: r.eng, likes: r.likes, replies: r.replies, views: r.views, matched });
     }
     const tally = <K extends string>(key: (h: (typeof hits)[number]) => K) => { const m = new Map<K, number>(); for (const h of hits) m.set(key(h), (m.get(key(h)) ?? 0) + 1); return m; };
     const byGroup = tally((h) => h.group), byWatch = tally((h) => h.watch);
@@ -1033,6 +1273,7 @@ export class MonitorDO extends DurableObject<Env> {
       items: shown.slice(offset, offset + limit).map((h) => ({ watch: h.watch, label: labels.get(h.watch) ?? h.watch, group: h.group, ts: h.ts, title: cleanTitle(h.title, 200), url: h.url, discussionUrl: h.disc, by: h.by, reactions: h.eng, matched: h.matched,
         snippet: h.match.replace(/\s+/g, ' ').trim() === h.title ? '' : h.match.replace(/\s+/g, ' ').slice(0, 260) })),
       more: offset + limit < shown.length,
+      ...(q.all ? { hits: hits.map((h) => ({ watch: h.watch, label: labels.get(h.watch) ?? h.watch, ts: h.ts, title: cleanTitle(h.title, 200), url: h.url, discussionUrl: h.disc, by: h.by, likes: h.likes, replies: h.replies, views: h.views })) } : {}),
     };
   }
   /** Who Said It First (src/signal/first.ts): the order Signal's topics reached the groups in, and which groups tend to be early. Briefing posts are left out, because they are written from the other sources. */
@@ -1132,6 +1373,214 @@ export class MonitorDO extends DurableObject<Env> {
       distinctive: distinctive(c.terms, key, 15).map((t) => ({ term: t.term, docs: t.groups.find((x) => x.key === key)?.docs ?? 0, own: t.own, others: t.others, lift: t.lift })) };
   }
 
+  // ---- The topic page /t/<slug> (src/signal/topicpage.ts): one topic of the published Signals, the one data set behind the page, /t/<slug>.json and later the MCP tool
+  /** A published Signal over its last 7 days, kept for two minutes: the lookup of an address, the page and the summaries all start here. */
+  private async boardView(board: Board): Promise<BoardView> {
+    const k = `bv|${board.slug}`, hit = this.pubCache.get(k);
+    if (hit && Date.now() - hit.at < 120_000) return hit.v as BoardView;
+    const c = await this.compute(7, new Set(board.groups));
+    const shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0), bySlug = new Map<string, ScoredTerm>();
+    for (const t of c.terms) { const sl = topicSlug(t.term); if (!bySlug.has(sl)) bySlug.set(sl, t); }   // strongest first: when two names share an address, the stronger holds it
+    const v: BoardView = { board, c, shown, bySlug };
+    this.pubCache.set(k, { at: Date.now(), v });
+    return v;
+  }
+  private boardTop(v: BoardView): NonNullable<BoardView['top']> { return (v.top ??= this.describeTopics({ ...v.c, groups: v.shown }, v.c.terms.filter(notSteady), 40)); }
+  /** A topic by its address. If it is in several published Signals, the page takes the one where its score is highest and lists the others. */
+  /** `hint`: the area a link came from. The same address can exist on boards in both areas: the hinted area wins, else AI, and the other one is listed in `alsoIn`. */
+  private async findTopic(slug: string, hint: Area | null = null) {
+    const found: Array<{ v: BoardView; raw: ScoredTerm }> = [];
+    for (const b of this.boards().filter((x) => x.public)) {
+      const v = await this.boardView(b), raw = v.shown.length ? v.bySlug.get(slug) : undefined;
+      if (raw) found.push({ v, raw });
+    }
+    const order = rankByArea(found.map((f) => ({ area: areaOf(f.v.board), signal: f.raw.signal })), hint), ranked = order.map((i) => found[i]);
+    const best = ranked[0];
+    if (!best) return null;
+    const { top, describe } = this.boardTop(best.v);
+    const topic = top.find((t) => t.term === best.raw.term || t.members.includes(best.raw.term)) ?? describe(best.raw);   // a name counted under a bigger topic opens that topic
+    return { v: best.v, topic, alsoIn: ranked.slice(1).map((f) => ({ slug: f.v.board.slug, title: f.v.board.title, area: areaOf(f.v.board) })) };
+  }
+  /** The items behind a topic over the last 14 days (every kind of source), with the numbers each source gave. Briefing posts are left out of the evidence: they were written from the other sources. */
+  private async topicItems(v: BoardView, names: string[]) {
+    const r = await this.signalItems({ terms: names, days: 14, group: '', watch: '', offset: 0, limit: 1, only: new Set(v.board.groups), all: true });
+    const watches = new Map(this.watches().map((w) => [w.id, w] as const)), from = Date.parse(v.c.from + 'T00:00:00Z');
+    const hits = r.hits ?? [], items: EvItem[] = [], wide: EvItem[] = [];
+    for (const h of hits) {
+      const w = watches.get(h.watch);
+      if (!w || w.briefing || sourceOf(w) === 'arxiv') continue;   // papers have their own angle
+      const item: EvItem = { kind: sourceOf(w) as EvKind, by: h.by, source: h.label, title: h.title, url: h.url, discussionUrl: h.discussionUrl, ts: h.ts, likes: h.likes, replies: h.replies, views: h.views };
+      wide.push(item);   // all 14 days: the timeline and who had it first need the quiet before a wave
+      if (h.ts >= from) items.push(item);
+    }
+    return { hits, items, wide };
+  }
+  /** New papers (last 30 days) that are about the subject: its name in the title, or, for a name of two words or more, in the abstract. With who is paying attention to each. Abstracts only: full text is never read. */
+  private topicPapers(names: string[]) {
+    const words = [...new Set(names.map((n) => n.toLowerCase().trim()).filter((n) => n.length >= 3))].slice(0, 6);
+    if (!words.length) return { matched: 0, mentioned: 0, list: [] as TopicPaper[] };
+    const like = (w: string) => '%' + w.replace(/[%_\\]/g, '') + '%', sql = this.ctx.storage.sql;
+    type Row = { id: string; published: number; title: string; authors: string; cats: string; abstract: string; signals: string };
+    const rows = sql.exec<Row>(`SELECT id, published, title, authors, cats, abstract, signals FROM research_papers WHERE published >= ? AND (${words.map(() => '(lower(title) LIKE ? OR lower(abstract) LIKE ?)').join(' OR ')}) ORDER BY published DESC LIMIT 300`,
+      Date.now() - 30 * 86_400_000, ...words.flatMap((w) => [like(w), like(w)])).toArray();
+    const whole = words.map((w) => new RegExp(`(^|[^\\p{L}\\p{N}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u'));
+    const topics = new Map(this.pulseTopics().map((t) => [t.id, t] as const));
+    const hits = rows.map((r) => {
+      const inTitle = whole.some((re) => re.test(r.title.toLowerCase())), inAbstract = words.some((w, i) => w.includes(' ') && whole[i].test(r.abstract.toLowerCase()));
+      if (!inTitle && !inAbstract) return null;
+      const authors = JSON.parse(r.authors) as string[], a = attentionOf(JSON.parse(r.signals) as PaperSignals, authors);
+      const also = sql.exec<{ topic: string }>('SELECT topic FROM research_topic_papers WHERE paper = ?', r.id).toArray().map((x) => topics.get(x.topic)).filter((t): t is PulseTopic => !!t).map((t) => ({ slug: t.slug, title: t.title }));
+      const paper: TopicPaper = { id: r.id, published: r.published, title: r.title, authors, categories: JSON.parse(r.cats) as string[], abstract: r.abstract, absUrl: `https://arxiv.org/abs/${r.id}`, pdfUrl: `https://arxiv.org/pdf/${r.id}`, also,
+        attention: { top: a.top, hf: a.hf, hn: a.hn, mentions: a.mentions.slice(0, 5).map(({ by, url, reactions }) => ({ by, url, reactions })), accounts: a.mentions.length } };
+      return { paper, inTitle, score: a.score, talked: !!(a.hf || a.hn || a.mentions.length) };
+    }).filter((x): x is NonNullable<typeof x> => !!x);
+    hits.sort((a, b) => Number(b.inTitle) - Number(a.inTitle) || b.score - a.score || b.paper.published - a.paper.published);
+    return { matched: hits.length, mentioned: hits.filter((h) => h.talked).length, list: hits.slice(0, 12).map((h) => h.paper) };
+  }
+  /** Everything the topic page shows, apart from the briefings (those live in the Publish object; src/site/topicData.ts adds them). Null when no published Signal has the topic. */
+  private async topicData(slug: string, hint: Area | null = null): Promise<TopicData | null> {
+    const found = await this.findTopic(slug, hint);
+    if (!found) return null;
+    const { v, topic, alsoIn } = found, { board, c } = v, proof = board.proof === true, names = [topic.term, ...topic.members], canonical = topicSlug(topic.term);
+    const { hits, items, wide } = await this.topicItems(v, names), now = Date.now();
+    const days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), counts = days.map(() => 0);
+    for (const h of hits) { const d = days.indexOf(dayOf(h.ts)); if (d >= 0) counts[d]++; }
+    const papers = this.topicPapers(names), segments = evidenceSegments(items, papers, proof), state = topicState(topic);
+    const byKind: TopicData['counts'] = {};
+    for (const i of items) byKind[i.kind] = (byKind[i.kind] ?? 0) + 1;
+    const weight = (i: EvItem) => Math.max(0, i.likes) + 2 * Math.max(0, i.replies) + Math.max(0, i.views) / 100;
+    const talk = !proof ? [] : (['x', 'hn', 'youtube', 'rss'] as EvKind[]).flatMap((k) => items.filter((i) => i.kind === k).sort((a, b) => weight(b) - weight(a) || b.ts - a.ts).slice(0, 8)
+      .map((i) => ({ kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl, source: i.source, by: i.by, ts: i.ts, ...(i.likes >= 0 ? { likes: i.likes } : {}), ...(i.replies >= 0 ? { replies: i.replies } : {}), ...(i.views > 0 ? { views: i.views } : {}) })));
+    const sm = this.ctx.storage.sql.exec<{ day: string; text: string; items: string; n: number; model: string }>('SELECT day, text, items, n, model FROM topic_summary WHERE slug = ? ORDER BY day DESC LIMIT 1', canonical).toArray()[0];
+    const summary = sm && summaryFresh(sm.day) ? { text: sm.text, day: sm.day, model: sm.model, itemCount: sm.n, items: proof ? (JSON.parse(sm.items) as NonNullable<TopicData['summary']>['items']) : [] } : null;
+    const top = this.boardTop(v).top, seen = new Set([canonical]), related: TopicData['related'] = [];
+    for (const r of topic.related ?? []) {
+      if (!v.bySlug.has(topicSlug(r))) continue;
+      const lead = top.find((t) => t.term === r || t.members.includes(r)), rs = topicSlug(lead?.term ?? r);
+      if (seen.has(rs)) continue;
+      seen.add(rs); related.push({ slug: rs, label: lead?.label ?? r });
+    }
+    return {
+      slug: canonical, term: topic.term, label: topic.label, members: topic.members, board: { slug: board.slug, title: board.title, proof }, area: areaOf(board), alsoIn,
+      days: c.days, from: c.from, to: c.to, baselineOk: c.baselineOk,
+      state, signal: topic.signal, change: topic.change, isNew: topic.isNew, kind: topic.kind, breadth: topic.breadth, active: topic.active, reactions: topic.reactions,
+      series: { days, counts, usual: usualLevel(counts) }, counts: byKind, total: items.length, evidence: segments,
+      summary, fallback: fallbackSummary({ label: topic.label, state, total: items.length, days: c.days, segments, groups: v.shown.length }),
+      talk, papers, related,
+      // Step 7: the order the kinds of source had it in, items over time, and videos. Titles and links only on a Signal that shows its sources.
+      first: firstByKind(wide, { since: now - 14 * 86_400_000, hide: !proof }), timeline: timelineDots(wide, { from: now - 14 * 86_400_000, to: now, hide: !proof }),
+      watch: this.topicWatch(wide, names, proof),
+    };
+  }
+  /** Videos and talks on a topic: the Signal's YouTube items (when it shows its sources) and matches from the public feed pages, which are public whatever the Signal shows. */
+  private topicWatch(wide: EvItem[], names: string[], proof: boolean): TopicWatch[] {
+    const own = proof ? wide.filter((i) => i.kind === 'youtube' && i.url).map((i) => ({ title: i.title, url: i.url, source: i.source, by: i.by, ts: i.ts, ...(i.views > 0 ? { views: i.views } : {}) })) : [];
+    const feeds = this.views().filter((x) => x.public).flatMap((v) => this.viewItems({ ...v, count: 150, show: 'top', days: 14, perSource: false }).filter((i) => i.url).map((i) => ({ via: v.title, title: i.title, url: i.url, source: i.source, by: i.by, ts: i.ts, reactions: i.reactions, video: i.video })));
+    return pickWatch(own, feeds, names);
+  }
+
+  // ---- Topic summaries: a model writes one paragraph per active topic per day. Run from the alarm, never from a page request.
+  /** The addresses of the topics worth a summary: the strongest of each published Signal (not the parts of a bigger topic), at most SUMMARY_TOPICS in all. */
+  private async activeTopics(): Promise<string[]> {
+    const out: string[] = [], seen = new Set<string>();
+    for (const b of this.boards().filter((x) => x.public)) {
+      const v = await this.boardView(b);
+      if (!v.shown.length) continue;
+      let n = 0;
+      for (const t of this.boardTop(v).top) {
+        const sl = topicSlug(t.term);
+        if (t.parent || seen.has(sl)) continue;
+        if (n++ >= SUMMARY_PER_BOARD) break;
+        seen.add(sl); out.push(sl);
+      }
+    }
+    return out.slice(0, SUMMARY_TOPICS);
+  }
+  // ---- Lenses (src/signal/lens.ts): areas of interest the public pages order and highlight by. Stored in `meta` as { area: Lens[] }; an area that was never saved gets its starting lenses once.
+  private lenses(area: LensArea): Lens[] {
+    const all = this.getMeta<Partial<Record<LensArea, Lens[]>>>('lenses', {});
+    if (all[area]) return all[area]!;
+    all[area] = seedLenses(area);   // deleting every lens leaves an empty list, which is kept (it is not seeded again)
+    this.setMeta('lenses', all);
+    return all[area]!;
+  }
+  private saveLenses(area: LensArea, list: Lens[]): void { this.setMeta('lenses', { ...this.getMeta<Partial<Record<LensArea, Lens[]>>>('lenses', {}), [area]: list }); }
+  /**
+   * Asks the Signal topic model which of the current Signal topics belong to which lens. Started by the admin only, never by a public request. Nothing is saved: the admin accepts or changes the answer.
+   * Stays inside the day's AI spending cap and is recorded in Costs as "Lens suggestions (AI)".
+   */
+  private async suggestLenses(area: LensArea) {
+    const cfg = this.aiConfig(), lenses = this.lenses(area);
+    if (!lenses.length) throw new Error('there are no lenses yet');
+    if (!cfg.enabled || !cfg.model) throw new Error('turn on topic detection by a model first: the same model suggests the lenses');
+    if (this.aiSpend().cost >= cfg.dailyCap) throw new Error('the daily spending cap is reached; try again tomorrow');
+    const topics: Array<{ term: string; label: string; signal: number }> = [], seen = new Set<string>();
+    for (const b of this.boards().filter((x) => x.public && areaOf(x) === area)) {
+      const v = await this.boardView(b);
+      if (!v.shown.length) continue;
+      for (const t of this.boardTop(v).top) if (!t.parent && !seen.has(t.term)) { seen.add(t.term); topics.push({ term: t.term, label: t.label ?? t.term, signal: t.signal }); }
+    }
+    topics.sort((a, b) => b.signal - a.signal);
+    const list = topics.slice(0, SUGGEST_TOPICS);
+    if (!list.length) throw new Error('there are no published Signal topics to sort yet');
+    const r = await complete(this.env, cfg.model, [suggestSystem(lenses, area), suggestUser(list.map((t) => t.label))], { maxTokens: 900,
+      mock: () => JSON.stringify({ lenses: Object.fromEntries(lenses.map((l) => [l.key, list.map((t, i) => [t, i + 1] as const).filter(([t]) => lensMatch(l, t)).map(([, i]) => i)])) }) });
+    if (r.cost) { this.setMeta('aiSpend', { day: today(), cost: this.aiSpend().cost + r.cost }); await recordCost(this.env, { kind: 'signal', ref: 'lens-suggest', label: 'Lens suggestions (AI)', llm: r.cost, tokensIn: r.tokensIn, tokensOut: r.tokensOut, calls: 1, model: cfg.model }); }
+    const byLabel = new Map(list.map((t) => [t.label, t.term] as const));
+    const got = parseSuggestions(r.text, lenses, list.map((t) => t.label));
+    if (!Object.keys(got).length) throw new Error('the model did not return readable suggestions; try again');
+    // The topic's own name (`term`) is what a lens stores; `label` is how Signal shows it.
+    return { cost: r.cost, model: cfg.model, topics: list.length, suggestions: Object.fromEntries(Object.entries(got).map(([k, ls]) => [k, ls.map((l) => ({ term: byLabel.get(l) ?? l, label: l, already: lensMatch(lenses.find((x) => x.key === k)!, { term: byLabel.get(l) ?? l, label: l }) }))])) };
+  }
+  /** When to wake for summaries: 0 when there is nothing to do (off, no published Signal, or done for today), the next midnight when the day's cap is used up. */
+  private summaryWake(): number {
+    const c = this.aiConfig();
+    if (!c.enabled || !c.model || this.getMeta('summaryDay', '') === today() || !this.boards().some((b) => b.public)) return 0;
+    if (this.aiSpend().cost >= c.dailyCap) return Date.parse(today() + 'T00:00:00Z') + 86_400_000 + 60_000;
+    return Math.max(this.getMeta<number>('summaryRetry', 0), Date.now() + 1000);
+  }
+  /**
+   * Writes today's summaries, one model call per topic, with the Signal topic model, inside its daily spending cap, and records every call in Costs as "Topic summaries (AI)".
+   * It stops at the deadline and carries on at the next wake-up; a topic that fails three times in a row ends the day's run (the page then shows the line built from the numbers).
+   */
+  private async summaryStep(deadline: number): Promise<void> {
+    const cfg = this.aiConfig(), sql = this.ctx.storage.sql, day = today();
+    if (!cfg.enabled || !cfg.model || this.getMeta('summaryDay', '') === day || Date.now() < this.getMeta<number>('summaryRetry', 0) || !this.boards().some((b) => b.public)) return;
+    const have = new Set(sql.exec<{ slug: string }>('SELECT slug FROM topic_summary WHERE day = ?', day).toArray().map((r) => r.slug));
+    for (const slug of await this.activeTopics()) {
+      if (have.has(slug)) continue;
+      if (Date.now() > deadline) return;
+      if (this.aiSpend().cost >= cfg.dailyCap) break;
+      const found = await this.findTopic(slug);
+      if (!found) continue;
+      const names = [found.topic.term, ...found.topic.members], { items } = await this.topicItems(found.v, names), picked = pickSummaryItems(items).slice(0, SUMMARY_ITEMS);
+      if (picked.length < 2) continue;   // too little to write from
+      const papers = this.topicPapers(names).list.slice(0, 3).map((p) => p.title);
+      let cost = 0, tin = 0, tout = 0, parsed: ReturnType<typeof parseSummary> = null, failed = '';
+      try {
+        const r = await complete(this.env, cfg.model, [summarySystem(), summaryUser({ label: found.topic.label, names, state: topicState(found.topic), items: picked, papers })], { maxTokens: 400,
+          mock: () => JSON.stringify({ summary: `${found.topic.label} came up in ${picked.length} posts and articles over the last week.`, used: [1, 2] }) });
+        cost = r.cost; tin = r.tokensIn; tout = r.tokensOut;
+        parsed = parseSummary(r.text, picked.length);
+        if (!parsed) failed = 'the model did not return a usable summary';
+      } catch (err) { failed = err instanceof Error ? err.message : String(err); }
+      if (cost) { this.setMeta('aiSpend', { day, cost: this.aiSpend().cost + cost }); await recordCost(this.env, { kind: 'signal', ref: 'topic-summaries', label: 'Topic summaries (AI)', llm: cost, tokensIn: tin, tokensOut: tout, calls: 1, model: cfg.model }); }
+      if (!parsed) {
+        const fails = this.getMeta<number>('summaryFails', 0) + 1;
+        console.error('topic summary failed', slug, failed);
+        if (fails >= 3) { this.setMeta('summaryFails', 0); this.setMeta('summaryDay', day); } else { this.setMeta('summaryFails', fails); this.setMeta('summaryRetry', Date.now() + SUMMARY_RETRY_MS); }
+        return;
+      }
+      this.setMeta('summaryFails', 0);
+      const used = (parsed.used.length ? parsed.used : picked.map((_, k) => k + 1)).slice(0, 8).map((k) => picked[k - 1]).filter(Boolean);
+      sql.exec('INSERT OR REPLACE INTO topic_summary (slug, day, term, text, items, n, model, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', slug, day, found.topic.term, parsed.text,
+        JSON.stringify(used.map((i) => ({ title: i.title, url: i.url, by: i.by, kind: i.kind }))), used.length, cfg.model, Date.now());
+      this.pubCache.delete(`topic|${slug}`);
+    }
+    this.setMeta('summaryDay', day);
+    sql.exec('DELETE FROM topic_summary WHERE day < ?', dayOf(Date.now() - SUMMARY_KEEP_DAYS * 86_400_000));
+  }
+
   private removeWatch(id: string): void {
     const sql = this.ctx.storage.sql;
     sql.exec('DELETE FROM watches WHERE id = ?', id);
@@ -1183,6 +1632,13 @@ export class MonitorDO extends DurableObject<Env> {
           this.pubCache.set(k, { at: Date.now(), v });
           return json(v);
         }
+        if (name === 'landscape-public') {   // the layout of the landing page's bubbles: kept for two minutes here, and for the day in the database
+          const slug = url.searchParams.get('slug') ?? '', days = Number(url.searchParams.get('days')), k = `land|${slug}|${days}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = await this.landscapePublic(slug, days);
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
         if (name === 'first-public') {   // reads thousands of items, for an address anyone can open: kept for two minutes like the other public Signal reads
           const slug = url.searchParams.get('slug') ?? '', days = Number(url.searchParams.get('days')), board = this.boards().find((b) => b.public && b.slug === slug);
           if (!board) return json({ error: 'not found' }, 404);
@@ -1203,6 +1659,14 @@ export class MonitorDO extends DurableObject<Env> {
           return out ? json(out) : json({ error: 'not shown' }, 404);
         }
         if (name === 'signal-public-boards') return json(await this.publicBoards());
+        if (name === 'topic-public') {   // the topic page and /t/<slug>.json: kept for two minutes
+          const slug = (url.searchParams.get('slug') ?? '').toLowerCase().slice(0, 64), hint = areaHint(url.searchParams.get('area')), k = `topic|${slug}|${hint ?? ''}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return hit.v ? json(hit.v) : json({ error: 'not found' }, 404);
+          const v = await this.topicData(slug, hint);
+          this.pubCache.set(k, { at: Date.now(), v });
+          if (url.searchParams.get('quiet') !== '1' && this.summaryWake()) await this.reschedule();   // summaries are due: start writing them (a page never waits for one). `quiet`: the public MCP server only reads
+          return v ? json(v) : json({ error: 'not found' }, 404);
+        }
         if (name === 'research-page') {   // a topic's page: kept for two minutes
           const slug = url.searchParams.get('slug') ?? '', page = Number(url.searchParams.get('page')) || 1, key = `research\n${slug}\n${page}`, hit = this.pubCache.get(key);
           if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
@@ -1213,12 +1677,31 @@ export class MonitorDO extends DurableObject<Env> {
           return json(v);
         }
         if (name === 'research-map') {   // the Research map: kept for two minutes
-          const hit = this.pubCache.get('map');
-          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const lens = url.searchParams.get('lens') ?? '', hit = this.pubCache.get('map'), pick = (v: ReturnType<MonitorDO['mapView']>) => (v.state === 'ready' && v.lenses.some((l) => l.key === lens) ? { ...v, lens } : v);   // ?lens= preselects a lens in the view
+          if (hit && Date.now() - hit.at < 120_000) return json(pick(hit.v as ReturnType<MonitorDO['mapView']>));
           const v = this.mapView();
           if (v.state === 'ready') this.pubCache.set('map', { at: Date.now(), v }); else await this.reschedule();
+          return json(pick(v));
+        }
+        if (name === 'topic-items-public') return json(await this.topicItemsPublic(url.searchParams));   // the public MCP server: a topic's items, a page at a time
+        if (name === 'papers-public') {   // the public MCP server: papers of the last 30 days, by words, cluster of the Research map or attention; kept for two minutes
+          const p = url.searchParams, k = `papers|${p.get('q')}|${p.get('cluster')}|${p.get('discussed')}|${p.get('limit')}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = this.papersPublic(p);
+          this.pubCache.set(k, { at: Date.now(), v });
           return json(v);
         }
+        if (name === 'search-public') {   // search across topics, items and papers for the public site and the public MCP server: bounded, public data only, kept for two minutes
+          const p = url.searchParams, q = cleanQuery(p.get('q')), window = windowOfSearch(p.get('window')), lens = (p.get('lens') ?? '').slice(0, 20), kinds = (p.get('kinds') ?? '').split(',');
+          const per = Math.max(1, Math.min(25, Number(p.get('per')) || 5)), offset = Math.max(0, Math.min(400, Number(p.get('offset')) || 0)), area = parseArea(p.get('area'));
+          const k = `search|${area}|${q.toLowerCase()}|${window}|${lens}|${kinds.join(',')}|${per}|${offset}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = await this.searchPublic(q, window, lens, new Set(kinds), per, offset, area);
+          if (this.pubCache.size > 300) this.pubCache.delete(this.pubCache.keys().next().value as string);   // anyone can ask anything: the cache stays small
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
+        if (name === 'paper-public') { const v = this.paperPublic(url.searchParams.get('id') ?? ''); return v ? json(v) : json({ error: 'no such paper' }, 404); }
         if (name === 'research-map-paper') { const v = this.mapPaper(url.searchParams.get('id') ?? ''); return v ? json(v) : json({ error: 'no such paper' }, 404); }
         if (name === 'pulse-public') {   // the public page: kept for two minutes
           const hit = this.pubCache.get('pulse');
@@ -1244,6 +1727,23 @@ export class MonitorDO extends DurableObject<Env> {
           this.pubCache.set(k, { at: Date.now(), v });
           return json(v);
         }
+        if (name === 'landing-public') {   // the extras of the landing page (summaries, daily counts of the cards, recent papers, what was read most): kept for two minutes
+          const spark = (url.searchParams.get('spark') ?? '').split('|').map((x) => x.trim().toLowerCase().slice(0, 80)).filter(Boolean).slice(0, 8), board = (url.searchParams.get('board') ?? '').slice(0, 40), k = `landing|${board}|${spark.join('|')}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = await this.landingPublic(spark, board);
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
+        if (name === 'lenses-public') {   // read by every public page that applies a lens: kept for two minutes
+          const area = url.searchParams.get('area') ?? 'ai';
+          if (!LENS_AREAS.includes(area as LensArea)) return json({ error: 'unknown area' }, 404);
+          const k = `lenses|${area}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = this.lenses(area as LensArea);
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
+        if (name === 'lenses') return json({ areas: LENS_AREAS, max: MAX_LENSES, palette: LENS_PALETTE, lenses: Object.fromEntries(LENS_AREAS.map((a) => [a, this.lenses(a)])) });
         if (name === 'views') return json(this.views());
         if (name === 'view-items') { const v = this.views().find((x) => x.id === url.searchParams.get('id')); if (!v) throw new Error('unknown feed page'); return json(this.viewItems(v)); }
         // Public: the published feed pages (for the menu and Today, with each one's newest item), and one page with its items.
@@ -1417,6 +1917,19 @@ export class MonitorDO extends DurableObject<Env> {
         await this.reschedule();
         return json(this.aiStatus());
       }
+      if (name === 'lens-save') {   // create or change a lens (by its key and area)
+        const area = LENS_AREAS.includes(b.area as LensArea) ? (b.area as LensArea) : 'ai', list = this.lenses(area);
+        const lens = cleanLens({ ...b, area }, list), prev = list.find((x) => x.key === lens.key);
+        if (!prev && list.length >= MAX_LENSES) throw new Error(`at most ${MAX_LENSES} lenses in an area`);
+        this.saveLenses(area, prev ? list.map((x) => (x.key === lens.key ? lens : x)) : [...list, lens]);
+        return json(lens);
+      }
+      if (name === 'lens-delete') {
+        const area = LENS_AREAS.includes(b.area as LensArea) ? (b.area as LensArea) : 'ai';
+        this.saveLenses(area, this.lenses(area).filter((x) => x.key !== String(b.key ?? '')));
+        return json({ ok: true });
+      }
+      if (name === 'lens-suggest') return json(await this.suggestLenses(LENS_AREAS.includes(b.area as LensArea) ? (b.area as LensArea) : 'ai'));
       if (name === 'view-save') {   // create or change a feed page
         const all = this.views(), prev = b.id ? all.find((x) => x.id === String(b.id)) : undefined;
         if (b.id && !prev) throw new Error('unknown feed page');
