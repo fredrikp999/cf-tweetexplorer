@@ -11,7 +11,7 @@ async function check(path, { status = 200, has = [], type, note } = {}) {
   const t0 = Date.now();
   let res, body = '', err = '';
   try {
-    res = await fetch(base + path, { redirect: 'manual', headers: { 'user-agent': 'agent-cortex-smoke/1' }, signal: AbortSignal.timeout(20_000) });
+    res = await fetch(base + path, { redirect: 'manual', headers: { 'user-agent': 'undercurrent-smoke/1' }, signal: AbortSignal.timeout(20_000) });
     body = await res.text();
   } catch (e) { err = e.message; }
   const ms = Date.now() - t0, problems = [];
@@ -30,7 +30,7 @@ async function check(path, { status = 200, has = [], type, note } = {}) {
 const first = (html, re) => re.exec(html)?.[1];
 
 // Today and the topics it lists.
-const today = await check('/', { has: ['Agent Cortex', '<h1>Today</h1>'] });
+const today = await check('/', { has: ['Undercurrent', 'id="h-mast"'] });
 const topics = [...new Set([...today.matchAll(/<ul class="today">[\s\S]*?<\/ul>/g)].flatMap((m) => [...m[0].matchAll(/href="\/([a-z0-9-]+)"/g)].map((x) => x[1])))].slice(0, 4);
 if (!topics.length) results.push({ path: '/', ok: false, ms: 0, problems: ['no topics on Today'] });
 for (const slug of topics) {

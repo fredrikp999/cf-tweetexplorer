@@ -278,8 +278,8 @@ function line(d) {
 }
 function contextText() {
   var list = chosen();
-  if (!list.length) return 'In the Agent Cortex topic hub for ' + D.label + ', nothing is picked.';
-  return 'In the Agent Cortex topic hub for ' + D.label + ' (address ' + D.slug + '), the user picked:\\n' + list.map(line).join('\\n');
+  if (!list.length) return 'In the Undercurrent topic hub for ' + D.label + ', nothing is picked.';
+  return 'In the Undercurrent topic hub for ' + D.label + ' (address ' + D.slug + '), the user picked:\\n' + list.map(line).join('\\n');
 }
 function renderAsk() {
   var n = chosen().length, b = el('ask');
@@ -337,5 +337,5 @@ window.addEventListener('message', function (e) {
     send({ id: m.id, result: {} });
   }
 });
-send({ id: 1, method: 'ui/initialize', params: { appInfo: { name: 'agent-cortex-topic', version: '0.1.0' }, appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' } });
+send({ id: 1, method: 'ui/initialize', params: { appInfo: { name: 'undercurrent-topic', version: '0.1.0' }, appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' } });
 </script></body></html>`;

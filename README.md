@@ -4,7 +4,7 @@
 
 Follow what is being said on X, in news and blog feeds, on YouTube and on Hacker News; have language models turn it into short briefings; and see,
 across all of it, which topics are talked about and where. It runs as a single [Cloudflare Worker](https://developers.cloudflare.com/workers/)
-with Durable Objects: a private admin app, a public site (published as **Agent Cortex**), and an MCP server for the Claude app.
+with Durable Objects: a private admin app, a public site (published as **Undercurrent**), and an MCP server for the Claude app.
 
 ## What it does
 

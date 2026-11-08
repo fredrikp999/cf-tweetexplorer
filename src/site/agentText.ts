@@ -339,7 +339,7 @@ export function searchOut(a: SearchAnswer, origin: string, lens?: string, detail
 // ---- prompts
 export function catchUpPrompt(a: { lens?: string; since?: string; area?: string }, now = Date.now()): string {
   const win = windowFromSince(a.since, now), pol = a.area === 'politics', lens = (pol ? ` with ${code('area: "politics"')}` + (a.lens ? ' and' : '') : '') + (a.lens ? ` ${pol ? '' : 'with '}${code(`lens: "${a.lens}"`)}` : '');
-  return [`Catch me up on what happened in ${pol ? 'politics' : 'AI'}${a.since ? ` since ${a.since}` : ' today'}${a.lens ? `, through the ${a.lens} lens` : ''}, using the agent-cortex tools. Do this in order:`,
+  return [`Catch me up on what happened in ${pol ? 'politics' : 'AI'}${a.since ? ` since ${a.since}` : ' today'}${a.lens ? `, through the ${a.lens} lens` : ''}, using the undercurrent tools. Do this in order:`,
     `1. Call ${code('get_overview')}${lens} and ${code(`window: ${win}`)} (the site offers 1, 3 or 7 days; this is the smallest that covers the time).${a.lens ? '' : ` If you do not know which lenses exist, call ${code('list_lenses')} first.`}`,
     `2. For the two or three topics that are new or rising, call ${code('get_topic')} and read the summary and the evidence per source kind.`,
     `3. If a briefing is named in "In brief", call ${code('get_briefing')} for its topic.`,
@@ -348,7 +348,7 @@ export function catchUpPrompt(a: { lens?: string; since?: string; area?: string 
 }
 export function digIntoPrompt(a: { topic: string }): string {
   const t = flat(a.topic, 64);
-  return [`Dig into "${t}" from summary down to the original sources, using the agent-cortex tools. Do this in order:`,
+  return [`Dig into "${t}" from summary down to the original sources, using the undercurrent tools. Do this in order:`,
     `1. Call ${code('get_topic')} with ${code(`topic: "${t}"`)} (an address like ${code('mcp-auth-bypass')}; if it is not found, call ${code('get_overview')} and pick the nearest topic).`,
     `2. Call ${code('get_topic_items')} with ${code('sort: "new"')}, then again with ${code('sort: "top"')} and a ${code('kind')} (for example ${code('"hn"')} or ${code('"x"')}), to see who said what and when. Follow ${code('nextCursor')} if the first page is not enough.`,
     `3. For papers on the topic, call ${code('get_papers')} with ${code(`topic: "${t}"`)}, then ${code('get_paper')} for the most relevant.`,

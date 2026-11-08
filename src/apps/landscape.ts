@@ -268,7 +268,7 @@ function act(b) {
   // A view cannot swap itself for another tool's view, so in a host that lets a view message Claude, a click asks Claude to open the topic: it calls get_topic and the Topic hub is drawn in the chat.
   // Where the host cannot message (the site's host lists only openLinks), a click opens the topic page, as before.
   if (host.message) {
-    request('ui/message', { role: 'user', content: [{ type: 'text', text: 'Show me the topic ' + b.slug + ' (' + b.label + ') from the Agent Cortex landscape.' }] }, 10000, function (err, res) {
+    request('ui/message', { role: 'user', content: [{ type: 'text', text: 'Show me the topic ' + b.slug + ' (' + b.label + ') from the Undercurrent landscape.' }] }, 10000, function (err, res) {
       var n = el('note'); n.textContent = '';
       if (err || (res && res.isError)) { n.textContent = 'Could not send that to Claude. '; }
       else n.textContent = 'Asked Claude to open ' + b.label + '. ';
@@ -287,8 +287,8 @@ function describe(b) {
 }
 function contextText() {
   var list = chosen();
-  if (!list.length) return 'In the Agent Cortex landscape, no topics are picked.';
-  return 'In the Agent Cortex landscape (' + (WINS.filter(function (p) { return p[0] === win; })[0][1].toLowerCase()) + (area === 'politics' ? ', politics' : '') + (L.lens ? ', lens ' + L.lens.name : '') + '), the user picked these topics:\\n' + list.map(describe).join('\\n') + '\\nUse get_topic with the topic address' + (area === 'politics' ? ' (area politics)' : '') + ' for the summary and evidence.';
+  if (!list.length) return 'In the Undercurrent landscape, no topics are picked.';
+  return 'In the Undercurrent landscape (' + (WINS.filter(function (p) { return p[0] === win; })[0][1].toLowerCase()) + (area === 'politics' ? ', politics' : '') + (L.lens ? ', lens ' + L.lens.name : '') + '), the user picked these topics:\\n' + list.map(describe).join('\\n') + '\\nUse get_topic with the topic address' + (area === 'politics' ? ' (area politics)' : '') + ' for the summary and evidence.';
 }
 function sendContext() {
   clearTimeout(ctxTimer);
@@ -333,5 +333,5 @@ window.addEventListener('message', function (e) {
   }
 });
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideTip(); });
-send({ id: 1, method: 'ui/initialize', params: { appInfo: { name: 'agent-cortex-landscape', version: '0.1.0' }, appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' } });
+send({ id: 1, method: 'ui/initialize', params: { appInfo: { name: 'undercurrent-landscape', version: '0.1.0' }, appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' } });
 </script></body></html>`;

@@ -566,7 +566,7 @@ test('every public page carries the statement arXiv asks for, in its own words, 
   assert.equal(ARXIV_THANKS, 'Thank you to arXiv for use of its open access interoperability.');
   const page = readFileSync(new URL('../src/site/public.ts', import.meta.url), 'utf8');
   assert.match(page.slice(page.indexOf('function shell('), page.indexOf('function shell(') + 2500), /<p class="credit">\$\{ARXIV_THANKS\}<\/p><\/main>/);
-  assert.match(page, /shell\('Research pulse · Agent Cortex'/);
+  assert.match(page, /shell\('Research pulse · Undercurrent'/);
   assert.match(page, /not affiliated with or endorsed by arXiv/);
   assert.ok(readFileSync(new URL('../public/admin/index.html', import.meta.url), 'utf8').includes(ARXIV_THANKS));
 });

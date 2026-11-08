@@ -255,11 +255,15 @@ h1{font-weight:800;font-variation-settings:"opsz" 72}
 .lrow.st-rising .lb i{background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 60%,var(--amber)))}.lrow.st-new .lb i{background:linear-gradient(90deg,var(--amber),color-mix(in srgb,var(--amber) 55%,var(--accent)))}.lrow.lensin .lb i{background:var(--lc)}
 .lrow .tags{align-items:center}.lrow .tags .meta{margin:0}.mix{display:inline-flex;width:56px;height:6px;border-radius:3px;overflow:hidden;align-self:center;background:var(--line)}.mix i{display:block;min-width:2px}
 .lcard{border-top-width:4px;box-shadow:var(--sh1)}.lcard:not([class*=" lc-"]).st-rising{border-top-color:var(--accent)}.lcard:not([class*=" lc-"]).st-new{border-top-color:var(--amber)}.lcard:not([class*=" lc-"]).st-steady,.lcard:not([class*=" lc-"]).st-falling{border-top-color:var(--bar)}
-.wave{display:flex;align-items:center;gap:10px;margin:44px 0 0;color:var(--line)}.wave::before,.wave::after{content:'';flex:1;height:2px;background:currentColor;border-radius:1px}.wave svg{width:44px;height:22px;flex:none;color:var(--accent)}.wave+.credit{border-top:0;margin-top:10px;padding-top:0}
+.wave{display:flex;align-items:center;gap:10px;margin:44px 0 0;color:var(--line)}.wave::before,.wave::after{content:'';flex:1;height:2px;background:currentColor;border-radius:1px}.wave svg{width:36px;height:18px;flex:none;color:var(--accent)}.wave svg+span+svg{color:var(--bar)}
+.wave span{flex:none;font-size:13px;font-weight:600;color:var(--muted);letter-spacing:.01em}@media(max-width:520px){.wave span{font-size:12px;white-space:normal;text-align:center;flex:0 1 auto}}.wave+.credit{border-top:0;margin-top:10px;padding-top:0}
 .app{overflow-x:clip}.page.home{padding-top:0}
 .mast{position:relative;isolation:isolate;overflow:hidden;margin:0 calc(50% - 50vw) 8px;padding:40px max(16px,calc(50vw - 35rem)) 36px;color:#e9f3f4;background:radial-gradient(90% 130% at 88% -10%,#17505c 0%,transparent 60%),radial-gradient(60% 90% at 0% 110%,rgba(176,33,79,.28) 0%,transparent 65%),var(--rail)}
 .mast a{color:#fff;text-decoration-color:rgba(255,255,255,.4)}.mast a:hover{color:#ffc2d6}
-.mastwave{position:absolute;inset:auto 0 0 0;width:100%;height:150px;color:rgba(255,255,255,.07);z-index:-1}
+.mastwave{position:absolute;inset:auto 0 0 0;width:100%;height:170px;z-index:-1;overflow:visible}.mastwave g{animation:drift 70s linear infinite}.mastwave path{fill:none;stroke-width:2;vector-effect:non-scaling-stroke}
+.mastwave .c1 path{stroke:rgba(127,211,223,.13)}.mastwave .c2{animation-duration:110s}.mastwave .c2 path{stroke:rgba(255,143,184,.12)}.mastwave .c3{animation-duration:50s}.mastwave .c3 path{fill:rgba(127,211,223,.05);stroke:rgba(127,211,223,.09)}
+@keyframes drift{to{transform:translateX(-1200px)}}
+.mastlede .tagline{display:block;color:#fff;font-size:19px;font-weight:650;letter-spacing:-.01em;margin-bottom:4px}
 .mastin{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:24px 36px;align-items:center}.mast.nobub .mastin{grid-template-columns:minmax(0,1fr)}.mast.nobub .masttext{max-width:46rem}
 .masteye{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#9fc3c8;margin:0 0 12px}.masteye .lsw{width:10px;height:10px;border-radius:3px;background:var(--lc)}
 .mast h1{font-size:clamp(32px,4.4vw,54px);line-height:1.06;letter-spacing:-.022em;margin:0 0 14px;font-variation-settings:"opsz" 60;text-wrap:balance}
@@ -292,16 +296,21 @@ h1{font-weight:800;font-variation-settings:"opsz" 72}
 @media(max-width:520px){.minibub{display:flex}.mast{padding:26px 16px 24px}.since .tile{min-width:0;flex:1 1 6rem;padding:8px 10px}.since .tile b{font-size:30px}.bcards li{grid-template-columns:88px minmax(0,1fr);gap:10px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}`;
 
-const MARK = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c9265f"/><polyline points="5,17 11,17 14,8 18,24 21,14 23,17 27,17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+/** The mark: a still surface line over two currents, white on raspberry. */
+const MARK = '<svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="ucmark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d93a6c"/><stop offset="1" stop-color="#8e1645"/></linearGradient></defs><rect width="32" height="32" rx="9" fill="url(#ucmark)"/><path d="M7 10.5h18" stroke="#fff" stroke-opacity=".55" stroke-width="1.8" stroke-linecap="round"/><path d="M5 18.5c3.6-4.2 7.2-4.2 10.8 0s7.2 4.2 11.2 0" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M8.5 24.5c2.5-2.7 5-2.7 7.5 0s5 2.7 7.5 0" fill="none" stroke="#fff" stroke-opacity=".65" stroke-width="2" stroke-linecap="round"/></svg>';
 
-/** The beat of the mark, as a divider above the foot of every page. */
-const BEAT = '<polyline points="0,12 14,12 18,4 24,20 28,9 31,12 48,12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>';
-const WAVE = `<div class="wave" aria-hidden="true"><svg viewBox="0 0 48 24">${BEAT}</svg></div>`;
-/** The same beat, three times across the foot of the landing page's masthead. */
+/** The current of the mark, as a small wave: the divider at the foot of every page and the picture of a briefing that has none. */
+const CURL = '<path d="M2 12c3.7-5.5 7.3-5.5 11 0s7.3 5.5 11 0 7.3-5.5 11 0 7.3 5.5 11 0" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>';
+const TAGLINE = (area: Area) => `What&rsquo;s rising in ${area === 'politics' ? 'politics' : 'AI'}, before it&rsquo;s news`;
+const WAVE = `<div class="wave"><svg viewBox="0 0 48 24" aria-hidden="true">${CURL}</svg><span>Undercurrent &middot; what&rsquo;s rising, before it&rsquo;s news</span><svg viewBox="0 0 48 24" aria-hidden="true">${CURL}</svg></div>`;
+/** Currents under the masthead: three layers of waves, each drifting at its own pace (two copies side by side, so the drift has no seam). */
 const MAST_WAVE = (() => {
-  const p = ['0,120'];
-  for (const b of [150, 540, 930]) p.push(`${b},120`, `${b + 16},120`, `${b + 28},38`, `${b + 44},188`, `${b + 58},78`, `${b + 68},120`);
-  return `<svg class="mastwave" viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true"><polyline points="${p.join(' ')} 1200,120" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
+  const layer = (y: number, a: number, per: number, cls: string, fill = false) => {
+    let d = `M0 ${y} Q${per / 4} ${y - a} ${per / 2} ${y}`;
+    for (let x = per; x <= 2400; x += per / 2) d += ` T${x} ${y}`;
+    return `<g class="${cls}"><path d="${d}${fill ? ' V200 H0 Z' : ''}"/></g>`;
+  };
+  return `<svg class="mastwave" viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true">${layer(96, 16, 300, 'c1')}${layer(132, 24, 400, 'c2')}${layer(166, 12, 240, 'c3', true)}</svg>`;
 })();
 /** A hue of its own for a briefing without a picture, from its slug. */
 const hueOf = (slug: string) => [...slug].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 360, 7);
@@ -362,7 +371,7 @@ ${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class
   // The first thing on the page, so it is not lazy. Cropped to a band, so the briefings stay near the top; the briefing itself shows the whole picture.
   const hero = lead ? `<figure class="hero lead"><a href="/${esc(lead.slug)}"><img src="${leadSrc}" alt="Illustration for the ${esc(lead.title)} briefing" decoding="async" fetchpriority="high"></a><figcaption>AI-generated illustration for <a href="/${esc(lead.slug)}">${esc(lead.title)}</a></figcaption></figure>` : '';
   const ai = ctx.area === 'ai';
-  return shell(`${ai ? '' : 'Politics '}Briefings · Agent Cortex`, bar(ctx, undefined, 'briefings'), `${hero}<header class="pagehead"><div class="eyebrow">${date(Date.now())}</div><h1>${ai ? "Today's briefings" : 'Politics briefings'}</h1>
+  return shell(`${ai ? '' : 'Politics '}Briefings · Undercurrent`, bar(ctx, undefined, 'briefings'), `${hero}<header class="pagehead"><div class="eyebrow">${date(Date.now())}</div><h1>${ai ? "Today's briefings" : 'Politics briefings'}</h1>
 <p class="lede">Short briefings on what is being said online, from X, news and blog feeds, YouTube and Hacker News, and <a href="/signal">Signal</a>: what is talked about across all of it.</p></header>
 ${today ? `<ul class="today">${today}</ul>` : ctx.reports.length ? '' : '<p class="lede">Nothing published yet.</p>'}
 ${strip?.topics.length ? stripHtml(strip, 'Talked about now') : ''}
@@ -404,7 +413,7 @@ export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: Land
   const win = o.window ? `<nav class="sgwin" aria-label="Time window">${WINDOWS.map((w) => `<a data-win="${w}" href="${o.href({ lens: o.lens?.key, window: w })}"${o.window === w ? ' aria-current="page"' : ''}>${WINDOW_LABEL[w]}</a>`).join('')}</nav>` : '';
   // The area chooser: plain links, shown only when there is more than AI to choose. The current area is marked in words too (aria-current), not by position.
   const chooser = ctx.areas.length > 1 ? `<nav class="sgwin areabar" aria-label="Area"><span class="lenslbl">Area</span>${ctx.areas.map((a) => `<a href="${AREA_HOME[a]}"${a === area ? ' aria-current="page"' : ''}>${AREA_LABEL[a]}</a>`).join('')}</nav>` : '';
-  return `<header class="topbar"><div class="tb"><a class="brand" href="${AREA_HOME[area]}">${MARK}<span>Agent Cortex<small>${esc(AREA_LABEL[area])}</small></span></a>
+  return `<header class="topbar"><div class="tb"><a class="brand" href="${AREA_HOME[area]}">${MARK}<span>Undercurrent<small>${esc(AREA_LABEL[area])}</small></span></a>
 <nav class="sgwin tbbrief" aria-label="Briefings"><a href="${AREA_BRIEFINGS[area]}"${h.page === 'briefings' || h.slug ? ' aria-current="page"' : ''}>Briefings</a></nav>
 ${chooser}${lensBar(o.lenses, o.lens, (k) => o.href({ lens: k, window: o.window }), o.restore !== false)}${win}
 <form action="/search" method="get" role="search"><input type="search" name="q" value="${esc(o.q ?? '')}" placeholder="Search" aria-label="Search topics, items, papers and briefings" maxlength="80">${o.lens ? `<input type="hidden" name="lens" value="${esc(o.lens.key)}">` : ''}${ai ? '' : '<input type="hidden" name="area" value="politics">'}<button class="go" type="submit">Search</button></form>
@@ -454,7 +463,7 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
     return `<section aria-labelledby="h-today"><h2 class="lh" id="h-today">${ai ? "Today's briefings" : 'Briefings'} <a href="${AREA_BRIEFINGS[area]}">All briefings &rarr;</a></h2><ul class="bcards">${list.map((t, i) => {
       const fresh = Date.now() - t.latest.publishedAt < 26 * 3600_000, th = (t.latest.themes ?? []).slice(0, 3);
       // The picture repeats the title link, so it is hidden from screen readers and the keyboard. Without a picture: a colour of the briefing's own and the beat of the mark.
-      const pic = t.pic ? `<img src="/image/${esc(t.slug)}/${esc(t.pic.id)}.jpg?v=${t.pic.v}" alt="" loading="${i ? 'lazy' : 'eager'}" decoding="async">` : `<span class="ph" style="--h:${hueOf(t.slug)}"><svg viewBox="0 0 48 24">${BEAT}</svg></span>`;
+      const pic = t.pic ? `<img src="/image/${esc(t.slug)}/${esc(t.pic.id)}.jpg?v=${t.pic.v}" alt="" loading="${i ? 'lazy' : 'eager'}" decoding="async">` : `<span class="ph" style="--h:${hueOf(t.slug)}"><svg viewBox="0 0 48 24">${CURL}</svg></span>`;
       return `<li><a class="bimg" href="/${esc(t.slug)}" tabindex="-1" aria-hidden="true">${pic}</a><div class="btxt"><div class="h"><a href="/${esc(t.slug)}"><b>${esc(t.title)}</b></a><small>${fresh ? '<span class="up">new</span> ' : ''}${date(t.latest.publishedAt)}</small></div>${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class="th">${th.map((x) => `<a href="/${esc(t.slug)}#${esc(anchorOfTheme(x))}">${esc(x)}</a>`).join(' &middot; ')}</p>` : ''}</div></li>`;
     }).join('')}</ul></section>`;
   });
@@ -512,7 +521,9 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
     if (!top) return '';
     const riser = risingStrip(lens ? own : topics, !!sig?.baselineOk).find((r) => r.state !== 'falling' && r.term !== top.term);
     const l = (term: string, label: string) => `<a href="${topicUrl(term, area)}">${esc(label)}</a>`;
-    return `${l(top.term, top.label)} leads the conversation${win === 1 ? ' today' : ` over ${win} days`}${riser ? `, and ${l(riser.term, riser.label)} is ${riser.state === 'new' ? 'new' : 'climbing'}` : ''}`;
+    // What rises comes first: that is what the name promises. Without a riser, what leads.
+    return riser ? `Beneath ${l(top.term, top.label)}, ${l(riser.term, riser.label)} is ${riser.state === 'new' ? 'surfacing' : 'rising'}`
+      : `${l(top.term, top.label)} leads the conversation${win === 1 ? ' today' : ` over ${win} days`}`;
   });
   const mini = guard(() => {
     const big = own.slice(0, 6), mx = Math.max(1e-9, big[0]?.signal ?? 0);
@@ -521,16 +532,15 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
   const bubbles = !!(d.landscape?.bubbles.length && rank.rows.length);
   const graphic = bubbles ? `<div class="mastviz landscape-graphic" id="landscape-graphic">${vizFrame('landscape', `/overview.json?window=${win}${lens ? '&amp;lens=' + encodeURIComponent(lens.key) : ''}${ai ? '' : '&amp;area=politics'}`, 'The landscape: a bubble for each topic, sized by its score, grouped by topics talked about together. The ranked list on this page says the same.')}</div>` : '';
   const lede = lens ? `${lens.description ? esc(lens.description) + ' ' : ''}${headline ? headline + '. ' : rank.inCount ? '' : `No topic in ${esc(lens.name)} is big enough ${win === 1 ? 'today' : 'in this period'}. `}<a href="${landingHref({ window: win }, area)}">Show everything</a>`
-    : ai ? 'Short briefings, the topics being talked about across news, blogs, X, YouTube and Hacker News, and the research behind them.'
-    : sig ? 'Short briefings and the topics being talked about across news, blogs, X, YouTube and Hacker News.' : 'Nothing is published here yet.';
+    : sig || ai ? `<b class="tagline">${TAGLINE(area)}.</b> Short briefings and the topics being talked about across news, blogs, X, YouTube and Hacker News${ai ? ', with the research behind them' : ''}.` : 'Nothing is published here yet.';
   const mast = `<section class="mast${bubbles ? '' : ' nobub'}${lens ? ` lensmast lc-${lens.color}` : ''}" aria-labelledby="h-mast">${MAST_WAVE}<div class="mastin"><div class="masttext">
 <div class="masteye">${lens ? `<span class="lsw" aria-hidden="true"></span>Lens &middot; ${esc(AREA_LABEL[area])}` : `${date(Date.now())} &middot; ${esc(AREA_LABEL[area])}`}</div>
 <h1 id="h-mast"${!lens && headline.replace(/<[^>]+>/g, '').length > 60 ? ' class="long"' : ''}>${lens ? esc(lens.name) : headline || (ai ? 'What is going on in AI' : 'Politics')}</h1><p class="mastlede">${lede}</p>${since}${mini}</div>${graphic}</div></section>`;
   const body = `${mast}<div class="lgrid"><div>${brief}${today}</div><div>${landscape}</div></div>${rising}${cards}${research}${watch}
 <p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals. <a href="/signal/method">How the numbers are worked out</a>.</p>`;
-  return shell(ai ? 'Agent Cortex' : 'Politics · Agent Cortex', topBar(ctx, { lenses, lens, window: win, href: (p) => landingHref(p, area), here: {} }), body, { wide: true, home: true, canonical: origin ? origin + AREA_HOME[area] : undefined,
-    description: ai ? 'What is going on in AI: short briefings, the topics being talked about across news, blogs, X, YouTube and Hacker News, and the research behind them.'
-      : 'What is going on in politics: short briefings and the topics being talked about across news, blogs, X, YouTube and Hacker News.' });
+  return shell(ai ? 'Undercurrent · What’s rising in AI, before it’s news' : 'Politics · Undercurrent', topBar(ctx, { lenses, lens, window: win, href: (p) => landingHref(p, area), here: {} }), body, { wide: true, home: true, canonical: origin ? origin + AREA_HOME[area] : undefined,
+    description: ai ? 'What’s rising in AI, before it’s news: short briefings, the topics being talked about across news, blogs, X, YouTube and Hacker News, and the research behind them.'
+      : 'What’s rising in politics, before it’s news: short briefings and the topics being talked about across news, blogs, X, YouTube and Hacker News.' });
 }
 
 
@@ -540,9 +550,9 @@ export function agentHtml(ctx: Ctx, origin: string): string {
   const tools: Array<[string, string]> = [['list_lenses', 'The areas (AI and politics, kept apart) and their lenses, with a line each.'], ['get_overview', 'What is going on: in brief, new and rising topics, the top topics, research in short. Takes an area (AI, or politics), a lens and a window of 1, 3 or 7 days.'],
     ['get_topic', 'One topic: summary, state, evidence per kind of source, top items, papers, briefings, related topics.'], ['get_topic_items', 'The posts, threads, articles and videos behind a topic, 25 a page, with links to the originals.'], ['search', 'Find topics, items, papers and briefings by words, grouped by kind with topics first, each with a link to the original.'],
     ['get_briefing', 'A published briefing with its themes and sources.'], ['get_papers', 'Papers of the last 30 days with their abstract and how many posts name them. Filter by topic, cluster, words or "being discussed".'], ['get_paper', 'One paper: abstract, links, every post that names it.']];
-  return shell('For agents · Agent Cortex', bar(ctx, undefined, 'agent'), `<header class="pagehead"><h1>For agents</h1><p class="lede">The same three levels as this site, as a server your own agent can ask: Claude Code while you work, the Claude app, or a scheduled routine. It answers in short Markdown with links to every original, and as JSON for programs.</p></header>
+  return shell('For agents · Undercurrent', bar(ctx, undefined, 'agent'), `<header class="pagehead"><h1>For agents</h1><p class="lede">The same three levels as this site, as a server your own agent can ask: Claude Code while you work, the Claude app, or a scheduled routine. It answers in short Markdown with links to every original, and as JSON for programs.</p></header>
 <h2 class="sect">Connect</h2>
-<p>In Claude Code:</p><pre><code>claude mcp add --transport http agent-cortex ${esc(mcp)}</code></pre>
+<p>In Claude Code:</p><pre><code>claude mcp add --transport http undercurrent ${esc(mcp)}</code></pre>
 <p>In the Claude app or claude.ai, add a custom connector with this address (no sign-in):</p><pre><code>${esc(mcp)}</code></pre>
 <p>Any other client that speaks MCP over HTTP can use the same address.</p>
 <h2 class="sect">What it can do</h2>
@@ -600,7 +610,7 @@ export function researchTopicHtml(d: PubResearchPage, ctx: Ctx): string {
   const t = d.topic, base = `/research/${esc(t.slug)}`;
   const facts = t.state === 'building' ? 'Collecting past weeks to compare with.' : `${n(t.n)} new papers, ${esc(t.from)} to ${esc(t.end)}: ${pct1(t.share)} of AI papers, against a usual ${pct1(t.baseline)}.`;
   const pager = d.pages > 1 ? `<nav class="pager" aria-label="Pages">${d.page > 1 ? `<a href="${base}${d.page > 2 ? `?page=${d.page - 1}` : ''}" rel="prev">&larr; Newer</a>` : '<span></span>'}<span>Page ${n(d.page)} of ${n(d.pages)}</span>${d.page < d.pages ? `<a href="${base}?page=${d.page + 1}" rel="next">Older &rarr;</a>` : '<span></span>'}</nav>` : '';
-  return shell(`${t.title} · Research pulse · Agent Cortex`, bar(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h1>
+  return shell(`${t.title} · Research pulse · Undercurrent`, bar(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h1>
 ${t.blurb ? `<p class="lede">${esc(t.blurb)}</p>` : ''}<p class="meta">${facts}${d.others.length ? ` Other topics: ${d.others.map((x) => `<a href="/research/${esc(x.slug)}">${esc(x.title)}</a>`).join(', ')}.` : ''}</p></header>
 ${d.attention.length ? `<h2>Getting attention</h2><p class="meta">From the last ${d.topDays} days: upvotes on Hugging Face, points on Hacker News, and posts collected on this site that link to a paper. Attention is not quality, and most new papers have not had time to get any.</p><ol class="papers">${d.attention.map(paperHtml).join('')}</ol>` : ''}
 <h2>New papers</h2><p class="meta">${d.total ? `${n(d.total)} papers from the last ${d.keepDays} days at most, newest first.` : 'Reading the papers. This fills in by itself.'}</p>
@@ -608,7 +618,7 @@ ${d.attention.length ? `<h2>Getting attention</h2><p class="meta">From the last 
 <p class="meta">Papers and abstracts from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>, where each paper is hosted. This site is not affiliated with or endorsed by arXiv. Upvotes from <a href="https://huggingface.co/papers" rel="noopener noreferrer">Hugging Face Daily Papers</a>; points from Hacker News.</p>`, { description: `New research papers on ${t.title}, and which of them are getting attention.` });
 }
 function researchMapHtml(ctx: Ctx, lens?: Lens): string {
-  return shell('Research map · Agent Cortex', bar(ctx, undefined, 'map', undefined, { lens, href: (p) => '/research/map' + (p.lens ? '?lens=' + encodeURIComponent(p.lens) : '') }), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>Research map</h1>
+  return shell('Research map · Undercurrent', bar(ctx, undefined, 'map', undefined, { lens, href: (p) => '/research/map' + (p.lens ? '?lens=' + encodeURIComponent(p.lens) : '') }), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>Research map</h1>
 <p class="lede">What the papers of the last 30 days in the research topics are about, grouped by subject. Choose the dates, the level of detail and the topics.</p></header>
 ${vizFrame('map', '/research/map', 'New research papers grouped by subject, with date, detail, topic and lens controls', lens?.key ?? '')}
 <h2>How this is made</h2>
@@ -623,7 +633,7 @@ export function researchHtml(d: PubPulse, ctx: Ctx): string {
       : `${n(t.n)} new papers, ${esc(t.from)} to ${esc(t.end)}: ${pct1(t.share)} of AI papers, against a usual ${pct1(t.baseline)} (${t.ratio.toFixed(2)} times).`;
     return `<article id="${esc(t.id)}"><div><h2>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h2>${t.blurb ? `<p>${esc(t.blurb)}</p>` : ''}<p>${facts}</p><p><a href="/research/${esc(t.slug)}">The papers &rarr;</a></p></div>${pulseSpark(t)}</article>`;
   }).join('');
-  return shell('Research pulse · Agent Cortex', bar(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow">Analysis</div><h1>Research pulse</h1>
+  return shell('Research pulse · Undercurrent', bar(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow">Analysis</div><h1>Research pulse</h1>
 <p class="lede">Which areas of AI research are getting more attention from researchers right now, measured by how many new papers they post.</p></header>
 <p><a href="/research/map">See what the papers are about on the Research map &rarr;</a></p>
 ${d.field.surge ? `<p class="note">All of AI research had an unusually big week: ${n(d.field.n)} papers, ${d.field.ratio.toFixed(1)} times the usual. A topic only counts as spiking if it grew more than the field did.</p>` : ''}
@@ -638,7 +648,7 @@ ${d.field.surge ? `<p class="note">All of AI research had an unusually big week:
 export function signalIndexHtml(ctx: Ctx): string {
   const cards = ctx.boards.map((b) => `<li class="pic"><a class="card" href="/signal/${esc(b.slug)}"><span class="eyebrow">${b.groups.length} group${b.groups.length === 1 ? '' : 's'}</span><h2>${esc(b.title)}</h2>${b.description ? `<p>${esc(b.description)}</p>` : ''}
 <div class="foot"><span>${esc(b.groups.join(' · '))}</span></div></a>${hasFirst(b) ? `<a class="cardpic" href="/signal/${esc(b.slug)}/first">Who said it first &rarr;</a>` : ''}</li>`).join('');
-  return shell('Signal · Agent Cortex', bar(ctx, undefined, 'signal'), `<header class="pagehead"><div class="eyebrow">${ctx.boards.length} signal${ctx.boards.length === 1 ? '' : 's'}</div><h1>Signal</h1>
+  return shell('Signal · Undercurrent', bar(ctx, undefined, 'signal'), `<header class="pagehead"><div class="eyebrow">${ctx.boards.length} signal${ctx.boards.length === 1 ? '' : 's'}</div><h1>Signal</h1>
 <p class="lede">What is being talked about across news, blogs, X and Hacker News, combined into one score per topic, and where each topic shows up. <a href="/signal/method">How it works</a>.</p></header>
 <ul class="topics">${cards}</ul>`, { description: 'What is being talked about across news, blogs, X and Hacker News, combined into one score per topic.' });
 }
@@ -772,7 +782,7 @@ export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', len
   const also = (here.length ? `Also in: ${here.map((b) => `<a href="/signal/${esc(b.slug)}">${esc(b.title)}</a>`).join(', ')}. ` : '') + other.map((a) => `The same name is also a topic in <a href="${esc(topicHref(d.slug, a))}">${AREA_LABEL[a]}</a>. `).join('');
   const areaLink = d.area === 'politics' || ctx.areas.length > 1 ? `<a href="${AREA_HOME[d.area]}">${AREA_LABEL[d.area]}</a> &middot; ` : '';
   const summary = sm?.text ?? d.fallback;
-  return shell(`${d.label} · Topic · Agent Cortex`, bar(ctx, undefined, 'topics'), `<header class="pagehead"><div class="eyebrow">${areaLink}Topic &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a></div><h1>${esc(d.label)} ${pill}</h1>
+  return shell(`${d.label} · Topic · Undercurrent`, bar(ctx, undefined, 'topics'), `<header class="pagehead"><div class="eyebrow">${areaLink}Topic &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a></div><h1>${esc(d.label)} ${pill}</h1>
 <p class="lede">${esc(summary)}</p>${written}${lensLine}</header>
 <section class="tophead"><div class="spark">${topicSpark(d.series)}<div class="axis"><span>${esc(d.series.days[0])}</span><span>${esc(d.series.days[d.series.days.length - 1])}</span></div></div>
 <p class="meta">Items per day, the last 14 days; the dashed line is the usual level. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p></section>
@@ -786,7 +796,7 @@ ${d.related.length ? `<h2 class="sect">Goes with</h2><p class="meta">${d.related
 
 /** What the numbers mean and how they are made, in plain words. */
 export function signalMethodHtml(ctx: Ctx): string {
-  return shell('How Signal works · Agent Cortex', bar(ctx, undefined, 'method'), `<header class="pagehead"><div class="eyebrow">Methodology</div><h1>How Signal works</h1>
+  return shell('How Signal works · Undercurrent', bar(ctx, undefined, 'method'), `<header class="pagehead"><div class="eyebrow">Methodology</div><h1>How Signal works</h1>
 <p class="lede">Signal shows what is being talked about across the feeds, channels and accounts we follow. Everything is counted automatically. This page says how, and where it can go wrong.</p></header>
 <h2 class="sect">Sources and groups</h2>
 <p class="meta">We follow public posts, articles, videos and Hacker News stories. Sources are put into <b>groups</b> (for example "Hacker News" or "AI YouTube"), and each group has a <b>weight</b> that sets how much it counts. Briefings written on this site can also feed a group; their posts were already picked from many sources, so that group starts with a higher weight.</p>
@@ -808,7 +818,7 @@ export function signalMethodHtml(ctx: Ctx): string {
 /** A published Signal that has nothing to draw, or cannot be drawn now. */
 export function signalMessageHtml(ctx: Ctx, slug: string, message: string): string {
   const b = ctx.boards.find((x) => x.slug === slug);
-  return shell(`${b?.title ?? 'Signal'} · Agent Cortex`, bar(ctx, undefined, 'signal', slug), `<header class="pagehead"><div class="eyebrow">Signal</div><h1>${esc(b?.title ?? 'Signal')}</h1>${b?.description ? `<p class="lede">${esc(b.description)}</p>` : ''}</header><p class="meta">${esc(message)}</p>`);
+  return shell(`${b?.title ?? 'Signal'} · Undercurrent`, bar(ctx, undefined, 'signal', slug), `<header class="pagehead"><div class="eyebrow">Signal</div><h1>${esc(b?.title ?? 'Signal')}</h1>${b?.description ? `<p class="lede">${esc(b.description)}</p>` : ''}</header><p class="meta">${esc(message)}</p>`);
 }
 
 const SORTS = [['strength', 'Strongest'], ['rising', 'Rising'], ['new', 'New'], ['reacted', 'Most reacted']] as const;
@@ -865,7 +875,7 @@ export function signalPageHtml(d: PubSignal, ctx: Ctx, q: { sort: SigSort; group
   }).join('')}</div><div class="axis"><span>${esc(d.volumeDays[0])}</span><span>${esc(d.volumeDays[d.volumeDays.length - 1])}</span></div>`;
   const keep = [q.sort !== 'strength' ? 'sort=' + q.sort : '', q.group >= 0 ? 'group=' + q.group : '', lens ? 'lens=' + encodeURIComponent(lens.key) : ''].filter(Boolean).join('&amp;');   // the window keeps the sort and the group
   const win = [[1, 'Today'], [3, '3 days'], [7, '7 days'], [14, '14 days']].map(([k, label]) => `<a href="/signal/${esc(d.slug)}${k === 7 ? '' : '/' + k}${keep ? '?' + keep : ''}"${d.days === k ? ' aria-current="page"' : ''}>${label}</a>`).join('');
-  return shell(`${d.title} · Signal · Agent Cortex`, bar(ctx, undefined, 'signal', d.slug, { lens, href: (p) => qs(q.sort, q.group, p.lens ?? '') }), `<header class="pagehead"><div class="eyebrow">${esc(d.from)}${d.from === d.to ? '' : ' to ' + esc(d.to)}</div><h1>${esc(d.title)}</h1>
+  return shell(`${d.title} · Signal · Undercurrent`, bar(ctx, undefined, 'signal', d.slug, { lens, href: (p) => qs(q.sort, q.group, p.lens ?? '') }), `<header class="pagehead"><div class="eyebrow">${esc(d.from)}${d.from === d.to ? '' : ' to ' + esc(d.to)}</div><h1>${esc(d.title)}</h1>
 <p class="lede">${d.description ? esc(d.description) + ' ' : ''}What is being talked about across ${d.groups.length === 1 ? 'one group of sources' : `${d.groups.length} groups of sources`}, combined into one score, and where each topic shows up.</p></header>
 ${d.groups.length > 1 ? vizLink(`/signal/${esc(d.slug)}/first`, 'Who said it first', 'See which of these sources has a topic before the others.') : ''}
 ${lens ? `<p class="meta">${lensTag(lens)} ${esc(lens.description)} ${inLens.size ? `${(() => { const k = topList.filter((t) => inLens.has(t.term)).length; return `${n(k)} of the ${n(topList.length)} topics shown ${k === 1 ? 'is' : 'are'} in it; they come first.`; })()}` : 'No topic shown below is in it today.'}</p>${outsideLine(applied.outside, ctx.area)}` : ''}
@@ -892,7 +902,7 @@ function reportCards(list: PubReportBrief[]): string {
 }
 
 export function historyIndexHtml(ctx: Ctx): string {
-  return shell('Reports · Agent Cortex', bar(ctx, undefined, 'history'), `<header class="pagehead"><div class="eyebrow">${ctx.reports.length} report${ctx.reports.length === 1 ? '' : 's'}</div><h1>Reports</h1>
+  return shell('Reports · Undercurrent', bar(ctx, undefined, 'history'), `<header class="pagehead"><div class="eyebrow">${ctx.reports.length} report${ctx.reports.length === 1 ? '' : 's'}</div><h1>Reports</h1>
 <p class="lede">Collections of public posts on X over longer periods, with the numbers behind them and every post.</p></header>
 <ul class="topics">${reportCards(ctx.reports)}</ul>`, { description: 'Collections of public posts on X over longer periods, with statistics.' });
 }
@@ -1102,7 +1112,7 @@ ${days ? `<ul class="daylist">${days}</ul>` : '<p class="lede">No earlier briefi
 /** The form for reporting an error in a briefing, or in one theme of it. Plain HTML: a message, nothing about the reader. */
 export function errorReportHtml(topic: TopicInfo, issueId: string, theme: string, ctx: Ctx, sent?: 'ok' | 'error'): string {
   const back = `/${esc(topic.slug)}/${esc(issueId)}${theme ? '#' + esc(anchorOfTheme(theme)) : ''}`;
-  return shell(`Report an error · ${topic.title} · Agent Cortex`, bar(ctx, { slug: topic.slug, title: topic.title, view: 'issue', earlier: 0 }), `<header class="pagehead"><div class="eyebrow"><a href="${back}">&larr; ${esc(topic.title)}, ${esc(issueId)}</a></div><h1>Report an error</h1>
+  return shell(`Report an error · ${topic.title} · Undercurrent`, bar(ctx, { slug: topic.slug, title: topic.title, view: 'issue', earlier: 0 }), `<header class="pagehead"><div class="eyebrow"><a href="${back}">&larr; ${esc(topic.title)}, ${esc(issueId)}</a></div><h1>Report an error</h1>
 <p class="lede">${theme ? `In “${esc(theme)}”. ` : ''}Tell us what is wrong: a fact, a source, a missing side of the story. Reports are read by a person; the briefing is changed when they are right.</p></header>
 ${sent === 'ok' ? `<p class="lede">Thank you, it has been sent. <a href="${back}">Back to the briefing</a>.</p>` : `${sent === 'error' ? '<p class="meta">That could not be sent. Too many reports from you today, or the message was empty.</p>' : ''}
 <form class="report" method="post" action="/report"><input type="hidden" name="slug" value="${esc(topic.slug)}"><input type="hidden" name="id" value="${esc(issueId)}"><input type="hidden" name="theme" value="${esc(theme)}">
@@ -1125,7 +1135,7 @@ export function feedPageHtml(d: PubViewPage, ctx: Ctx): string {
     : (first ? `<section class="vlead">${player(first)}<h2>${itemLink(first, esc(first.title))}</h2>${itemMeta(first)} ${itemLink(first, '<small class="out">Watch on YouTube &#8599;</small>')}</section>` : '')
     + (d.layout === 'list' ? `<ul class="vlist">${rest.map((i) => `<li>${itemLink(i, esc(i.title))}${itemMeta(i)}</li>`).join('')}</ul>`
       : `<ul class="vcards">${rest.map((i) => `<li>${itemLink(i, `${thumb(i)}<b>${esc(i.title)}</b>`)}${itemMeta(i)}</li>`).join('')}</ul>`);
-  return shell(`${d.title} · Agent Cortex`, bar(ctx, undefined, 'feeds', d.slug), `<header class="pagehead"><div class="eyebrow">${how}</div><h1>${esc(d.title)}</h1>${d.description ? `<p class="lede">${esc(d.description)}</p>` : ''}</header>
+  return shell(`${d.title} · Undercurrent`, bar(ctx, undefined, 'feeds', d.slug), `<header class="pagehead"><div class="eyebrow">${how}</div><h1>${esc(d.title)}</h1>${d.description ? `<p class="lede">${esc(d.description)}</p>` : ''}</header>
 ${body}<p class="note">Titles, pictures and videos belong to their publishers; each links to the original. Videos play from YouTube's privacy-enhanced player.</p>`,
     { description: d.description || `${d.title}: ${how.toLowerCase()}.` });
 }
@@ -1157,7 +1167,7 @@ ${rising.length ? `<section class="panel"><h3>Rising</h3><p class="meta" style="
 <h2 class="sect">${query ? `Topics with “${esc(query)}”` : 'All topics, A to Z'} <small class="dim">${hits.length}</small></h2>
 ${hits.length ? `<nav class="az" aria-label="Letters">${[...byLetter.keys()].map((l) => `<a href="#l-${esc(b.slug)}-${esc(l)}">${esc(l)}</a>`).join('')}</nav>${[...byLetter].map(([l, ts]) => `<h3 class="azh" id="l-${esc(b.slug)}-${esc(l)}">${esc(l)}</h3><ul class="azl">${ts.map(chip).join('')}</ul>`).join('')}` : '<p class="meta">No topic matches.</p>'}`;
   }).join('');
-  return shell('Topics · Agent Cortex', bar(ctx, undefined, 'topics', undefined, { lens, href: (p) => '/topics' + [query ? 'q=' + encodeURIComponent(query) : '', p.lens ? 'lens=' + encodeURIComponent(p.lens) : '', ctx.area === 'politics' ? 'area=politics' : ''].filter(Boolean).map((x, i) => (i ? '&amp;' : '?') + x).join('') }), `<header class="pagehead"><div class="eyebrow">The last two weeks</div><h1>Topics</h1>
+  return shell('Topics · Undercurrent', bar(ctx, undefined, 'topics', undefined, { lens, href: (p) => '/topics' + [query ? 'q=' + encodeURIComponent(query) : '', p.lens ? 'lens=' + encodeURIComponent(p.lens) : '', ctx.area === 'politics' ? 'area=politics' : ''].filter(Boolean).map((x, i) => (i ? '&amp;' : '?') + x).join('') }), `<header class="pagehead"><div class="eyebrow">The last two weeks</div><h1>Topics</h1>
 <p class="lede">What Signal found people talking about, by itself: every topic named in the posts and articles followed. Each opens its own page, with how it moved and where it shows up. <a href="/signal/method">How topics are found</a>.</p></header>
 <form class="tsearch" method="get" action="/search"><input type="search" name="q" value="${esc(query)}" placeholder="Search topics, items, papers" aria-label="Search topics, items, papers and briefings" maxlength="80"><input type="hidden" name="kinds" value="topics"><button type="submit">Search</button>${lens ? `<input type="hidden" name="lens" value="${esc(lens.key)}">` : ''}${ctx.area === 'politics' ? '<input type="hidden" name="area" value="politics">' : ''}${query ? ` <a href="/topics${[lens ? 'lens=' + esc(lens.key) : '', ctx.area === 'politics' ? 'area=politics' : ''].filter(Boolean).map((x, i) => (i ? '&amp;' : '?') + x).join('')}">All topics</a>` : ''}</form>
 ${sections || '<p class="meta">No published Signal yet.</p>'}`, { description: 'Every topic Signal found in the last two weeks: new, rising, and A to Z.' });
@@ -1207,7 +1217,7 @@ ${i.url ? ext(i.url, esc(i.title || i.url)) : esc(i.title)}${i.discussionUrl && 
   else if (!shown.some((k) => a[k].total)) body = `<p class="meta">Nothing found for “${esc(q)}” in ${all ? 'topics, items, papers or briefings' : shown.map((k) => SEARCH_TITLE[k].toLowerCase()).join(' or ')} from the last ${WINDOW_WORDS[a.window] ?? a.window + ' days'}. Try fewer or shorter words${a.window < 30 ? ', or look further back' : ''}${!all ? `, or <a href="${here({ kinds: [...SEARCH_KINDS] })}">search everything</a>` : ''}.</p>`;
   else body = shown.filter((k) => a[k].total).map((k) => `<h2 class="sect">${SEARCH_TITLE[k]} <small class="dim">${n(a[k].total)}</small></h2>${draw[k]()}${more(k)}${pager(k)}`).join('');
   const top = topBar(ctx, { lenses, lens, q, here: {}, href: (p) => searchHref({ q, kinds: a.kinds, lens: p.lens, window: a.window, area }) });
-  return shell(`${q ? q + ' · ' : ''}${area === 'politics' ? 'Politics · ' : ''}Search · Agent Cortex`, top, `<header class="pagehead"><div class="eyebrow">${area === 'politics' ? 'Politics &middot; ' : ''}Search</div><h1>${q ? `“${esc(q)}”` : 'Search'}</h1></header>
+  return shell(`${q ? q + ' · ' : ''}${area === 'politics' ? 'Politics · ' : ''}Search · Undercurrent`, top, `<header class="pagehead"><div class="eyebrow">${area === 'politics' ? 'Politics &middot; ' : ''}Search</div><h1>${q ? `“${esc(q)}”` : 'Search'}</h1></header>
 ${form}${kindNav}${winNav}${body}`, { wide: true, description: 'Search topics, items, papers and briefings.' });
 }
 
@@ -1215,7 +1225,7 @@ ${form}${kindNav}${winNav}${body}`, { wide: true, description: 'Search topics, i
 export function feedXml(d: { topic: TopicInfo; issues: IssueFull[] }, origin: string): string {
   const x = (v: string) => esc(v), cdata = (v: string) => `<![CDATA[${v.replace(/]]>/g, ']]]]><![CDATA[>')}]]>`, url = `${origin}/${d.topic.slug}`;
   const items = d.issues.map((i) => `<item><title>${x(`${date(i.publishedAt)}: ${i.tldr.replace(/\*\*/g, '') || d.topic.title}`)}</title><link>${x(`${url}/${i.id}`)}</link><guid isPermaLink="true">${x(`${url}/${i.id}`)}</guid><pubDate>${new Date(i.publishedAt).toUTCString()}</pubDate><description>${cdata(markdown(normalizeThemes(i.markdown), i.links))}</description></item>`).join('');
-  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>${x(d.topic.title)} · Agent Cortex</title><link>${x(url)}</link><description>${x(d.topic.description || d.topic.title)}</description><language>${d.issues[0] ? langOf(d.issues[0].markdown) : 'en'}</language><atom:link href="${x(url)}/feed.xml" rel="self" type="application/rss+xml"/>${items}</channel></rss>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>${x(d.topic.title)} · Undercurrent</title><link>${x(url)}</link><description>${x(d.topic.description || d.topic.title)}</description><language>${d.issues[0] ? langOf(d.issues[0].markdown) : 'en'}</language><atom:link href="${x(url)}/feed.xml" rel="self" type="application/rss+xml"/>${items}</channel></rss>`;
 }
 
 // The lists behind the briefings: X lists (grouped, each opening on x.com), curated sets of X accounts, and curated sets of feeds.
@@ -1246,7 +1256,7 @@ export function listsHtml(ctx: Ctx): string {
   if (ctx.flists.length) kinds.push({ id: 'feeds', title: 'Feed lists', count: ctx.flists.length, intro: 'Sets of news and blog feeds, YouTube channels and Hacker News searches.',
     body: `<ul class="lists">${ctx.flists.map((l) => `<li><b>${esc(l.name)}</b> <span class="k">${n(l.feeds.length)} ${l.feeds.length === 1 ? 'source' : 'sources'}</span>${l.topic ? `<p>${esc(l.topic)}</p>` : ''}<details><summary>The sources</summary><ul class="srcs">${l.feeds.map(feedLine).join('')}</ul></details></li>`).join('')}</ul>` });
   const sections = kinds.map((k) => `<section id="${k.id}"><h2 class="sect">${k.title} <small class="dim">${k.count}</small></h2><p class="gnote">${k.intro}</p>${k.body}</section>`).join('');
-  return shell('Lists · Agent Cortex', bar(ctx, undefined, 'lists'), `<header class="pagehead"><div class="eyebrow">${listTotal(ctx)} lists</div><h1>Lists</h1>
+  return shell('Lists · Undercurrent', bar(ctx, undefined, 'lists'), `<header class="pagehead"><div class="eyebrow">${listTotal(ctx)} lists</div><h1>Lists</h1>
 <p class="lede">The sets of accounts and sources that these briefings draw from.</p></header>
 ${kinds.length > 1 ? `<nav class="chips" aria-label="Kinds of list">${kinds.map((k) => `<a href="#${k.id}">${k.title}</a>`).join('')}</nav>` : ''}${sections}`,
   { description: 'The lists of accounts, feeds and channels that the briefings draw from.' });

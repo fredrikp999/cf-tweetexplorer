@@ -23,11 +23,11 @@ import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPromp
 
 /** The Landscape view of get_overview. Bump the suffix when the page changes: hosts keep the resource they were given. */
 /** v3: the view keeps the area of the data it was given (politics has its own lenses) and passes it back to get_overview. */
-export const LANDSCAPE_UI = 'ui://agent-cortex/landscape-v3.html';
+export const LANDSCAPE_UI = 'ui://undercurrent/landscape-v4.html';
 /** The Topic hub, the view of get_topic. */
-export const TOPIC_UI = 'ui://agent-cortex/topic-v2.html';
+export const TOPIC_UI = 'ui://undercurrent/topic-v3.html';
 /** The Research map, the view of get_papers (it reads its data with get_research_map). */
-export const MAP_UI = 'ui://agent-cortex/research-map-v2.html';
+export const MAP_UI = 'ui://undercurrent/research-map-v3.html';
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false };
 const ISSUE_ID = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
 const PAPER_ID = /^\d{4}\.\d{4,5}$/;
@@ -254,7 +254,7 @@ export function registerAgentTools(server: McpServer, env: Env, origin: string, 
 // ---- the endpoint
 // A page in a browser may call this server (it holds nothing private and sets no cookies), so any origin is allowed and no credentials are: a website cannot ride on anyone's login here, because there is none.
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type, accept, mcp-protocol-version, mcp-session-id, last-event-id', 'access-control-max-age': '86400' };
-const INSTRUCTIONS = 'Agent Cortex: what is being talked about in AI (and, with area: "politics", in politics), as the public site shows it; the areas are kept apart. Start with get_overview (or the catch_up prompt), then get_topic for one topic, or search to find it by words (get_who_said_first for the order the sources had it in), get_topic_items for the originals, get_papers / get_paper for research and get_briefing for a briefing. Evidence is given per kind of source, each in its own unit. Read only.';
+const INSTRUCTIONS = 'Undercurrent: what is rising and being talked about in AI (and, with area: "politics", in politics), as the public site shows it; the areas are kept apart. Start with get_overview (or the catch_up prompt), then get_topic for one topic, or search to find it by words (get_who_said_first for the order the sources had it in), get_topic_items for the originals, get_papers / get_paper for research and get_briefing for a briefing. Evidence is given per kind of source, each in its own unit. Read only.';
 
 const rpcError = (status: number, message: string, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message }, id: null }), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...CORS, ...headers } });
@@ -267,7 +267,7 @@ export async function handleAgentMcp(request: Request, env: Env): Promise<Respon
   const who = request.headers.get('cf-connecting-ip') ?? 'unknown';
   const ok = await env.AGENT_LIMIT?.limit({ key: who }).catch(() => ({ success: true }));
   if (ok && !ok.success) return rpcError(429, 'Too many requests: at most 60 a minute from one address. Please wait a minute.', { 'retry-after': '60' });
-  const server = new McpServer({ name: 'agent-cortex', version: '0.1.0' }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: 'undercurrent', version: '0.1.0' }, { instructions: INSTRUCTIONS });
   registerAgentTools(server, env, new URL(request.url).origin);
   // Stateless: a fresh server per request, no session, plain JSON answers.
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
