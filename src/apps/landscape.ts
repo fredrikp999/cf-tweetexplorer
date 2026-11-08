@@ -1,5 +1,5 @@
 // The Landscape: one bubble per topic of the Signal, drawn from the layout the server keeps steady from day to day. Size is the topic's score, colour is the lens (grey outside the chosen lens),
-// a ring and a mark say new or rising, and a dashed circle with a name groups topics that are talked about together. It is the view of the get_overview tool on both MCP servers and the picture
+// a tag in words on the top edge says new, rising or falling, and a dashed circle with a name groups topics that are talked about together. It is the view of the get_overview tool on both MCP servers and the picture
 // on the landing page, in the sandboxed frame of src/site/viz.ts (there /viz/host.js answers get_overview from /overview.json).
 // A plain page like first.ts and map.ts: classic inline script, the ui/* postMessage protocol directly, no SDK and no bundler. Keep it free of backticks and template placeholders.
 // A click on a bubble: ask Claude to show the topic where the host allows messages (see act), else open its page.
@@ -7,10 +7,10 @@
 //   bubbles: [{slug,label,url,x,y,r,cluster,state,change,score,lensColor,inLens,mix}], lens, lenses: [{key,name,color,light,dark}] } | null, topics: [...], since, rising }.
 export default `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root{color-scheme:light dark;--bg:#fff;--fg:#1c2b2d;--mut:#566a6d;--line:#d6dedb;--grey:#7d8d90;--ac:#b0245f;--btn:#eef2f0}
-@media (prefers-color-scheme:dark){:root{--bg:#142224;--fg:#e8eeee;--mut:#9bb0b2;--line:#2c4144;--grey:#8fa4a7;--ac:#ff8fb8;--btn:#1d3033}}
-:root[data-theme=light]{color-scheme:light;--bg:#fff;--fg:#1c2b2d;--mut:#566a6d;--line:#d6dedb;--grey:#7d8d90;--ac:#b0245f;--btn:#eef2f0}
-:root[data-theme=dark]{color-scheme:dark;--bg:#142224;--fg:#e8eeee;--mut:#9bb0b2;--line:#2c4144;--grey:#8fa4a7;--ac:#ff8fb8;--btn:#1d3033}
+:root{color-scheme:light dark;--bg:#fff;--fg:#1c2b2d;--mut:#566a6d;--line:#d6dedb;--grey:#7d8d90;--ac:#b0245f;--btn:#eef2f0;--halo:rgba(255,255,255,.55)}
+@media (prefers-color-scheme:dark){:root{--bg:#142224;--fg:#e8eeee;--mut:#9bb0b2;--line:#2c4144;--grey:#8fa4a7;--ac:#ff8fb8;--btn:#1d3033;--halo:rgba(0,0,0,.25)}}
+:root[data-theme=light]{color-scheme:light;--bg:#fff;--fg:#1c2b2d;--mut:#566a6d;--line:#d6dedb;--grey:#7d8d90;--ac:#b0245f;--btn:#eef2f0;--halo:rgba(255,255,255,.55)}
+:root[data-theme=dark]{color-scheme:dark;--bg:#142224;--fg:#e8eeee;--mut:#9bb0b2;--line:#2c4144;--grey:#8fa4a7;--ac:#ff8fb8;--btn:#1d3033;--halo:rgba(0,0,0,.25)}
 *{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,-apple-system,sans-serif}
 .hide{display:none!important}#app{padding:12px 12px 10px}#s{color:var(--mut);padding:18px 14px}
 #bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:8px}#bar .sp{flex:1}
@@ -21,14 +21,18 @@ button:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{
 #wins{display:inline-flex;gap:4px}
 #stage{position:relative}svg{display:block;width:100%;height:auto;max-width:100%}
 .cl circle{fill:var(--fg);fill-opacity:.04;stroke:var(--line);stroke-width:1.5;stroke-dasharray:5 5}.cl text{fill:var(--mut);font-weight:600;paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}
-.b{cursor:pointer;outline:none}.b .dot{stroke-width:2}.b .ring{fill:none;stroke:var(--ac);stroke-width:3}.b .mk{fill:var(--ac);font-weight:700;text-anchor:middle}
-.b text.lb{fill:var(--fg);text-anchor:middle;pointer-events:none;font-weight:600}.b text.lb.out{paint-order:stroke;stroke:var(--bg);stroke-width:3px;stroke-linejoin:round}.b text.pc{fill:var(--mut);text-anchor:middle;pointer-events:none}
+.b{cursor:pointer;outline:none}.b .dot{stroke-width:2}
+.b .pill rect{fill:var(--ac);stroke:var(--bg);stroke-width:2}.b .pill text{fill:var(--bg);font-weight:800;text-anchor:middle;letter-spacing:.04em;pointer-events:none}
+.b .pill.down rect{fill:var(--btn);stroke:var(--line)}.b .pill.down text{fill:var(--mut)}
+.b text.lb{fill:var(--fg);text-anchor:middle;pointer-events:none;font-weight:600;paint-order:stroke;stroke:var(--halo);stroke-width:2px;stroke-linejoin:round}.b text.lb.out{stroke:var(--bg);stroke-width:3px}.b text.pc{fill:var(--fg);fill-opacity:.78;text-anchor:middle;pointer-events:none;font-weight:600}
 .b:hover .dot,.b:focus .dot{stroke-width:4}.b:focus .focus{display:block}.focus{display:none;fill:none;stroke:var(--fg);stroke-width:2;stroke-dasharray:2 3}
 .b.sel .dot{stroke-width:5}.b .tick{display:none;fill:var(--fg);font-weight:700;text-anchor:middle}.b.sel .tick{display:block}
 .pick .b{cursor:copy}.dim{opacity:.55}
 #tip{position:absolute;pointer-events:none;max-width:260px;background:var(--bg);color:var(--fg);border:1px solid var(--mut);border-radius:8px;padding:7px 10px;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.25);z-index:5}
 #tip b{display:block;font-size:14px}#tip span{display:block;color:var(--mut)}#tip .st{color:var(--ac);font-weight:600}
 #legend{color:var(--mut);font-size:12.5px;margin:8px 2px 4px}#legend b{color:var(--fg);font-weight:600}.sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin:0 3px 0 8px;vertical-align:baseline;border:2px solid}
+.key{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px}.key+.key{margin-top:4px}.it{white-space:nowrap;display:inline-flex;align-items:center;gap:5px}.it .sw{margin:0}
+.kp{display:inline-block;background:var(--ac);color:var(--bg);font-size:10px;font-weight:800;letter-spacing:.04em;border-radius:9px;padding:1px 7px}.kp.down{background:var(--btn);color:var(--mut);border:1px solid var(--line)}
 #note{color:var(--mut);font-size:12.5px;min-height:1.4em;margin:2px}
 details{margin-top:4px}summary{cursor:pointer;color:var(--mut);font-size:13px}
 ol{margin:6px 0 0;padding-left:0;list-style:none;display:grid;gap:2px}ol li button{display:flex;gap:8px;width:100%;text-align:left;border:0;background:none;padding:3px 4px;border-radius:5px}ol li button:hover{background:var(--btn)}
@@ -103,6 +107,7 @@ function draw() {
   ox = hero ? ((rect.width || 600) - w * sc) / 2 - vx * sc : 0; oy = hero && rect.height ? (rect.height - h * sc) / 2 - vy * sc : 0;
   fs = function (px) { return Math.round(px / sc * 10) / 10; };
   svg.classList.toggle('pick', picking);
+  var tags = sv('g', { 'class': 'b', 'pointer-events': 'none', 'aria-hidden': 'true' });   // the new/rising/falling tags, over every bubble
   L.clusters.forEach(function (c) {
     var g = sv('g', { 'class': 'cl' });
     g.appendChild(sv('circle', { cx: c.x, cy: c.y, r: c.r }));
@@ -114,15 +119,11 @@ function draw() {
     if (picking) g.setAttribute('aria-checked', sel[b.slug] ? 'true' : 'false');
     g.setAttribute('aria-label', b.label + (stateText(b) ? ', ' + stateText(b) : '') + ', ' + pct(b.score) + ' of items' + (picking ? '. Press Enter to pick or drop it.' : '. Press Enter to open it.'));
     g.appendChild(sv('circle', { 'class': 'focus', cx: b.x, cy: b.y, r: b.r + fs(6) }));
-    if (b.state === 'new' || b.state === 'rising') g.appendChild(sv('circle', { 'class': 'ring', cx: b.x, cy: b.y, r: b.r + fs(3.5) }));
     var gid = gradient(svg, col || (dark() ? '#8fa4a7' : '#7d8d90'));
     g.appendChild(sv('circle', { 'class': 'dot', cx: b.x, cy: b.y, r: b.r, fill: 'url(#' + gid + ')', stroke: col || 'var(--grey)' }));
     label(g, b, px, sc, fs, name, chars);
-    if (b.state === 'new' || b.state === 'rising' || b.state === 'falling') {
-      var a = Math.PI / 4, mx = b.x + Math.cos(a) * (b.r + fs(3.5)), my = b.y - Math.sin(a) * (b.r + fs(3.5));
-      g.appendChild(sv('text', { 'class': 'mk', x: mx, y: my + fs(4), 'font-size': fs(16), fill: b.state === 'falling' ? 'var(--mut)' : 'var(--ac)' }, b.state === 'new' ? '\\u2726' : b.state === 'rising' ? '\\u25B2' : '\\u25BC'));
-    }
-    g.appendChild(sv('text', { 'class': 'tick', x: b.x, y: Math.max(b.y - b.r + fs(16), b.y - fs(2)), 'font-size': fs(15) }, '\\u2713'));
+    pill(tags, b, fs);
+    g.appendChild(sv('text', { 'class': 'tick', x: b.x, y: Math.max(b.y - b.r + fs(26), b.y - fs(2)), 'font-size': fs(15) }, '\\u2713'));
     g.addEventListener('mouseenter', function () { showTip(b); });
     g.addEventListener('mouseleave', hideTip);
     g.addEventListener('focus', function () { showTip(b); });
@@ -131,7 +132,23 @@ function draw() {
     g.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(b); } });
     svg.appendChild(g);
   });
+  svg.appendChild(tags);
   reportSize();
+}
+// New, rising or falling: a small filled tag in words on the bubble's top edge, readable at a glance, instead of a ring with a glyph on it.
+function pillText(b) {
+  if (b.state === 'new') return 'NEW';
+  if (b.state === 'rising') return '\\u25B2 ' + (b.change && b.change >= 1.5 ? '\\u00D7' + (Math.round(b.change * 10) / 10) : 'RISING');
+  if (b.state === 'falling') return '\\u25BC FALLING';
+  return '';
+}
+function pill(g, b, fs) {
+  var t = pillText(b);
+  if (!t) return;
+  var f = 11, w = t.length * f * 0.68 + 14, h = f + 8, p = sv('g', { 'class': 'pill' + (b.state === 'falling' ? ' down' : '') });
+  p.appendChild(sv('rect', { x: b.x - fs(w / 2), y: b.y - b.r - fs(h / 2), width: fs(w), height: fs(h), rx: fs(h / 2) }));
+  p.appendChild(sv('text', { x: b.x, y: b.y - b.r + fs(f * 0.36), 'font-size': fs(f) }, t));
+  g.appendChild(p);
 }
 var gids = {};
 function gradient(svg, color) {
@@ -155,12 +172,19 @@ function wrap(words, perLine) {
 }
 // The name goes inside the bubble, broken over up to three lines, as large as fits; a bubble too small for that has its name beneath it.
 function label(g, b, px, sc, fs, name) {
-  var f, inner = px * 1.55, perLine, words = name.split(/\\s+/), lines, fits = false;
-  // As large as fits, down to 11 px: a long word in a big bubble takes a smaller size instead of going outside.
-  for (f = Math.max(11, Math.min(20, px * 0.27)); f >= 11; f -= 1) {
+  var f, inner = px * 1.55, perLine, words = name.split(/\\s+/), lines, fits = false, least = hero ? 10 : 11;
+  // As large as fits, down to 11 px (10 in the hero): a long word in a big bubble takes a smaller size instead of going outside.
+  for (f = Math.max(least, Math.min(20, px * 0.27)); f >= least; f -= 1) {
     perLine = Math.max(4, Math.floor(inner / (f * 0.56))); lines = wrap(words, perLine);
-    fits = px >= 30 && lines.length <= 3 && lines.every(function (l) { return l.length <= perLine + 2; }) && lines.length * f * 1.15 <= px * 1.7;
+    fits = px >= 26 && lines.length <= 3 && lines.every(function (l) { return l.length <= perLine + 2; }) && lines.length * f * 1.15 <= px * 1.7;
     if (fits) break;
+  }
+  if (!fits && hero && px >= 22) {   // the hero has no names under bubbles, so a name that does not fit is cut short inside rather than left out
+    f = least; perLine = Math.max(4, Math.floor(inner / (f * 0.56)));
+    var all = wrap(words, perLine);
+    lines = all.slice(0, 3).map(function (l) { return l.length > perLine + 1 ? l.slice(0, perLine) + '\\u2026' : l; });
+    if (all.length > 3) lines[2] = lines[2].replace(/\\u2026$/, '') + '\\u2026';
+    fits = true;
   }
   if (!fits) f = 11;
   if (fits) {
@@ -211,13 +235,22 @@ function renderAsk() {
 function renderLegend() {
   var p = el('legend'), parts = [];
   p.textContent = '';
-  if (hero) {   // one short line: the page explains the rest
-    p.appendChild(document.createTextNode('Bigger bubble, bigger share \u00B7 \u2726 new \u00B7 \u25B2 rising \u00B7 \u25BC falling'));
-    if (!L.lens) (L.lenses || []).forEach(function (l) { var s = mk('span', 'sw'); s.style.borderColor = dark() ? l.dark : l.light; p.appendChild(s); p.appendChild(document.createTextNode(l.name)); });
+  if (hero) {   // a short key: the page explains the rest. The tags as they look on the bubbles, then the lens colours, each colour kept on one line with its name
+    var k1 = mk('div', 'key'), it = function (box, node, text) { var s = mk('span', 'it'); s.appendChild(node); s.appendChild(document.createTextNode(text)); box.appendChild(s); };
+    k1.appendChild(mk('span', 'it', 'Bigger bubble, bigger share'));
+    it(k1, mk('span', 'kp', 'NEW'), 'new topic');
+    it(k1, mk('span', 'kp', '\\u25B2 \\u00D72'), 'rising, and how fast');
+    it(k1, mk('span', 'kp down', '\\u25BC'), 'falling');
+    p.appendChild(k1);
+    if (!L.lens && (L.lenses || []).length) {
+      var k2 = mk('div', 'key');
+      L.lenses.forEach(function (l) { var s = mk('span', 'sw'); s.style.borderColor = dark() ? l.dark : l.light; s.style.background = dark() ? l.dark : l.light; it(k2, s, l.name); });
+      p.appendChild(k2);
+    }
     return;
   }
   p.appendChild(mk('b', '', 'How to read it. '));
-  p.appendChild(document.createTextNode('A bigger bubble is a bigger share of the day\\u2019s items. A ring with \\u2726 is a new topic, a ring with \\u25B2 a rising one, \\u25BC one that is falling. A dashed circle holds topics that are talked about together.'));
+  p.appendChild(document.createTextNode('A bigger bubble is a bigger share of the day\\u2019s items. A tag on the top edge says NEW for a new topic, \\u25B2 for a rising one (with how many times its share grew), \\u25BC FALLING for one that is falling. A dashed circle holds topics that are talked about together.'));
   if (L.lens) {
     p.appendChild(document.createTextNode(' Only the topics of ' + L.lens.name + ' are shown, drawn on their own.'));
   } else if ((L.lenses || []).length) {
