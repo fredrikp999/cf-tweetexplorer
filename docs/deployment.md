@@ -284,7 +284,7 @@ The Worker runs a Strands agent against **OpenRouter** (`SUMMARY_PROVIDER` is `"
 `OPENROUTER_API_KEY`). The default model is `anthropic/claude-haiku-5.5` (`SUMMARY_MODEL`); the Summarize tab and each topic have a
 model picker (models, prices and notes live in `src/summarize/openrouter.ts`; the gpt-oss models are deliberately not listed).
 
-**Workers AI** (the `AI` binding, there for the picture models) does not write briefings unless you set `SUMMARY_PROVIDER` to
+**Workers AI** (the `AI` binding, there for the picture models and the embedding model) does not write briefings unless you set `SUMMARY_PROVIDER` to
 `"workers-ai"`, but its models are offered in the Summarize model picker. The adapter is `src/summarize/workers-ai.ts`; the local Node server
 uses it if `.env` has `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`.
 
@@ -329,6 +329,9 @@ Everything that runs on its own can be run again by hand, where you would look f
 | A watch (Sources) | **Overview**: **Check again** for all failing ones; **Sources**: **Check now** on the card. | Applies at the next check; **Check now** runs it at once. |
 | Signal topics by AI | **Overview** and **Signal setup → Topic detection**: **Retry** the items the model could not read, or a waiting error. | **Signal setup → Topic detection**: **Re-read** reads the last two weeks again with the current model (shows how many items and about what it costs). Saving a new model points you there. |
 | An Archives collection | **Overview**: **Resume**. **Archives**: **Resume** on the job. | |
+
+After the first deploy with meaning (`src/signal/vectors.ts`), copies are found only in items read from then on. **Re-read** in Topic detection
+recounts the last two weeks with copies counted once; then check *The newest copies* there.
 
 **Re-run and replace** writes the issue again from fresh posts with the current settings, at the same address, so links to it keep working.
 A replaced issue that was published stays published. Its picture and audio are removed with it and can be made again.

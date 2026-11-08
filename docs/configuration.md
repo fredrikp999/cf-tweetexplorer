@@ -46,7 +46,7 @@ A transcript from a paid service is recorded in the Costs tab under **Summarize 
 A run can read at most 5 pages, comment threads and transcripts together, and the text is capped at 12,000 characters by default.
 
 Bindings in `wrangler.jsonc`: the six Durable Objects, the R2 bucket `AUDIO` (create it once with
-`npx wrangler r2 bucket create tweet-explorer-audio`), Workers AI (`AI`, for the picture models and the gateway), the version metadata, and the static `ASSETS`.
+`npx wrangler r2 bucket create tweet-explorer-audio`), Workers AI (`AI`, for the picture models, the embedding model and the gateway), the version metadata, and the static `ASSETS`.
 
 ## Settings in the app
 
@@ -99,7 +99,7 @@ button. Desktop notifications are set here too. New items show in Live feed.
 **Research pulse** (`/admin` → Signal → Setup and publishing): the research topics and the arXiv search behind each, public at `/research`. Changing a search starts its history again. See [flows](flows.md).
 
 **Signal setup** (`/admin` → Signal → Setup and publishing): sources and the group each votes in; group weights (0 mutes, 3 triples); topic rules (words or AI,
-the model, filtered words, and hide, merge or rename a topic, which applies everywhere and also to what was counted before); and the top-level
+the model, filtered words, the topic names suggested as one by meaning, and hide, merge or rename a topic, which applies everywhere and also to what was counted before); and the top-level
 Signals, each with its groups, its public address, its **Area** (AI, the default, or Politics) and whether it is published and shows its sources. The area decides where it shows: an AI Signal on the AI pages, a Politics Signal under `/politics`; the landing page of an area takes its numbers from the first published Signal of that area. Stored in the board (`area`, none stored means AI), so nothing needs migrating.
 
 **Feed pages** (`/admin` → Feed pages): public pages at `/feeds/<address>` that show items from what is watched. Each has a name, an address and a
@@ -138,9 +138,21 @@ and the stronger model), Monitor, collection (kind `collect`, per source), the S
 Workers AI pictures are recorded at $0 (they stay inside the free daily Neurons), with the model that made them and a note when a fallback was used.
 Estimates are shown before anything large starts, and History collections, analyses and briefings each have a cap you set.
 
-## Research map costs
+## Embedding costs
 
-No setting and no separate vector database: vectors are rows in the Monitor Durable Object's SQLite. Measured on 3,504 papers: about 1.3M tokens to embed the first month (about 2,400 of the 10,000 free Neurons a day, or $0.026 if paid), then about 120 papers a day, and 5.4 MB of vectors. Naming is one model call a day through OpenRouter, recorded under Signal topics as "Research map (names)".
+No setting and no separate vector database: vectors are rows in the Monitor Durable Object's SQLite (see [flows](flows.md#meaning-embeddings)).
+
+| What is embedded | Costs line | Size |
+| --- | --- | --- |
+| Research map papers | "Research map" | See below. |
+| Every item the Signal topic model reads (only when topics by AI are on) | "Signal items (meaning)" | About 75 tokens an item: at about 700 items a day, under a cent a day. 1.5 KB of vector per item, kept 30 days (about 30 MB). |
+| Topic names in use, once each | "Signal topic names (meaning)" | A few tokens a name; up to 200 new names a batch at first, then only new ones. |
+| A briefing's posts, once per run | "*Briefing name* (posts compared)" | Up to a few hundred posts a run: a small fraction of a cent. |
+
+The copy and name thresholds are constants in `src/signal/vectors.ts`, not settings. **Signal setup → Topic detection** shows what they do: the
+posts counted as copies, with the newest of them, and the topic names suggested as one (merge or dismiss each).
+
+**Research map.** Measured on 3,504 papers: about 1.3M tokens to embed the first month (about 2,400 of the 10,000 free Neurons a day, or $0.026 if paid), then about 120 papers a day, and 5.4 MB of vectors. Naming is one model call a day through OpenRouter, recorded under Signal topics as "Research map (names)".
 
 ## Embeddings and Cloudflare storage in Costs
 

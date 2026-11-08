@@ -31,13 +31,17 @@ import { DEFAULT_FILTER, cleanFilter, makeBlocker, type FilterWord } from '../si
 import { GENERIC } from '../signal/terms';
 import { STOP } from '../history/stats';
 import { complete, defaultTiers, modelOptions } from '../llm/analysis';
+import { embed } from '../lib/embed';
+import { COPY_DAYS, EMBED_BATCH, EMBED_MODEL, EMBED_PER_M, embedText, findCopies, fromBlob, nameSuggestions, nearestNames, toBlob } from '../signal/vectors';
 import { useGateway } from '../llm/gateway.ts';
 
 const SEEN_KEEP = 1000;
 const FEED_KEEP = 500;
 const MAX_WATCHES = 50;
-// Research map: how far it reads back, how often it is rebuilt, and the embedding model (about $0.02 per million tokens, so a few cents for a first read of 4,000 papers).
-const MAP_DAYS = 30, MAP_EVERY_MS = 24 * 3_600_000, MAP_PAGE = 500, EMBED_MODEL = '@cf/baai/bge-small-en-v1.5', EMBED_BATCH = 50, EMBED_PER_M = 0.02;
+// Research map: how far it reads back and how often it is rebuilt. The embedding model (src/signal/vectors.ts) costs about $0.02 per million tokens, so a few cents for a first read of 4,000 papers.
+const MAP_DAYS = 30, MAP_EVERY_MS = 24 * 3_600_000, MAP_PAGE = 500;
+// Names shown to the topic model: the most used, and those closest in meaning to the batch's posts (out of a pool of the most used); new names embedded per batch at most.
+const HINT_TOP = 25, HINT_MAX = 60, NAME_POOL = 400, NAME_EMBED_MAX = 200, SUGGEST_KEEP = 40, COPY_EXAMPLES = 20;
 const RESEARCH_EVERY_MS = 6 * 3_600_000, RESEARCH_FIRST_DAYS = 14, RESEARCH_KEEP_DAYS = 60, RESEARCH_TOP_DAYS = 30, RESEARCH_PAGE = 25, HF_DAYS = 5, HF_FIRST_DAYS = 35;
 const MIN_INTERVAL = 15, MAX_INTERVAL = 86_400;
 const SIGNAL_KEEP_DAYS = 30;   // Signal keeps daily term counts this long: two windows of at most SIGNAL_MAX_DAYS, with room to spare
@@ -150,6 +154,12 @@ export class MonitorDO extends DurableObject<Env> {
     for (const col of ['likes', 'replies', 'views']) { try { sql.exec(`ALTER TABLE item_log ADD COLUMN ${col} INTEGER NOT NULL DEFAULT -1`); } catch { /* already there */ } }   // the numbers behind `eng`, one by one (-1: not recorded), for the topic page's evidence strip
     // Topic summaries (section 8 of INTENT.md): one paragraph per topic per day, written by the Signal topic model from the topic's items, with the items it says it used.
     sql.exec('CREATE TABLE IF NOT EXISTS topic_summary (slug TEXT NOT NULL, day TEXT NOT NULL, term TEXT NOT NULL, text TEXT NOT NULL, items TEXT NOT NULL, n INTEGER NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (slug, day)) WITHOUT ROWID');
+    // Meaning (src/signal/vectors.ts): a vector per item Signal read, and whether it repeats an earlier one (`copy`: "watch\nitem" of the post it repeats, '' when it is its own).
+    // A copy is read as "no topics" and not counted, so a post copied by many accounts counts once. Kept as long as the item log.
+    sql.exec("CREATE TABLE IF NOT EXISTS item_vec (watch TEXT NOT NULL, item TEXT NOT NULL, day TEXT NOT NULL, v BLOB NOT NULL, copy TEXT NOT NULL DEFAULT '', PRIMARY KEY (watch, item)) WITHOUT ROWID");
+    sql.exec('CREATE INDEX IF NOT EXISTS item_vec_day ON item_vec (day)');
+    // A vector per topic name in use, for the names shown to the topic model and the names suggested to the admin as one. `at`: when it was last wanted.
+    sql.exec('CREATE TABLE IF NOT EXISTS name_vec (term TEXT PRIMARY KEY, v BLOB NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID');
     // The landscape of the landing page: one layout per Signal, window and day, so tomorrow's starts from today's and the picture stays steady.
     sql.exec('CREATE TABLE IF NOT EXISTS landscape (board TEXT NOT NULL, win INTEGER NOT NULL, day TEXT NOT NULL, at INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (board, win, day)) WITHOUT ROWID');
     this.backfillSignal();
@@ -805,6 +815,8 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('DELETE FROM item_log WHERE day < ?', dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
     for (const t of ['ai_terms', 'ai_items', 'ai_item']) sql.exec(`DELETE FROM ${t} WHERE day < ?`, dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
     sql.exec('DELETE FROM ai_terms WHERE n = 1 AND day < ?', dayOf(now - 7 * 86_400_000));
+    sql.exec('DELETE FROM item_vec WHERE day < ?', dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
+    sql.exec('DELETE FROM name_vec WHERE at < ?', now - SIGNAL_KEEP_DAYS * 86_400_000);
     this.setMeta('signalPruned', today());
   }
 
@@ -947,8 +959,9 @@ export class MonitorDO extends DurableObject<Env> {
     this.enqueueBacklog();
   }
   /** The topic names already in use over the last two weeks, most mentioned first: the model is told to reuse them, so one thing keeps one name. */
-  private knownTopics(): string[] {
-    return this.ctx.storage.sql.exec<{ term: string }>('SELECT term FROM ai_terms WHERE day >= ? GROUP BY term ORDER BY SUM(n) DESC LIMIT 80', dayOf(Date.now() - AI_BACKLOG_DAYS * 86_400_000)).toArray().map((r) => this.aliasFn()(r.term)).filter((t, i, a) => a.indexOf(t) === i).slice(0, 60);
+  private knownTopics(n = 60): string[] {
+    const alias = this.aliasFn();
+    return this.ctx.storage.sql.exec<{ term: string }>('SELECT term FROM ai_terms WHERE day >= ? GROUP BY term ORDER BY SUM(n) DESC LIMIT ?', dayOf(Date.now() - AI_BACKLOG_DAYS * 86_400_000), Math.ceil(n * 1.4)).toArray().map((r) => alias(r.term)).filter((t, i, a) => a.indexOf(t) === i).slice(0, n);
   }
   private aiSpend(): { day: string; cost: number } {
     const s = this.getMeta<{ day: string; cost: number }>('aiSpend', { day: today(), cost: 0 });
@@ -1008,12 +1021,15 @@ export class MonitorDO extends DurableObject<Env> {
       if (this.aiSpend().cost >= cfg.dailyCap) { this.setMeta('aiStatus', { error: 'The daily spending cap is reached; it continues tomorrow.', at: Date.now() }); return; }
       const rows = sql.exec<{ seq: number; watch: string; item: string; day: string; text: string }>('SELECT seq, watch, item, day, text FROM ai_queue ORDER BY seq LIMIT ?', AI_BATCH).toArray();
       if (!rows.length) { this.setMeta('aiStatus', {}); return; }
+      // Copies of an earlier post are not read: they count once, as the post they repeat. The rest is read with the names in use closest to it.
+      const meaning = await this.batchMeaning(rows), keyOf = (r: { watch: string; item: string }) => `${r.watch}\n${r.item}`;
+      const read = rows.filter((r) => !meaning.copies.has(keyOf(r))), at = new Map(read.map((r, i) => [r.seq, i] as const));
       let topics = new Map<number, string[]>(), cost = 0, tin = 0, tout = 0, failed = '', gaveUp = false;
-      try {
-        const texts = rows.map((r) => r.text);
-        const r = await complete(this.env, cfg.model, [topicSystem(this.knownTopics()), topicUser(texts)], { maxTokens: 1800,
+      if (read.length) try {
+        const texts = read.map((r) => r.text);
+        const r = await complete(this.env, cfg.model, [topicSystem(meaning.hints), topicUser(texts)], { maxTokens: 1800,
           mock: () => JSON.stringify({ items: texts.map((t, i) => ({ i: i + 1, t: extractTerms(t).filter((x) => x.includes(' ')).slice(0, 2) })) }) });
-        topics = parseTopics(r.text, rows.length); cost = r.cost; tin = r.tokensIn; tout = r.tokensOut;
+        topics = parseTopics(r.text, read.length); cost = r.cost; tin = r.tokensIn; tout = r.tokensOut;
         if (!topics.size) failed = 'the model did not return readable topics';
       } catch (err) { failed = err instanceof Error ? err.message : String(err); }
       if (cost) { this.setMeta('aiSpend', { day: today(), cost: this.aiSpend().cost + cost }); await recordCost(this.env, { kind: 'signal', ref: 'topics', label: 'Signal topics (AI)', llm: cost, tokensIn: tin, tokensOut: tout, calls: 1, model: cfg.model }); }
@@ -1025,17 +1041,98 @@ export class MonitorDO extends DurableObject<Env> {
         this.setMeta('aiFails', 0); topics = new Map(); gaveUp = true;
       } else this.setMeta('aiFails', 0);
       this.ctx.storage.transactionSync(() => {
-        for (const [i, row] of rows.entries()) {
-          const t = topics.get(i) ?? [];
+        for (const row of rows) {
+          const copy = meaning.copies.get(keyOf(row)) ?? '', v = meaning.vecs.get(keyOf(row));
+          if (v) sql.exec('INSERT OR REPLACE INTO item_vec (watch, item, day, v, copy) VALUES (?, ?, ?, ?, ?)', row.watch, row.item, row.day, toBlob(v), copy);
+          sql.exec('DELETE FROM ai_queue WHERE seq = ?', row.seq);
+          // A copy is read as "nothing specific" and not counted: not as an item of its day, not under any topic.
+          if (copy) { sql.exec('INSERT OR REPLACE INTO ai_item (watch, item, day, topics) VALUES (?, ?, ?, ?)', row.watch, row.item, row.day, '[]'); continue; }
+          const t = topics.get(at.get(row.seq)!) ?? [];
           // Items of a batch that failed three times are kept as 'null' (not read), so they can be retried; an empty list means read, nothing specific.
           sql.exec('INSERT OR REPLACE INTO ai_item (watch, item, day, topics) VALUES (?, ?, ?, ?)', row.watch, row.item, row.day, gaveUp ? 'null' : JSON.stringify(t));
           sql.exec('INSERT INTO ai_items (day, watch, n) VALUES (?, ?, 1) ON CONFLICT (day, watch) DO UPDATE SET n = n + 1', row.day, row.watch);
           for (const x of t) sql.exec('INSERT INTO ai_terms (day, watch, term, n) VALUES (?, ?, ?, 1) ON CONFLICT (day, watch, term) DO UPDATE SET n = n + 1', row.day, row.watch, x);
-          sql.exec('DELETE FROM ai_queue WHERE seq = ?', row.seq);
         }
       });
+      this.noteCopies(rows.filter((r) => meaning.copies.has(keyOf(r))).map((r) => ({ text: r.text, of: meaning.copies.get(keyOf(r))! })));
+      if (!gaveUp) await this.suggestNames([...new Set([...topics.values()].flat())], meaning.names);
       if (!failed) this.setMeta('aiStatus', {});
     }
+  }
+  // ---- meaning (src/signal/vectors.ts): copies, and the names shown to the topic model
+  /**
+   * What a batch the topic model is about to read means: a vector per item (the one kept from an earlier read when there is one), which items repeat a
+   * post of the last COPY_DAYS days, the names in use to show the model, and the vectors of the names in use. Never stops the reading: when the embedding
+   * model fails, nothing is a copy and the most used names are shown, as before there were vectors.
+   */
+  private async batchMeaning(rows: Array<{ watch: string; item: string; day: string; text: string }>) {
+    const sql = this.ctx.storage.sql, keyOf = (r: { watch: string; item: string }) => `${r.watch}\n${r.item}`, top = this.knownTopics();
+    try {
+      const vecs = new Map<string, Float32Array>();
+      for (const r of rows) { const kept = sql.exec<{ v: ArrayBuffer }>('SELECT v FROM item_vec WHERE watch = ? AND item = ?', r.watch, r.item).toArray()[0]; if (kept) vecs.set(keyOf(r), fromBlob(kept.v)); }
+      const need = rows.filter((r) => !vecs.has(keyOf(r)));
+      if (need.length) {
+        const e = await embed(this.env, need.map((r) => embedText(r.text)));
+        need.forEach((r, i) => vecs.set(keyOf(r), e.vectors[i]));
+        await this.embedCost(e.tokens, e.cost, 'signal-items', 'Signal items (meaning)');
+      }
+      const earlier = sql.exec<{ watch: string; item: string; v: ArrayBuffer }>("SELECT watch, item, v FROM item_vec WHERE day >= ? AND copy = ''", dayOf(Date.now() - COPY_DAYS * 86_400_000)).toArray()
+        .map((x) => ({ key: keyOf(x), v: fromBlob(x.v) }));
+      const copies = findCopies(rows.map((r) => ({ key: keyOf(r), v: vecs.get(keyOf(r))! })), earlier);
+      const names = await this.nameVectors(this.knownTopics(NAME_POOL));
+      const near = nearestNames(rows.filter((r) => !copies.has(keyOf(r))).map((r) => vecs.get(keyOf(r))!), [...names].map(([name, v]) => ({ name, v })));
+      const hints = [...new Set([...top.slice(0, HINT_TOP), ...near, ...top.slice(HINT_TOP)])].slice(0, HINT_MAX);
+      this.setMeta('embedError', '');
+      return { vecs, copies, hints, names };
+    } catch (err) {
+      this.setMeta('embedError', (err instanceof Error ? err.message : String(err)).slice(0, 200));
+      return { vecs: new Map<string, Float32Array>(), copies: new Map<string, string>(), hints: top, names: new Map<string, Float32Array>() };
+    }
+  }
+  /** The vectors of these topic names, embedding the ones not seen before (at most NAME_EMBED_MAX at a time; the rest come in later batches). */
+  private async nameVectors(names: string[]): Promise<Map<string, Float32Array>> {
+    const sql = this.ctx.storage.sql, now = Date.now(), list = JSON.stringify(names);
+    const have = new Map(sql.exec<{ term: string; v: ArrayBuffer }>('SELECT term, v FROM name_vec WHERE term IN (SELECT value FROM json_each(?))', list).toArray().map((r) => [r.term, fromBlob(r.v)] as const));
+    const missing = names.filter((n) => !have.has(n)).slice(0, NAME_EMBED_MAX);
+    if (missing.length) {
+      const e = await embed(this.env, missing);
+      await this.embedCost(e.tokens, e.cost, 'signal-names', 'Signal topic names (meaning)');
+      this.ctx.storage.transactionSync(() => missing.forEach((n, i) => { have.set(n, e.vectors[i]); sql.exec('INSERT OR REPLACE INTO name_vec (term, v, at) VALUES (?, ?, ?)', n, toBlob(e.vectors[i]), now); }));
+    }
+    sql.exec('UPDATE name_vec SET at = ? WHERE at < ? AND term IN (SELECT value FROM json_each(?))', now, now - 86_400_000, list);   // still wanted: kept
+    return have;
+  }
+  private async embedCost(tokens: number, cost: number, ref: string, label: string): Promise<void> {
+    await recordCost(this.env, { kind: 'embedding', ref, label, llm: cost, tokensIn: tokens, tokensOut: 0, calls: 1, model: EMBED_MODEL });
+  }
+  /** The newest copies found, with the post each repeats, so the admin can see what is folded and judge the threshold. */
+  private noteCopies(found: Array<{ text: string; of: string }>): void {
+    if (!found.length) return;
+    const sql = this.ctx.storage.sql, now = Date.now(), cut = (s: string) => s.replace(/\s+/g, ' ').trim().slice(0, 140);
+    const fresh = found.map((f) => {
+      const [watch, item] = f.of.split('\n'), o = sql.exec<{ title: string }>('SELECT title FROM item_log WHERE watch = ? AND item = ?', watch, item).toArray()[0];
+      return { at: now, copy: cut(f.text), of: cut(o?.title ?? '') };
+    });
+    this.setMeta('copyExamples', [...fresh, ...this.getMeta<Array<{ at: number; copy: string; of: string }>>('copyExamples', [])].slice(0, COPY_EXAMPLES));
+  }
+  /** New topic names that are probably another name for one in use, kept for the admin to merge or dismiss. Nothing is merged without the admin. */
+  private async suggestNames(given: string[], known: Map<string, Float32Array>): Promise<void> {
+    if (!known.size) return;
+    const fresh = given.filter((n) => !known.has(n));
+    if (!fresh.length) return;
+    try {
+      const vs = await this.nameVectors(fresh);
+      const found = nameSuggestions(fresh.filter((n) => vs.has(n)).map((name) => ({ name, v: vs.get(name)! })), [...known].map(([name, v]) => ({ name, v })));
+      if (!found.length) return;
+      const old = this.getMeta<Array<{ name: string; like: string; sim: number; at: number }>>('nameSuggestions', []).filter((s) => !found.some((f) => f.name === s.name));
+      this.setMeta('nameSuggestions', [...found.map((f) => ({ ...f, at: Date.now() })), ...old].slice(0, SUGGEST_KEEP));
+    } catch { /* suggestions are a help, never a reason to stop reading */ }
+  }
+  /** The suggestions still open: not merged since, not dismissed, and the name they are like is still a name of its own. */
+  private openSuggestions() {
+    const a = this.aliases(), gone = new Set(this.getMeta<string[]>('nameDismissed', []));
+    return this.getMeta<Array<{ name: string; like: string; sim: number; at: number }>>('nameSuggestions', []).map((s) => ({ ...s, like: a[s.like] ?? s.like }))
+      .filter((s) => !a[s.name] && s.like !== s.name && !gone.has(`${s.name}\n${s.like}`));
   }
   /** For the settings panel: what is on, what it costs, and how far it has got. */
   private aiStatus() {
@@ -1046,6 +1143,9 @@ export class MonitorDO extends DurableObject<Env> {
     return {
       available: models.length > 0, enabled: c.enabled, model: c.model || defaultTiers(this.env).cheap, dailyCap: c.dailyCap, spentToday: this.aiSpend().cost, using: this.tables().ai,
       queued: this.aiQueued(), read, failedItems, rereadable, error: st.error ?? '',
+      // Meaning: how many posts were folded as copies of another, examples of them, and topic names that are probably one.
+      copies: this.ctx.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM item_vec WHERE copy != '' AND day >= ?", dayOf(Date.now() - AI_BACKLOG_DAYS * 86_400_000)).one().n,
+      copyExamples: this.getMeta<Array<{ at: number; copy: string; of: string }>>('copyExamples', []), embedError: this.getMeta<string>('embedError', ''), suggestions: this.openSuggestions(),
       models: models.map((m) => ({ id: m.id, label: m.label, per1000: estimatePer1000(m.inPrice, m.outPrice), note: m.note })),
     };
   }
@@ -1591,7 +1691,7 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('DELETE FROM seen WHERE watch = ?', id);
     sql.exec('DELETE FROM terms WHERE watch = ?', id);
     sql.exec('DELETE FROM day_items WHERE watch = ?', id);
-    for (const t of ['ai_queue', 'ai_item', 'ai_terms', 'ai_items', 'item_log']) sql.exec(`DELETE FROM ${t} WHERE watch = ?`, id);
+    for (const t of ['ai_queue', 'ai_item', 'ai_terms', 'ai_items', 'item_log', 'item_vec']) sql.exec(`DELETE FROM ${t} WHERE watch = ?`, id);
   }
 
   // ---- HTTP API (same routes and JSON as the local server)
@@ -1861,6 +1961,11 @@ export class MonitorDO extends DurableObject<Env> {
       if (name === 'signal-alias-set') {   // merged and renamed topics, as the whole map old name -> new name
         this.setMeta('signalAliases', cleanAliases(b.aliases));
         return json(this.filterInfo());
+      }
+      if (name === 'signal-name-dismiss') {   // a suggested pair of topic names that are not one: not suggested again
+        const pair = `${String(b.name ?? '').toLowerCase().trim()}\n${String(b.like ?? '').toLowerCase().trim()}`;
+        this.setMeta('nameDismissed', [pair, ...this.getMeta<string[]>('nameDismissed', []).filter((x) => x !== pair)].slice(0, 300));
+        return json(this.aiStatus());
       }
       if (name === 'signal-filter-set') {   // the whole list of words to leave out
         this.setMeta('signalFilter', cleanFilter(b.words));

@@ -14,11 +14,13 @@ channels whose public feed fails are read through the YouTube Data API when a ke
 
 **Briefings.** Topics written on a schedule by a language model from the sources you choose, kept as drafts or published at once, with an optional
 audio version and picture. Each briefing has a TL;DR, "In brief", and one section per theme, marked new or continuing from the day before, with
-the accounts it cites and the Signal topics it touches. A run can be retried, or re-run over the latest issue after a change of settings.
+the accounts it cites and the Signal topics it touches. Copies of a post are read once, and a busy day is picked for variety, so one story cannot
+fill a briefing. A run can be retried, or re-run over the latest issue after a change of settings.
 
 **Signal.** Everything watched, combined into one score per topic: each group of sources votes by the share of its items that mention a topic,
 weighted, so a busy group cannot drown a small one. Topics are words and phrases, or named by a language model ("scribd breach", not "scribd").
-Always-present topics are left out unless they spike; engagement bait is not counted; topics can be merged and renamed. Several Signals can be
+Always-present topics are left out unless they spike; engagement bait is not counted, and a post copied by many accounts counts once; topics can
+be merged and renamed, and names that mean the same are suggested for merging. Several Signals can be
 published, each with its own page, a page per topic, and optionally the items behind each topic.
 
 **Feed pages.** Public pages that show items from what is watched, defined in the admin: for example the latest video of each channel in a
@@ -29,7 +31,7 @@ a written summary) and publish it as a report.
 
 **Explore.** Search X, look up an account, see what is trending, and ask an agent to summarize a list, a search or a feed on demand.
 
-**Costs.** One ledger of everything that spends money (X data, text models, speech, pictures), budgets for each, and an Overview that lists
+**Costs.** One ledger of everything that spends money (X data, text models, speech, pictures, embeddings, storage), budgets for each, and an Overview that lists
 what failed or waits, with a button to retry each.
 
 ## The three parts
@@ -41,7 +43,8 @@ what failed or waits, with a button to retry each.
 | **MCP server** `/mcp` | You, behind its own Access application: your Access login (OAuth) from the Claude app, or a service token | Read-only tools for briefings, Signal, archives, lists, the live feed and costs. In the Claude app, `get_signal` and `get_costs` open as interactive dashboards, `get_tweet_galaxy` as an animated picture of a History collection, and `get_who_said_first` as ripples showing which sources had a topic first (MCP Apps). See [docs/mcp.md](docs/mcp.md). |
 
 Language models come from [OpenRouter](https://openrouter.ai) (Anthropic directly also works for summaries), audio (Gemini TTS) from
-[Replicate](https://replicate.com), and pictures from Cloudflare Workers AI (free within its daily allowance) or Replicate. Model calls can go
+[Replicate](https://replicate.com), and pictures from Cloudflare Workers AI (free within its daily allowance) or Replicate. Workers AI also embeds text, so posts and
+topic names can be compared by meaning (copies, merge suggestions, the Research map). Model calls can go
 through Cloudflare AI Gateway for logs and analytics. Everything except X data is optional.
 
 ## Quick start
@@ -84,7 +87,7 @@ with its own data on workers.dev.
 | | |
 | --- | --- |
 | [Architecture](docs/architecture.md) | How it is deployed, public and private routes, the Durable Objects, the code map, which models are used |
-| [Flows](docs/flows.md) | What happens for archives, AI analysis, Ask AI, briefings, screening and the live feed, step by step |
+| [Flows](docs/flows.md) | What happens for archives, AI analysis, Ask AI, briefings, screening and the live feed, step by step, and what is compared by meaning (embeddings) |
 | [Configuration](docs/configuration.md) | Secrets, variables, and every setting in the app (Sources, Signal, Briefings, Budgets) |
 | [Deployment](docs/deployment.md) | How to deploy (release, smoke test, staging), retrying and re-running, and setup one feature at a time: Access, briefings, audio, pictures, AI Gateway, archives, YouTube API, analytics, reader reports |
 | [MCP server](docs/mcp.md) | The tools, signing in (Managed OAuth for the Claude app, service tokens for Claude Code), and the MCP Apps (interactive views) |
@@ -96,7 +99,7 @@ with its own data on workers.dev.
 src/            The Cloudflare Worker
   index.ts        Routing: public site, /admin (Access), /mcp
   durable-objects/  Monitor (watches, live feed, Signal), Collect (fetching and storing sources), Publish (briefings), History (archives), Lists, Cost (ledger)
-  signal/         Signal: terms, scoring, topics, AI topic names, filters
+  signal/         Signal: terms, scoring, topics, AI topic names, filters, lenses, landscape, meaning (embeddings)
   site/           The public site (server-rendered HTML), Markdown, briefing structure
   summarize/      The writing agent, model providers, screening, pricing
   sources/        X, RSS, YouTube, Hacker News, arXiv, feed lists

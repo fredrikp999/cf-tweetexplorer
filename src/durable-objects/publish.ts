@@ -11,6 +11,8 @@ import { fetchSource, streamSummary } from '../summarize/agent.ts';
 import { llmCost, newMeter, TWEET_PRICE } from '../summarize/pricing.ts';
 import type { Meter } from '../summarize/pricing.ts';
 import { recordCost } from '../lib/costs';
+import { embed } from '../lib/embed';
+import { EMBED_MODEL, embedText, foldCopies, pickVaried } from '../signal/vectors';
 import { buildScript, cleanStyle } from '../media/audio-script.ts';
 import type { Pause } from '../media/audio-script.ts';
 import { ASPECTS, IMAGE_MODELS, isImageModel, isTtsModel, mockImage, mockMp3, replicateImage, replicateTts, TTS_MODELS, ttsCost, usdPerChar, VOICES, VOICE_NAMES } from '../media/replicate.ts';
@@ -191,6 +193,8 @@ function cleanTopic(b: Record<string, unknown>, prev: Topic | undefined, env: En
 
 const tldrOf = (md: string) => (/\*\*([^*\n]{8,400})\*\*/.exec(md)?.[1] ?? '').trim();
 const engagement = (t: RawTweet) => (t.likeCount ?? 0) + 3 * (t.retweetCount ?? 0) + (t.replyCount ?? 0);
+/** What a post weighs when picking a briefing's posts: reactions on a log scale (so one viral post does not make all others weightless), a little more for each copy of it. */
+const pickWeight = (t: RawTweet) => Math.log1p(engagement(t)) + 0.5 * Math.log1p(t.copies ?? 0);
 
 // Starter templates, editable once created. The voices are Gemini TTS's own studio voices.
 const BUILTIN: Array<Omit<AudioTemplate, 'id' | 'order'>> = [
@@ -537,6 +541,28 @@ export class PublishDO extends DurableObject<Env> {
     await this.collect('sync-briefing', { topic: done });   // the collection layer plans its next read from the new time
   }
 
+  /**
+   * The posts a briefing is written from, oldest last. Copies of one post are folded into the most reacted of them, which says how many others said the
+   * same, so the writer reads each story once. When more than MAX_TWEETS are left, the pick weighs reactions against variety (src/signal/vectors.ts),
+   * so one story copied and quoted all day cannot fill the briefing. Without the embedding model: the most reacted, as before.
+   */
+  private async pickPosts(slug: string, title: string, recent: RawTweet[]): Promise<RawTweet[]> {
+    const byReactions = () => (recent.length <= MAX_TWEETS ? recent : dedupeSort([...recent].sort((a, b) => engagement(b) - engagement(a)).slice(0, MAX_TWEETS)));
+    if (recent.length < 2) return recent;
+    try {
+      const e = await embed(this.env, recent.map((x) => embedText(x.text || x.title || '')));
+      await recordCost(this.env, { kind: 'embedding', ref: slug, label: `${title} (posts compared)`, llm: e.cost, tokensIn: e.tokens, tokensOut: 0, calls: 1, model: EMBED_MODEL });
+      const vec = new Map(recent.map((x, i) => [x, e.vectors[i]] as const));
+      const kept = foldCopies(recent, (x) => vec.get(x), engagement).map(({ item, copies }) => {
+        if (!copies) return item;
+        const withCount = { ...item, copies }; vec.set(withCount, vec.get(item)!); return withCount;
+      });
+      return dedupeSort(kept.length <= MAX_TWEETS ? kept : pickVaried(kept, (x) => vec.get(x), pickWeight, MAX_TWEETS));
+    } catch (err) {
+      console.warn('briefing posts picked by reactions only', slug, err instanceof Error ? err.message : String(err));
+      return byReactions();
+    }
+  }
   private async generate(t: Topic, spend: Spend): Promise<string> {
     if (t.maxCost) spend.meter.cap = t.maxCost;
     const realSources = workerSources(this.env, spend.meter), sources = this.env.SUMMARY_MOCK === '1' ? mockX(realSources, spend.meter) : realSources;
@@ -603,8 +629,7 @@ export class PublishDO extends DurableObject<Env> {
       const ids = (x: RawTweet[]) => dedupeSort(x).filter((p) => !p.createdAt || Date.parse(p.createdAt) >= since).map((p) => String(p.id));
       await this.collect('compare', { slug: t.slug, live: ids(paid), store: ids(collected.items ?? []), liveCost: spend.meter.cost, storeCost: collected.allocated ?? 0 });
     }
-    // Too many: keep the ones people reacted to most, then restore chronological order.
-    const used = recent.length <= MAX_TWEETS ? recent : dedupeSort([...recent].sort((a, b) => engagement(b) - engagement(a)).slice(0, MAX_TWEETS));
+    const used = await this.pickPosts(t.slug, t.title, recent);
 
     const instruction = `This is the "${t.title}" briefing, published to the public. Write for readers who have not seen these tweets. ` +
       `Cover the last ${windowHours} hours.${t.description ? ' Scope: ' + t.description + '.' : ''} ${t.instruction}`.trim();

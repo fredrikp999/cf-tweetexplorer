@@ -25,13 +25,14 @@ flowchart LR
     end
     R2[(R2 bucket<br/>audio + pictures)]
     AIG[AI Gateway<br/>logs · analytics]
-    WAI[Workers AI<br/>image models]
+    WAI[Workers AI<br/>image · embedding models]
     W --> ASSETS
     W --> HIS & PUB & LST & MON & COL & CST
     PUB <-->|topics · ensure| COL
     MON <-->|watches · collected items| COL
     PUB --> R2
-    PUB -->|pictures, free Neurons| WAI
+    PUB -->|pictures, free Neurons · posts compared| WAI
+    MON -->|items · topic names · papers embedded| WAI
   end
 
   W -->|read-only proxy| TW[(twitterapi.io)]
@@ -115,8 +116,8 @@ src/
   site/topicData.ts        `loadTopic`: assembles a topic (Monitor data plus the briefings that mention it) for the page, its JSON and later the MCP tool
   sources/                 Non-X sources: types.ts (the neutral item and its feed shape) · rss.ts (RSS/Atom) · youtube.ts (channel and playlist feeds) · hn.ts (Hacker News via Algolia) · read.ts (article and comment reading) · presets.ts (shorthand such as `r/rust` or `github:owner/repo`, expanded to the feed address it stands for) · feedlist.ts (curated feed lists) · transcript.ts (video transcripts)
   site/landing.ts            (the landing page: In brief, ranked landscape, rising strip, research and reads; the last-visit script)
-  signal/                  lens.ts (lenses: colours, matching, ordering, the model's suggestions, the lens script) · topicview.ts (who had a topic first by kind of source, timeline dots, videos to watch) · topicpage.ts (a topic's address, state and evidence strip; the shape of `/t/<slug>.json`) · summary.ts (prompt and parsing for topic summaries) · terms.ts (words, phrases and hashtags of an item) · score.ts (weighted score per term across groups; shared / single / rising) · landscape.ts (clusters of topics talked about together and the steady bubble layout) · topics.ts (merging terms into topics, what goes with them) · ai.ts (optional: prompt and parsing for topics written by a model)
-  lib/                     twitterapi.ts (API client) · costs.ts (ledger writes) · pool.ts
+  signal/                  lens.ts (lenses: colours, matching, ordering, the model's suggestions, the lens script) · topicview.ts (who had a topic first by kind of source, timeline dots, videos to watch) · topicpage.ts (a topic's address, state and evidence strip; the shape of `/t/<slug>.json`) · summary.ts (prompt and parsing for topic summaries) · terms.ts (words, phrases and hashtags of an item) · score.ts (weighted score per term across groups; shared / single / rising) · landscape.ts (clusters of topics talked about together and the steady bubble layout) · topics.ts (merging terms into topics, what goes with them) · ai.ts (optional: prompt and parsing for topics written by a model) · vectors.ts (meaning: copies, varied picks, names shown to the topic model, names suggested as one; the thresholds and how they were set)
+  lib/                     twitterapi.ts (API client) · costs.ts (ledger writes) · embed.ts (embeddings from Workers AI, in batches) · pool.ts
 server/                    The same app for running locally with Node (npm start): index.js, History, Lists, Monitor, Agent (no collection layer)
 public/admin/              The admin app (one HTML page, no build step), and health.js: why a briefing or Signal group does or does not reach readers
 test/                      Tests (node --test)
@@ -135,6 +136,7 @@ Cloudflare AI Gateway on the way (see [deployment](deployment.md#ai-gateway)). T
 | **Signal topic model** (chat, optional) | Naming the topics of each new item for the Signal tab, 40 items per call | Off by default (Signal counts words, free). When on, it uses a cheap writing model you pick on the Signal tab, a daily spending cap, and shows in Costs as "Signal topics (AI)". |
 | **Lens suggestions** (chat) | "Suggest topics" in the admin: which current Signal topics belong to which lens (one call per click, nothing applied automatically) | The Signal topic model, inside the same daily spending cap; recorded in Costs as "Lens suggestions (AI)". |
 | **Topic summaries** (chat) | One paragraph per active Signal topic per day, for the top of `/t/<slug>` | The Signal topic model, written from the Monitor's alarm (never on a page request) inside the same daily spending cap, with the items it used stored beside it. Shows in Costs as "Topic summaries (AI)". Needs the Signal topic model to be on. |
+| **Embedding model** | Turning text into numbers to compare by meaning: Research map papers, every item the Signal topic model reads (copies count once, the names in use shown by closeness), new topic names (suggested merges), and a briefing's posts (copies folded, picks for variety). See [flows](flows.md#meaning-embeddings). | `@cf/baai/bge-small-en-v1.5` on Workers AI (the `AI` binding), about $0.02 per million tokens before the free daily Neurons. Recorded in Costs under kind `embedding`. |
 | **Decision models** (classifiers) | Screening tweets before a summary; optionally the cheap labelling in History | Perplexity Decider Flash / Decider on OpenRouter (`~perplexity/pplx-decider-flash-latest`, `~perplexity/pplx-decider-latest`). They write no text: you send a tweet and typed questions, and get typed answers back (`/api/v1/systemone`, about $0.01 to $0.02 per million input tokens). |
 
 Audio uses Replicate (`REPLICATE_API_TOKEN`): Gemini 3.8 Flash TTS or Flash-Lite TTS. Pictures use either Replicate (`google/nano-banana-pro`,

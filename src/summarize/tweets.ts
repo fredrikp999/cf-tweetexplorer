@@ -12,6 +12,8 @@ export interface RawTweet {
   pdfUrl?: string; categories?: string[];
   /** The Monitor watch (feed) the item came from: its name, and the feed's address. */
   feed?: string; feedUrl?: string;
+  /** How many other posts said nearly the same and were left out for this one (src/signal/vectors.ts foldCopies). */
+  copies?: number;
 }
 export interface CompactTweet {
   id: string; url: string; by: string; at: string; text: string;
@@ -24,6 +26,8 @@ export interface CompactTweet {
   feed?: string; feedUrl?: string;
   /** arXiv papers: the PDF and the subject categories. */
   pdf?: string; categories?: string[];
+  /** How many other posts said nearly the same and were left out for this one. */
+  copies?: number;
 }
 
 export const MAX_TEXT = 600;
@@ -35,6 +39,7 @@ export function compact(t: RawTweet): CompactTweet {
     id: String(t.id), url: t.url ?? (by && !other ? `https://x.com/${by}/status/${t.id}` : ''), by: other ? (t.author?.name || by) : by ? '@' + by : '',
     at: t.createdAt ? new Date(t.createdAt).toISOString() : '', text: String(t.text ?? '').slice(0, MAX_TEXT),
     likes: t.likeCount ?? 0, retweets: t.retweetCount ?? 0, replies: t.replyCount ?? 0, views: t.viewCount ?? 0, lang: t.lang,
+    ...(t.copies ? { copies: t.copies } : {}),
     ...(other ? { source: t.source, ...(t.discussionUrl ? { discussion: t.discussionUrl } : {}), ...(t.feed ? { feed: t.feed } : {}), ...(t.feedUrl ? { feedUrl: t.feedUrl } : {}), ...(t.pdfUrl ? { pdf: t.pdfUrl } : {}), ...(t.categories?.length ? { categories: t.categories.slice(0, 6) } : {}) } : {}),
   };
 }

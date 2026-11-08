@@ -723,6 +723,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
         <button class="go" id="sigAiSave" type="button">Save</button></div>
       <div class="note" id="sigAiStatus" style="margin-top:8px"></div>
       <div id="sigAiRuns" style="margin-top:10px"></div>
+      <div id="sigAiMeaning" style="margin-top:10px"></div>
     </details>
     <details class="card" id="sigFilter" open style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Filtered words <span class="note" id="sigFilterNote" style="font-weight:400"></span></summary>
       <div class="note" style="margin:8px 0">Words and phrases you do not want as topics. They are left out everywhere (this tab, the public pages and the MCP view) and the change applies at once, also to what was counted before. You can also use <b>Hide this term</b> when you open a topic.</div>
@@ -3761,6 +3762,11 @@ function renderSigAi() {
   const m = a.models.find((x) => x.id === a.model), est = (n) => (m ? ` About $${((n / 1000) * m.per1000).toFixed(2)}.` : '');
   $('#sigAiRuns').innerHTML = !a.enabled ? '' : `<div class="optrow">${a.failedItems ? `<span class="note"><b>${fmt(a.failedItems)}</b> item${a.failedItems === 1 ? '' : 's'} could not be read.${est(a.failedItems)}</span><button class="go ghost" data-airetry type="button">Retry them</button>` : ''}
     <span class="note">Read the last two weeks again with the current model (${fmt(a.rereadable)} items).${est(a.rereadable)} Use it after changing the model; the topics are rebuilt as it reads.</span><button class="go ghost" data-aireread type="button">Re-read</button></div>`;
+  // Meaning: posts counted once because they copy another, and topic names that are probably one (merged only when the admin says so).
+  const sug = a.suggestions || [], ex = a.copyExamples || [];
+  $('#sigAiMeaning').innerHTML = !a.enabled ? '' : `<div class="note">${a.embedError ? `<span class="err">Comparing by meaning is off for now: ${esc(a.embedError)}</span> ` : ''}<b>${fmt(a.copies || 0)}</b> post${a.copies === 1 ? '' : 's'} in the last two weeks copied another almost word for word, so each was counted once.</div>
+    ${ex.length ? `<details style="margin-top:4px"><summary class="note" style="cursor:pointer">The newest copies</summary><ul class="note" style="margin:4px 0 0;padding-left:18px">${ex.map((x) => `<li>${esc(x.copy)}${x.of ? ` <span style="opacity:.7">— copies “${esc(x.of)}”</span>` : ''}</li>`).join('')}</ul></details>` : ''}
+    ${sug.length ? `<div style="margin-top:8px"><div class="note"><b>Probably one topic?</b> New names that read almost like a name in use. Nothing changes until you merge.</div>${sug.map((x) => `<div class="optrow" style="margin-top:4px"><span>“${esc(x.name)}” → “${esc(x.like)}” <span class="note">${Math.round(x.sim * 100)}% alike</span></span><button class="go ghost" type="button" data-nmerge="${esc(x.name)}" data-nlike="${esc(x.like)}">Merge</button><button class="go ghost" type="button" data-ndismiss="${esc(x.name)}" data-nlike="${esc(x.like)}">Not the same</button></div>`).join('')}</div>` : ''}`;
   clearTimeout(sigTimer);
   if (a.enabled && a.queued && !a.error && (!$('#signal').hidden || !$('#signalsetup').hidden)) sigTimer = setTimeout(loadSignal, 15000);   // follow the reading until it has caught up
 }
@@ -3988,6 +3994,13 @@ sigOn('click', async (e) => {
       const t = sig.terms[from], aliases = { ...(sig.filter.aliases || {}) };
       for (const k of [from, ...(t?.members ?? [])]) aliases[k] = to;
       sig.filter = await post('/mon/signal-alias-set', { aliases }); sigPick = null; $('#sigDetail').innerHTML = ''; await loadSignal(); toast(`Counted as “${to}” from now on, also in the past`);
+    }
+    else if (e.target.closest('[data-nmerge]')) {
+      const b = e.target.closest('[data-nmerge]'), aliases = { ...(sig.filter.aliases || {}) }; aliases[b.dataset.nmerge] = b.dataset.nlike;
+      sig.filter = await post('/mon/signal-alias-set', { aliases }); await loadSignal(); toast(`“${b.dataset.nmerge}” is counted as “${b.dataset.nlike}” from now on, also in the past`);
+    }
+    else if (e.target.closest('[data-ndismiss]')) {
+      const b = e.target.closest('[data-ndismiss]'); sig.ai = await post('/mon/signal-name-dismiss', { name: b.dataset.ndismiss, like: b.dataset.nlike }); renderSigAi();
     }
     else if (e.target.closest('[data-adel]')) {
       const aliases = { ...(sig.filter.aliases || {}) }; delete aliases[e.target.closest('[data-adel]').dataset.adel];

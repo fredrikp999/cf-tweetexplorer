@@ -85,7 +85,7 @@ are only for extra context (replies, another search). Every claim must link to i
 ```mermaid
 flowchart TD
   AL{{PublishDO alarm · next slot}} --> FE[Get the last interval from each source<br/>searches · lists · X Lists / groups · Monitor feed<br/>from the collection store, or live; see section 8]
-  FE --> TOP[Keep the 150 most engaged tweets]
+  FE --> TOP[Fold copies into one · keep up to 150<br/>by reactions and variety]
   TOP --> SC[Screen · decision model<br/>needs 25+ tweets, keeps at least 20]
   SC --> WR[Write · writing model<br/>cited Markdown, TL;DR]
   WR --> IS{Auto-publish?}
@@ -109,6 +109,10 @@ flowchart TD
 - Where the posts come from depends on the collection mode (section 8). In *Collected data* the briefing reads the store, and fetches live only if
   the layer does not answer. A briefing stopped by the daily cap is written from what it has and marked partial.
 - Screening never fails a briefing: if it cannot run, the tweets go on unscreened.
+- **Which posts are written from** (`pickPosts` in `src/durable-objects/publish.ts`). Every post is embedded once per run; posts that copy one another
+  (a repost, a headline copied by many accounts) are folded into the most reacted of them, which carries `copies`, and the writer is told that is one
+  report that spread, not many. If more than 150 are left, the 150 are picked for reactions (on a log scale) and for variety, so one story cannot fill
+  the briefing. If the embedding model fails, the 150 most reacted are kept, as before. See *Meaning* below.
 
 ## 6. Screening (decision models)
 
@@ -210,6 +214,36 @@ Progress and errors show under **Signal setup → Research pulse** in the admin,
 **Papers named without a link.** Besides links, attention counts collected posts that use a paper's own made-up name: one mixed-case word before the colon of its title, such as `nanoMuse` (`coinedName` in `src/signal/attention.ts`). A name is dropped if it was in use more than a day before its paper appeared, if more than 25 accounts use it, or if two papers share it, and an author naming their own paper does not count. This uses no embeddings: on 1,124 real posts they found papers on the same subject rather than the same paper, while all 5 mixed-case name matches were right. Papers without such a name, at least two thirds of them, can only be found by a link.
 
 **Topics inside bigger topics.** In the Signal lists, a topic whose name holds all the words of a bigger topic's name sits straight under it, such as `trump lawsuit` under `trump` (`nestTopics` in `src/signal/topics.ts`). It keeps its own score and its own page, and its numbers are not added to the bigger topic. Nesting goes by names only, so topics that are related but named differently, such as `us election` and `voting id`, stay apart.
+
+## Meaning (embeddings)
+
+Besides the Research map, Signal and the briefings compare posts and topic names by meaning, with the same Workers AI model
+(`@cf/baai/bge-small-en-v1.5`, 384 numbers per text). The pure parts are in `src/signal/vectors.ts` (tested in `test/vectors.test.mjs`), the model
+call in `src/lib/embed.ts`. Vectors are rows in SQLite, compared one by one: at this size (hundreds of items a day) that takes milliseconds, so there
+is no vector database.
+
+1. **Every item the Signal topic model reads is embedded first**, in the same batch of 40 (`batchMeaning` in `src/durable-objects/monitor.ts`). The
+   vector is kept in `item_vec` for 30 days, like the item log; a re-read uses the kept vector instead of embedding again. Links and feed boilerplate
+   ("Continue reading on Medium »", "submitted by /u/…") are left out of the text compared.
+2. **Copies count once.** An item at least 0.95 alike to an item of the last 3 days is a copy: it is not sent to the topic model, it is stored as
+   read with no topics, and it is not counted in its day or under any topic, so it drops out of scores, evidence lists and the landscape. The same
+   story told by different people (0.73 to 0.89 alike) still counts each time. Only Signal's counts change: the item stays in the live feed and the
+   item log.
+3. **Names in use, by meaning.** The topic model is told to reuse names already in use. It is shown the 25 most used names of the last two weeks,
+   then the names closest in meaning to the batch's items (out of the 400 most used; topic names are embedded once, in `name_vec`), up to 60.
+4. **Names that are probably one.** A new name at least 0.90 alike to a name in use is suggested in **Signal setup → Topic detection**, never merged
+   on its own: names of different things can be as alike as names of one thing ("gpt-6 release" and "gpt-5 release" 0.88). Names that differ in a
+   number ("kimi k2", "kimi k3") and a name inside another ("claude code cli" under "claude code", which is a part of its own) are never suggested.
+   **Merge** adds the alias, as merging by hand does; **Not the same** keeps the pair from being suggested again.
+5. **Briefings** fold copies and pick for variety (section 5).
+
+The thresholds were set on the model itself, on hand-picked pairs (the numbers are in the head of `src/signal/vectors.ts`), not on measured traffic.
+**Topic detection** in the admin shows how many posts were counted as copies in the last two weeks and the newest of them next to the post each
+copies, to check that 0.95 folds only copies. If the embedding model fails, reading goes on without it (no copies, the most used names) and the
+error shows there.
+
+Not done with meaning (yet): lens membership and search still go by words, and a paper is matched to a post only by link or by its coined name
+(see *Papers named without a link*), because meaning finds papers on the same subject, not the same paper.
 
 ## Topic pages
 
