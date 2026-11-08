@@ -33,7 +33,7 @@ import { LENS_COLORS, LENS_JS, applyLens, lensMatch, chosenLens, lensColorCss, l
 import { avatarResponse, isOwnLens, isPersonal, mePost, ownLenses, viewerOf, type Viewer } from './me';
 import type { AskRow, Me } from '../durable-objects/users';
 import { FEATURES, MAX_FOLLOWS, MAX_OWN_LENSES, homeFor } from '../users/model';
-import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
+import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, plainLine, topicFor, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
 import { HOST_JS, VIZ_CSS, VIZ_VIEWS, vizFrame, viewCsp } from './viz';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
 import { aiModelInfo } from '../summarize/workers-ai.ts';
@@ -250,6 +250,8 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .hc.h0,.hkey .h0{fill:var(--line);background:var(--line)}.hc.h1,.hkey .h1{fill:color-mix(in srgb,var(--hc) 16%,var(--card));background:color-mix(in srgb,var(--hc) 16%,var(--card))}.hc.h2,.hkey .h2{fill:color-mix(in srgb,var(--hc) 38%,var(--card));background:color-mix(in srgb,var(--hc) 38%,var(--card))}
 .hc.h3,.hkey .h3{fill:color-mix(in srgb,var(--hc) 66%,var(--card));background:color-mix(in srgb,var(--hc) 66%,var(--card))}.hc.h4,.hkey .h4{fill:var(--hc);background:var(--hc)}.hc:hover{stroke:var(--text);stroke-width:1.5}
 .heat{--hc:var(--lc,var(--accent))}.hkey{display:inline-flex;align-items:center;gap:3px;font-size:12px}.hkey i{display:inline-block;width:11px;height:11px;border-radius:3px}
+.bimg{position:relative}.bmap{position:absolute;right:6px;bottom:6px;width:38%;max-width:96px;aspect-ratio:1.4;padding:4px;border-radius:9px;background:rgba(6,16,18,.62);backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,.3);display:flex}
+.bmap svg{width:100%;height:100%}.bmap circle{fill:rgba(255,255,255,.16);stroke:rgba(255,255,255,.28);stroke-width:3}.bmap circle.on{fill:#ff7aa1;stroke:#fff;stroke-width:5}
 .tline{margin:0 0 6px}.tline svg{display:block;width:100%;height:auto;max-width:30rem}.tline text{fill:var(--muted);font-size:13px}.tline .base{stroke:var(--line);stroke-width:1}.tline .lane{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}.tline .dot{fill:var(--bar);stroke:var(--card);stroke-width:1.5}
 .tkey{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted)}.tkey b{color:var(--bar);margin-right:4px}.twords{margin:0 0 20px;padding-left:1.2em;color:var(--muted);font-size:13.5px}
 .firstsay{font-size:17px;max-width:44rem;margin:0 0 12px}.firstlist{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:10px;max-width:44rem}.firstlist li{border-left:3px solid var(--bar);padding-left:12px}.firstlist .when{color:var(--muted);font-size:13.5px}.firstlist .fnum{display:inline-block;min-width:1.6em;font-weight:700;color:var(--bar)}
@@ -515,6 +517,17 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
     return `<section aria-labelledby="h-brief"><h2 class="lh" id="h-brief">In brief${lens ? ': ' + esc(lens.name) : ''} <a href="${AREA_BRIEFINGS[area]}">Full briefings &rarr;</a></h2><ul class="brief">${lines.map((l) => `<li><a href="${esc(l.href)}">${esc(l.text)}</a>${l.topic ? '' : `<small>from the ${esc(l.briefing.title)} briefing</small>`}</li>`).join('')}</ul></section>`;
   });
 
+  // A small map on each briefing card: today's landscape in miniature, with the topics the briefing covers (its themes and TL;DR matched to topic names) lit and the rest faint.
+  // It repeats what the themes say, so it is hidden from screen readers like the picture it sits on.
+  const bySlug = new Map(topics.map((t) => [topicSlug(t.term), t] as const)), land = d.landscape?.bubbles.filter((b) => bySlug.has(b.key)) ?? [];
+  const briefMap = (texts: string[]): string => {
+    if (land.length < 4) return '';
+    const lit = new Set(texts.filter(Boolean).map((x) => topicFor(plainLine(x), topics)).filter((t): t is SigTopic => !!t).map((t) => topicSlug(t.term)));
+    if (!land.some((b) => lit.has(b.key))) return '';
+    const x0 = Math.min(...land.map((b) => b.x - b.r)), y0 = Math.min(...land.map((b) => b.y - b.r)), x1 = Math.max(...land.map((b) => b.x + b.r)), y1 = Math.max(...land.map((b) => b.y + b.r)), pad = 10;
+    return `<span class="bmap"><svg viewBox="${(x0 - pad).toFixed(0)} ${(y0 - pad).toFixed(0)} ${(x1 - x0 + 2 * pad).toFixed(0)} ${(y1 - y0 + 2 * pad).toFixed(0)}">${land.map((b) => `<circle class="${lit.has(b.key) ? 'on' : ''}" cx="${b.x}" cy="${b.y}" r="${b.r}"/>`).join('')}</svg></span>`;
+  };
+
   // The briefings of the day, so the landing page still leads to them: each briefing's headline, short summary and themes (the same list /briefings shows, newest first).
   const today = guard(() => {
     const list = inOrder(ctx.topics, (a, b) => b.latest.publishedAt - a.latest.publishedAt).filter((t) => !lens || lensMatch(lens, { term: [t.title, t.latest.tldr, ...(t.latest.themes ?? [])].join(' . ') })).slice(0, 6);
@@ -523,7 +536,7 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
       const fresh = Date.now() - t.latest.publishedAt < 26 * 3600_000, th = (t.latest.themes ?? []).slice(0, 3);
       // The picture repeats the title link, so it is hidden from screen readers and the keyboard. Without a picture: a colour of the briefing's own and the beat of the mark.
       const pic = t.pic ? `<img src="/image/${esc(t.slug)}/${esc(t.pic.id)}.jpg?v=${t.pic.v}" alt="" loading="${i ? 'lazy' : 'eager'}" decoding="async">` : `<span class="ph" style="--h:${hueOf(t.slug)}"><svg viewBox="0 0 48 24">${CURL}</svg></span>`;
-      return `<li><a class="bimg" href="/${esc(t.slug)}" tabindex="-1" aria-hidden="true">${pic}</a><div class="btxt"><div class="h"><a href="/${esc(t.slug)}"><b>${esc(t.title)}</b></a><small>${fresh ? '<span class="up">new</span> ' : ''}${date(t.latest.publishedAt)}</small></div>${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class="th">${th.map((x) => `<a href="/${esc(t.slug)}#${esc(anchorOfTheme(x))}">${esc(x)}</a>`).join(' &middot; ')}</p>` : ''}</div></li>`;
+      return `<li><a class="bimg" href="/${esc(t.slug)}" tabindex="-1" aria-hidden="true">${pic}${briefMap([t.latest.tldr, ...(t.latest.themes ?? [])])}</a><div class="btxt"><div class="h"><a href="/${esc(t.slug)}"><b>${esc(t.title)}</b></a><small>${fresh ? '<span class="up">new</span> ' : ''}${date(t.latest.publishedAt)}</small></div>${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class="th">${th.map((x) => `<a href="/${esc(t.slug)}#${esc(anchorOfTheme(x))}">${esc(x)}</a>`).join(' &middot; ')}</p>` : ''}</div></li>`;
     }).join('')}</ul></section>`;
   });
 
