@@ -22,6 +22,8 @@ export interface OverviewData {
 
 export const briefsOf = (topics: PubTopic[]): BriefIn[] => topics.map((t) => ({ slug: t.slug, title: t.title, publishedAt: t.latest.publishedAt, tldr: t.latest.tldr, themes: t.latest.themes, position: t.position }));
 
+/** How many topics the landing page's streamgraph draws. */
+export const STREAM_TOPICS = 10;
 const monitor = (env: Env, path: string) => env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/' + path));
 /** The lenses of an area, for the pages and tools that apply one. Never fails: with none, the plain lists show. */
 export const loadLenses = (env: Env, area: Area = 'ai'): Promise<Lens[]> => monitor(env, `lenses-public?area=${encodeURIComponent(area)}`).then((r) => (r.ok ? (r.json() as Promise<Lens[]>) : [])).catch(() => [] as Lens[]);
@@ -43,8 +45,8 @@ export async function loadOverview(env: Env, o: { window: LandingWindow; lens?: 
   const signal = (days: number) => (board ? monitor(env, `signal-public?slug=${board.slug}&days=${days}`).then((r) => (r.ok ? (r.json() as Promise<PubSignal>) : null)).then((d) => (d?.top ? d : null)).catch(() => null) : Promise.resolve(null));
   const [sig, sig7, landscape] = await Promise.all([signal(win), win === 7 ? null : signal(7),
     board ? monitor(env, `landscape-public?slug=${board.slug}&days=${win}`).then((r) => (r.ok ? (r.json() as Promise<Layout | null>) : null)).catch(() => null) : null]);
-  // The cards want a daily count each: ask for the topics that will be on them.
-  const cardTerms = sig ? rankList(sig.top as SigTopic[], lens, 15).rows.filter((r) => !r.part && (!lens || r.inLens)).slice(0, 6).map((r) => r.topic.term.toLowerCase()) : [];
+  // The cards and the streamgraph want a daily count each: ask for the topics that will be on them (the cards take the first six, the stream up to STREAM_TOPICS).
+  const cardTerms = sig ? rankList(sig.top as SigTopic[], lens, 15).rows.filter((r) => !r.part && (!lens || r.inLens)).slice(0, STREAM_TOPICS).map((r) => r.topic.term.toLowerCase()) : [];
   let extras = await monitor(env, `landing-public?spark=${encodeURIComponent(cardTerms.join('|'))}${board && area !== 'ai' ? '&board=' + encodeURIComponent(board.slug) : ''}`).then((r) => (r.ok ? (r.json() as Promise<LandingExtras>) : null)).catch(() => null);
   if (extras && area !== 'ai') extras = { ...extras, papers: [], risingResearch: [], reads: [] };
   return { area, window: win, lenses, lens, board, sig, sig7: win === 7 ? sig : sig7, extras, briefs, landscape: landscape ?? null };

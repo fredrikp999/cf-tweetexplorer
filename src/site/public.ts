@@ -24,7 +24,7 @@ import { CARD_FONT, CARD_W, shareCardSvg } from './shareCard';
 import { svgToPng } from '../media/png';
 import { PHASE_LABEL, PHASE_MARK, PHASE_TRACK, lifecycle, smooth, type Lifecycle } from '../signal/lifecycle';
 import { soften, streamLayout, type StreamLayer } from '../signal/stream';
-import { loadOverview } from './overview';
+import { STREAM_TOPICS, loadOverview } from './overview';
 import { overviewOut } from './agentText';
 import type { Layout } from '../signal/landscape';
 import { AREA_BRIEFINGS, AREA_HOME, AREA_LABEL, areaHint, areaOfRequest, areaOf, boardsOfArea, parseArea, publishedAreas, topicHref, topicsOfArea, type Area } from '../signal/area';
@@ -220,7 +220,7 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .phase,.ltrack li.on{color:var(--ph)}.life .ltrack li.on{color:var(--ph)}.ltrack li:nth-child(1).on{--ph:#1f8a5b}.ltrack li:nth-child(2).on{--ph:var(--accent)}.ltrack li:nth-child(3).on{--ph:var(--muted)}.ltrack li.loop.on{--ph:#7c5cbf}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .ph-emerging,:root:not([data-theme=light]) .ltrack li:nth-child(1).on{--ph:#5fd39b}:root:not([data-theme=light]) .ph-returning,:root:not([data-theme=light]) .ltrack li.loop.on{--ph:#b8a1f0}}
 :root[data-theme=dark] .ph-emerging,:root[data-theme=dark] .ltrack li:nth-child(1).on{--ph:#5fd39b}:root[data-theme=dark] .ph-returning,:root[data-theme=dark] .ltrack li.loop.on{--ph:#b8a1f0}
-@media(max-width:560px){.ltrack li.loop{margin-left:0}.spread .sbl{font-size:22px}.spread .sax{font-size:22px}.spin circle{r:14px}.spin text{font-size:16px}.life .lpt{font-size:20px}}
+@media(max-width:560px){.ltrack li.loop{margin-left:0}.spread .sbl{font-size:22px}.spread .sax,.tstream .sax{font-size:22px}.spin circle{r:14px}.spin text{font-size:16px}.tsl{font-size:22px}.life .lpt{font-size:20px}}
 .spread{margin:0 0 4px;padding:10px 12px 4px;border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:var(--sh1)}.spread svg{display:block;width:100%;height:auto}
 .sb{stroke:var(--card);stroke-width:1.2;fill-opacity:.88}.sb:hover{fill-opacity:1}.sbl{fill:#fff;font-size:12.5px;font-weight:700;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,.28);stroke-width:2.5px}
 .smid{stroke:var(--line);stroke-dasharray:2 4}.sax{fill:var(--muted);font-size:12px}.srail{stroke:var(--line)}.spaper{fill:var(--k-arxiv);stroke:var(--card);stroke-width:1.5}
@@ -231,6 +231,10 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 :root{--k-x:#1f7a8c;--k-hn:#d9480f;--k-youtube:#c2255c;--k-rss:#6741d9;--k-arxiv:#2b8a3e}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--k-x:#3fa5b8;--k-hn:#f76707;--k-youtube:#e64980;--k-rss:#845ef7;--k-arxiv:#40c057}}
 :root[data-theme=dark]{--k-x:#3fa5b8;--k-hn:#f76707;--k-youtube:#e64980;--k-rss:#845ef7;--k-arxiv:#40c057}
+.tstream{margin:0 0 18px;padding:12px 14px 6px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:var(--sh1)}.tstream svg{display:block;width:100%;height:auto}
+.tsb{stroke:var(--card);stroke-width:1.2;fill-opacity:.86;transition:fill-opacity .15s}.tstream a:hover .tsb,.tstream a:focus .tsb{fill-opacity:1;stroke:var(--text);stroke-width:1.5}.tstream:hover .tsb{fill-opacity:.55}.tstream:hover a:hover .tsb{fill-opacity:1}
+.tsl{fill:#fff;font-weight:700;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,.3);stroke-width:2.5px}
+.tskey{list-style:none;margin:8px 0 2px;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13.5px}.tskey li{display:flex;align-items:center;gap:6px}.tskey .sk{width:11px;height:11px;border-radius:3px}.tskey a{color:var(--text);text-decoration:none}.tskey a:hover{color:var(--accent);text-decoration:underline}
 .tline{margin:0 0 6px}.tline svg{display:block;width:100%;height:auto;max-width:30rem}.tline text{fill:var(--muted);font-size:13px}.tline .base{stroke:var(--line);stroke-width:1}.tline .lane{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}.tline .dot{fill:var(--bar);stroke:var(--card);stroke-width:1.5}
 .tkey{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted)}.tkey b{color:var(--bar);margin-right:4px}.twords{margin:0 0 20px;padding-left:1.2em;color:var(--muted);font-size:13.5px}
 .firstsay{font-size:17px;max-width:44rem;margin:0 0 12px}.firstlist{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:10px;max-width:44rem}.firstlist li{border-left:3px solid var(--bar);padding-left:12px}.firstlist .when{color:var(--muted);font-size:13.5px}.firstlist .fnum{display:inline-block;min-width:1.6em;font-weight:700;color:var(--bar)}
@@ -534,6 +538,15 @@ ${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in
     }).join('')}</ul>${out}</section>`;
   });
 
+  // The streamgraph: the topics on this page (the lens's, with one chosen) as bands over the last 14 days, each as thick as its mentions that day. Each band links to its topic.
+  const stream = guard(() => {
+    const ex = extras;
+    if (!ex?.days?.length) return '';
+    const rows = rank.rows.filter((r) => !r.part && (!lens || r.inLens)).map((r) => r.topic).filter((t) => (ex.series[t.term.toLowerCase()] ?? []).some((v) => v > 0)).slice(0, STREAM_TOPICS);
+    if (rows.length < 2) return '';
+    return `<section aria-labelledby="h-stream"><h2 class="lh" id="h-stream">Two weeks of talk${lens ? ': ' + esc(lens.name) : ''}</h2>${topicStream(rows.map((t) => ({ term: t.term, label: t.label, href: topicUrl(t.term, area), values: ex.series[t.term.toLowerCase()] })), ex.days, lens?.color)}</section>`;
+  });
+
   const research = guard(() => {
     if (!extras || !ai) return '';
     const rising = extras.risingResearch;
@@ -574,7 +587,7 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
   const mast = `<section class="mast${bubbles ? '' : ' nobub'}${lens ? ` lensmast lc-${lens.color}` : ''}" aria-labelledby="h-mast">${MAST_WAVE}<div class="mastin"><div class="masttext">
 <div class="masteye">${lens ? `<span class="lsw" aria-hidden="true"></span>Lens &middot; ${esc(AREA_LABEL[area])}` : `${date(Date.now())} &middot; ${esc(AREA_LABEL[area])}`}</div>
 <h1 id="h-mast"${!lens && headline.replace(/<[^>]+>/g, '').length > 60 ? ' class="long"' : ''}>${lens ? esc(lens.name) : headline || (ai ? 'What is going on in AI' : 'Politics')}</h1><p class="mastlede">${lede}</p>${since}${mini}</div>${graphic}</div></section>`;
-  const body = `${mast}${yoursHtml(ctx, topics, pop, area, sig ? sigPct : null)}<div class="lgrid"><div>${brief}${today}</div><div>${landscape}</div></div>${rising}${cards}${research}${watch}
+  const body = `${mast}${yoursHtml(ctx, topics, pop, area, sig ? sigPct : null)}<div class="lgrid"><div>${brief}${today}</div><div>${landscape}</div></div>${rising}${stream}${cards}${research}${watch}
 <p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals. <a href="/signal/method">How the numbers are worked out</a>.</p>`;
   return shell(ai ? 'Undercurrent · What’s rising in AI, before it’s news' : 'Politics · Undercurrent', topBar(ctx, { lenses, lens, window: win, href: (p) => landingHref(p, area), here: {} }), body, { wide: true, home: true, canonical: origin ? origin + AREA_HOME[area] : undefined,
     description: ai ? 'What’s rising in AI, before it’s news: short briefings, the topics being talked about across news, blogs, X, YouTube and Hacker News, and the research behind them.'
@@ -841,6 +854,29 @@ function spreadHtml(d: TopicData): string {
   const label = `How it spread over ${days.length} days: ${words}.${papers.length ? ` ${papers.length} new papers on the subject.` : ''}${arr.length ? ' ' + firstSentence(d.first) : ''}`;
   return `<h2 class="sect">How it spread</h2><div class="spread"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}"><line class="smid" x1="${L}" x2="${W - R}" y1="${mid}" y2="${mid}"/>${rail}${bands}${names}${pins}${ticks}</svg></div>
 ${flow}<p class="meta">One band per kind of source, as thick as its items at the time${papers.length ? '; diamonds above are new papers on the subject' : ''}. Numbers mark the order the kinds had the latest wave in, among the sources we follow; it does not say where the story began. Each kind is shown in its own band and never added into one number.</p>`;
+}
+
+/** The colours of the streamgraph's bands, biggest topic first: distinct from each other in both themes. With a lens, its own colour leads. */
+const STREAM_COLORS = ['#1f7a8c', '#d6336c', '#e3a008', '#7c5cbf', '#2f9e6b', '#c2410c', '#4263eb', '#74b816', '#ae3ec9', '#868e96'];
+/**
+ * Topics as a streamgraph (src/signal/stream.ts): one band per topic over `days`, as thick as its mentions each day, centred on a line that moves so the bands bend as little as they can.
+ * The biggest topics are named inside their bands; every band is a link, and the list under it names them all, so nothing depends on the colours.
+ */
+function topicStream(topics: Array<{ term: string; label: string; href: string; values: number[] }>, days: string[], lensColor?: string): string {
+  const lay = streamLayout(topics.map((t) => ({ key: t.term, values: t.values })), { order: 'inside-out' });
+  if (!lay.layers.length) return '';
+  const S = days.length, W = 960, H = 300, L = 4, R = 4, top = 12, bottom = 24, room = H - top - bottom;
+  const xs = Array.from({ length: S }, (_, i) => L + (S > 1 ? i / (S - 1) : 0.5) * (W - L - R)), k = (room * 0.94) / Math.max(1e-9, lay.max - lay.min), mid = top + room / 2, ty = (v: number) => mid - v * k;
+  const byTerm = new Map(topics.map((t, i) => [t.term, { ...t, color: i === 0 && lensColor ? `var(--lc-${lensColor}, ${STREAM_COLORS[0]})` : STREAM_COLORS[i % STREAM_COLORS.length] }] as const));
+  const bands = lay.layers.map((l) => { const t = byTerm.get(l.key)!, total = Math.round(t.values.reduce((a, b) => a + b, 0));
+    return `<a href="${t.href}"><path class="tsb" style="fill:${t.color}" d="${bandPath(xs, l.y1.map(ty), l.y0.map(ty))}"><title>${esc(t.label)}: ${n(total)} ${total === 1 ? 'mention' : 'mentions'} in ${S} days</title></path></a>`; }).join('');
+  const names = lay.layers.map((l) => { const t = byTerm.get(l.key)!, at = bandLabelAt(l, S), w = at.w * k, size = Math.min(15, Math.max(11, w * 0.45)), max = Math.floor(150 / (size * 0.55));
+    return w >= 15 ? `<text class="tsl" x="${xs[at.i].toFixed(1)}" y="${(ty((l.y0[at.i] + l.y1[at.i]) / 2) + size * 0.36).toFixed(1)}" font-size="${size.toFixed(1)}" text-anchor="middle">${esc(t.label.length > max ? t.label.slice(0, max - 1) + '…' : t.label)}</text>` : ''; }).join('');
+  const ticks = [0, Math.floor((S - 1) / 2), S - 1].map((i, j) => `<text class="sax" x="${xs[i].toFixed(0)}" y="${H - 6}" text-anchor="${j === 0 ? 'start' : j === 2 ? 'end' : 'middle'}">${esc(shortDay(days[i]))}</text>`).join('');
+  const label = `Mentions per day over ${S} days for ${topics.length} topics: ${lay.layers.slice().sort((a, b) => b.total - a.total).map((l) => `${byTerm.get(l.key)!.label}, most on ${shortDay(days[l.peak])}`).join('; ')}.`;
+  const key = topics.map((t) => { const c = byTerm.get(t.term)!; return `<li><span class="sk" style="background:${c.color}" aria-hidden="true"></span><a href="${t.href}">${esc(t.label)}</a></li>`; }).join('');
+  return `<div class="tstream"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}"><line class="smid" x1="${L}" x2="${W - R}" y1="${mid}" y2="${mid}"/>${bands}${names}${ticks}</svg><ul class="tskey">${key}</ul>
+<p class="meta">Each band is a topic, as thick as its mentions each day across the sources this page counts; the bands are stacked around a moving centre, so a band&rsquo;s height, not its place, is what counts. Click one to open it.</p></div>`;
 }
 
 function firstPanel(d: TopicData): string {

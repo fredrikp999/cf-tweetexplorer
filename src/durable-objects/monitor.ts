@@ -1832,7 +1832,7 @@ export class MonitorDO extends DurableObject<Env> {
           return json(v);
         }
         if (name === 'landing-public') {   // the extras of the landing page (summaries, daily counts of the cards, recent papers, what was read most): kept for two minutes
-          const spark = (url.searchParams.get('spark') ?? '').split('|').map((x) => x.trim().toLowerCase().slice(0, 80)).filter(Boolean).slice(0, 8), board = (url.searchParams.get('board') ?? '').slice(0, 40), k = `landing|${board}|${spark.join('|')}`, hit = this.pubCache.get(k);
+          const spark = (url.searchParams.get('spark') ?? '').split('|').map((x) => x.trim().toLowerCase().slice(0, 80)).filter(Boolean).slice(0, 12), board = (url.searchParams.get('board') ?? '').slice(0, 40), k = `landing|${board}|${spark.join('|')}`, hit = this.pubCache.get(k);
           if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
           const v = await this.landingPublic(spark, board);
           this.pubCache.set(k, { at: Date.now(), v });
