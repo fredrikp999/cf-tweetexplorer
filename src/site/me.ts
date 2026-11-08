@@ -15,6 +15,8 @@ export interface Viewer {
   enabled: boolean;
   /** The signed-in reader, or null (readers off, or no valid token). */
   me: Me | null;
+  /** Why there is no reader although readers are on (the token's check, e.g. "Wrong audience"), for the settings page to say. */
+  problem?: string;
 }
 const NOBODY: Viewer = { enabled: false, me: null };
 const users = (env: Env) => env.USERS.getByName('main');
@@ -24,11 +26,12 @@ export async function viewerOf(request: Request, env: Env): Promise<Viewer> {
   if (!env.SITE_POLICY_AUD && env.DEV_BYPASS_ACCESS !== '1') return NOBODY;
   try {
     const who = await verifyAccess(request, env, env.SITE_POLICY_AUD);
-    if (!who.ok || !who.email.includes('@')) return { enabled: true, me: null };
+    if (!who.ok) return { enabled: true, me: null, problem: who.reason };
+    if (!who.email.includes('@')) return { enabled: true, me: null, problem: 'The sign-in gave no e-mail address' };
     return { enabled: true, me: await users(env).me(who.email === 'dev@localhost' ? 'dev@localhost.test' : who.email) };   // the local dev stand-in is not a full address
   } catch (err) {
     console.error('reader lookup failed', err instanceof Error ? err.message : String(err));
-    return { enabled: !!env.SITE_POLICY_AUD, me: null };
+    return { enabled: !!env.SITE_POLICY_AUD, me: null, problem: 'Your settings could not be read just now' };
   }
 }
 

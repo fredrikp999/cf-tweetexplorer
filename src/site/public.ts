@@ -242,8 +242,8 @@ ${lensColorCss()}
 .lcard h3{margin:0;font-size:16px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}.lcard h3 a{color:var(--text);text-decoration:none}.lcard h3 a:hover{color:var(--accent)}.lcard p{margin:0;font-size:14px;color:var(--muted)}.lcard svg{display:block;width:100%;height:36px}.lcard small{color:var(--muted);font-size:12.5px}
 .rstrip{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 16px;margin:6px 0}.rstrip p{margin:0 0 6px}.rstrip ol{margin:6px 0;padding-left:20px}.rstrip li{margin:3px 0}
 .wr{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin:0 0 8px}.wr ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}.wr li{display:flex;flex-direction:column}.wr a{color:var(--text);font-weight:600;text-decoration:none}.wr a:hover{color:var(--accent)}.wr small{color:var(--muted);font-size:13px}.wr h3{font-size:14px;margin:0 0 8px;color:var(--muted)}
-.tb .themebtn{margin:0}.more .themebtn{border-color:rgba(255,255,255,.22)}
-@media(max-width:560px){.topbar{position:relative}.tb form{margin-left:0;flex:1}.tb input{width:auto;flex:1;min-width:0}.more>div{left:16px;right:16px;width:auto;max-width:none}.more>div .themebtn{margin-top:0}}
+.tb .themebtn{margin:0}.mebtn{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border:1px solid rgba(255,255,255,.22);border-radius:999px;font-size:13.5px;color:inherit;text-decoration:none}.mebtn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8}.mebtn:hover,.mebtn[aria-current=page]{border-color:currentColor}.more .themebtn{border-color:rgba(255,255,255,.22)}
+@media(max-width:560px){.topbar{position:relative}.tb form{margin-left:0;flex:1 1 100%;min-width:0}.tb input{width:auto;flex:1;min-width:0}.more>div{left:16px;right:16px;width:auto;max-width:none}.more>div .themebtn{margin-top:0}}
 /* ---- the visual layer: headings, depth, state colours, the masthead, briefing cards, motion */
 h1{font-weight:800;font-variation-settings:"opsz" 72}
 .topbar{border-bottom:0}.topbar::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--amber) 45%,transparent 85%);pointer-events:none}
@@ -428,7 +428,7 @@ export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: Land
 <nav class="sgwin tbbrief" aria-label="Briefings"><a href="${AREA_BRIEFINGS[area]}"${h.page === 'briefings' || h.slug ? ' aria-current="page"' : ''}>Briefings</a></nav>
 ${chooser}${lensBar(o.lenses, o.lens, (k) => o.href({ lens: k, window: o.window }), o.restore !== false)}${win}
 <form action="/search" method="get" role="search"><input type="search" name="q" value="${esc(o.q ?? '')}" placeholder="Search" aria-label="Search topics, items, papers and briefings" maxlength="80">${o.lens ? `<input type="hidden" name="lens" value="${esc(o.lens.key)}">` : ''}${ai ? '' : '<input type="hidden" name="area" value="politics">'}<button class="go" type="submit">Search</button></form>
-${THEME_BTN}<details class="more"><summary>More</summary><div>${more}</div></details></div></header>`;
+${ctx.users ? `<a class="mebtn" href="/me"${h.page === 'me' ? ' aria-current="page"' : ''} title="Your settings: front page, your lenses, topics you follow"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.7 3.5-5.6 7-5.6s6.2 1.9 7 5.6"/></svg>You</a>` : ''}${THEME_BTN}<details class="more"><summary>More</summary><div>${more}</div></details></div></header>`;
 }
 
 /** One block, drawn on its own: when its data is missing or its code throws, the page goes on without it. */
@@ -1466,7 +1466,7 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
   if (parts[0] === 'me') {   // /me and /me/ask/<id>: the signed-in reader's own page, never cached (handlePublic)
     const me = viewer.me;
     if (!viewer.enabled) return missing();
-    if (!me) return html(shell('Your settings · Undercurrent', bar(ctx, undefined, 'me'), '<header class="pagehead"><h1>Your settings</h1><p class="lede">This page needs the site’s sign-in, which did not come through. Reload the page, or sign in again.</p></header>', {}), 403);
+    if (!me) return html(shell('Your settings · Undercurrent', bar(ctx, undefined, 'me'), `<header class="pagehead"><h1>Your settings</h1><p class="lede">This page needs the site’s sign-in, which did not come through${viewer.problem ? ` (${esc(viewer.problem)})` : ''}. Reload the page, or sign in again. If it keeps happening, the site’s sign-in setting may be wrong: the site owner can check it.</p></header>`, {}), 403);
     if (parts.length === 1) return html(meHtml(ctx, me, (lensBy[area] ?? []).filter((l) => !isOwnLens(l.key)), await env.USERS.getByName('main').asks(me.email)));
     if (parts.length === 3 && parts[1] === 'ask' && /^\d{1,10}$/.test(parts[2])) { const a = await env.USERS.getByName('main').ask(me.email, Number(parts[2])); return a && a.answer ? html(askHtml(ctx, a, me)) : missing(); }
     return missing();
