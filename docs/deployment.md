@@ -437,8 +437,9 @@ To move the site, admin and MCP server to a new domain and send the old one ther
 ## Readers: settings and roles
 
 The site can know who is reading, by the login of the Access application in front of the whole site (Google, for example), and then:
-- every reader keeps a **default front page** (lens and window), **lenses of their own** and **topics they follow**, at `/me` (More → Your settings),
-  on any device they sign in on;
+- every reader keeps a **default front page** (lens and window), **lenses of their own** and **topics they follow**, at `/me`, on any device they
+  sign in on. Their picture at the top right of every page opens it: the Google picture when the login passes one on (Access's get-identity, read
+  once a week and served from `/me/avatar`, so pages load nothing from elsewhere), else a circle with their initial;
 - a **role** can give extra features: **Ask Claude**, a question box on topic pages answered by a language model from the topic's own data, with a
   number of questions a day.
 

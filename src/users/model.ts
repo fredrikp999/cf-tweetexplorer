@@ -114,3 +114,24 @@ export function keepLinks(answer: string, allowed: Set<string>): string {
   return answer.replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (all, text: string, href: string) => (allowed.has(href) ? all : text))
     .replace(/(^|[\s(])(https?:\/\/[^\s)<]+)/g, (all, pre: string, href: string) => (allowed.has(href) ? all : pre + href.replace(/^https?:\/\//, '')));
 }
+
+// ---- the avatar in the top bar (src/site/me.ts avatarResponse)
+/** Hosts a picture may come from: Google's account pictures. Anything else is not fetched (the Worker fetches it, so it must not be any address). */
+const PICTURE_HOST = /(^|\.)googleusercontent\.com$/;
+/** The name and picture in what Access says about the login (get-identity). Where the picture sits depends on the login: a few known places are tried. */
+export function profileOf(identity: unknown): { name: string; picture: string } {
+  const o = (identity && typeof identity === 'object' ? identity : {}) as Record<string, unknown>;
+  const sub = (k: string) => (o[k] && typeof o[k] === 'object' ? (o[k] as Record<string, unknown>) : {});
+  const pic = [o.picture, sub('oidc_fields').picture, sub('custom').picture, sub('idp').picture].map((v) => String(v ?? '')).find((v) => {
+    try { const u = new URL(v); return u.protocol === 'https:' && PICTURE_HOST.test(u.hostname); } catch { return false; }
+  }) ?? '';
+  const name = [o.name, sub('oidc_fields').name, sub('custom').name].map((v) => oneLine(v, 80)).find(Boolean) ?? '';
+  return { name, picture: pic };
+}
+/** A round avatar with the first letter of the name (or the address), in a colour that stays the same for the same reader. */
+export function initialSvg(name: string, email: string): string {
+  const letter = ([...(name || email).trim()][0] ?? '?').toUpperCase().replace(/[<>&"']/g, '?');
+  let h = 0; for (const c of email) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const hue = h % 360;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="32" fill="hsl(${hue},55%,42%)"/><text x="32" y="33" text-anchor="middle" dominant-baseline="central" font-family="system-ui,-apple-system,sans-serif" font-size="30" font-weight="600" fill="#fff">${letter}</text></svg>`;
+}

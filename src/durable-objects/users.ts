@@ -19,6 +19,8 @@ export class UsersDO extends DurableObject<Env> {
     super(ctx, env);
     const sql = ctx.storage.sql;
     sql.exec("CREATE TABLE IF NOT EXISTS users (email TEXT PRIMARY KEY, role TEXT NOT NULL DEFAULT 'reader', extra TEXT NOT NULL DEFAULT '[]', first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL)");
+    // The name and picture from the login's identity (src/site/me.ts avatar), and when they were read: read again after a week.
+    for (const col of ["name TEXT NOT NULL DEFAULT ''", "picture TEXT NOT NULL DEFAULT ''", 'profile_at INTEGER NOT NULL DEFAULT 0']) { try { sql.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch { /* already there */ } }
     sql.exec('CREATE TABLE IF NOT EXISTS prefs (email TEXT PRIMARY KEY, json TEXT NOT NULL)');
     sql.exec('CREATE TABLE IF NOT EXISTS lenses (email TEXT NOT NULL, key TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (email, key)) WITHOUT ROWID');
     sql.exec('CREATE TABLE IF NOT EXISTS follows (email TEXT NOT NULL, slug TEXT NOT NULL, area TEXT NOT NULL, label TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (email, slug, area)) WITHOUT ROWID');
@@ -107,6 +109,15 @@ export class UsersDO extends DurableObject<Env> {
   }
   asks(emailIn: string, limit = 20): AskRow[] {
     return this.ctx.storage.sql.exec<AskRow>("SELECT id, at, slug, area, label, question, answer, model, cost FROM asks WHERE email = ? AND answer != '' ORDER BY at DESC LIMIT ?", this.must(emailIn), Math.min(100, limit)).toArray();
+  }
+
+  /** The name and picture kept from the login, and when they were read (0: never). */
+  profile(emailIn: string): { name: string; picture: string; at: number } {
+    const r = this.ctx.storage.sql.exec<{ name: string; picture: string; profile_at: number }>('SELECT name, picture, profile_at FROM users WHERE email = ?', this.must(emailIn)).toArray()[0];
+    return { name: r?.name ?? '', picture: r?.picture ?? '', at: r?.profile_at ?? 0 };
+  }
+  setProfile(emailIn: string, name: string, picture: string): void {
+    this.ctx.storage.sql.exec('UPDATE users SET name = ?, picture = ?, profile_at = ? WHERE email = ?', name.slice(0, 80), picture.slice(0, 500), Date.now(), this.must(emailIn));
   }
 
   // ---- the admin

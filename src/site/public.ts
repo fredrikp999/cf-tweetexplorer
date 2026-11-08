@@ -25,7 +25,7 @@ import { overviewOut } from './agentText';
 import type { Layout } from '../signal/landscape';
 import { AREA_BRIEFINGS, AREA_HOME, AREA_LABEL, areaHint, areaOfRequest, areaOf, boardsOfArea, parseArea, publishedAreas, topicHref, topicsOfArea, type Area } from '../signal/area';
 import { LENS_COLORS, LENS_JS, applyLens, lensMatch, chosenLens, lensColorCss, lensesOfTopic, type Lens } from '../signal/lens';
-import { isOwnLens, isPersonal, mePost, ownLenses, viewerOf, type Viewer } from './me';
+import { avatarResponse, isOwnLens, isPersonal, mePost, ownLenses, viewerOf, type Viewer } from './me';
 import type { AskRow, Me } from '../durable-objects/users';
 import { FEATURES, MAX_FOLLOWS, MAX_OWN_LENSES, homeFor } from '../users/model';
 import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
@@ -242,7 +242,7 @@ ${lensColorCss()}
 .lcard h3{margin:0;font-size:16px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}.lcard h3 a{color:var(--text);text-decoration:none}.lcard h3 a:hover{color:var(--accent)}.lcard p{margin:0;font-size:14px;color:var(--muted)}.lcard svg{display:block;width:100%;height:36px}.lcard small{color:var(--muted);font-size:12.5px}
 .rstrip{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 16px;margin:6px 0}.rstrip p{margin:0 0 6px}.rstrip ol{margin:6px 0;padding-left:20px}.rstrip li{margin:3px 0}
 .wr{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin:0 0 8px}.wr ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}.wr li{display:flex;flex-direction:column}.wr a{color:var(--text);font-weight:600;text-decoration:none}.wr a:hover{color:var(--accent)}.wr small{color:var(--muted);font-size:13px}.wr h3{font-size:14px;margin:0 0 8px;color:var(--muted)}
-.tb .themebtn{margin:0}.mebtn{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border:1px solid rgba(255,255,255,.22);border-radius:999px;font-size:13.5px;color:inherit;text-decoration:none}.mebtn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8}.mebtn:hover,.mebtn[aria-current=page]{border-color:currentColor}.more .themebtn{border-color:rgba(255,255,255,.22)}
+.tb .themebtn{margin:0}.mebtn{display:inline-flex;border-radius:50%;padding:2px;border:2px solid transparent;line-height:0}.mebtn img{width:30px;height:30px;border-radius:50%;object-fit:cover;display:block}.mebtn:hover,.mebtn:focus-visible,.mebtn[aria-current=page]{border-color:var(--accent,#ff7aa1)}.more .themebtn{border-color:rgba(255,255,255,.22)}
 @media(max-width:560px){.topbar{position:relative}.tb form{margin-left:0;flex:1 1 100%;min-width:0}.tb input{width:auto;flex:1;min-width:0}.more>div{left:16px;right:16px;width:auto;max-width:none}.more>div .themebtn{margin-top:0}}
 /* ---- the visual layer: headings, depth, state colours, the masthead, briefing cards, motion */
 h1{font-weight:800;font-variation-settings:"opsz" 72}
@@ -428,7 +428,7 @@ export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: Land
 <nav class="sgwin tbbrief" aria-label="Briefings"><a href="${AREA_BRIEFINGS[area]}"${h.page === 'briefings' || h.slug ? ' aria-current="page"' : ''}>Briefings</a></nav>
 ${chooser}${lensBar(o.lenses, o.lens, (k) => o.href({ lens: k, window: o.window }), o.restore !== false)}${win}
 <form action="/search" method="get" role="search"><input type="search" name="q" value="${esc(o.q ?? '')}" placeholder="Search" aria-label="Search topics, items, papers and briefings" maxlength="80">${o.lens ? `<input type="hidden" name="lens" value="${esc(o.lens.key)}">` : ''}${ai ? '' : '<input type="hidden" name="area" value="politics">'}<button class="go" type="submit">Search</button></form>
-${ctx.users ? `<a class="mebtn" href="/me"${h.page === 'me' ? ' aria-current="page"' : ''} title="Your settings: front page, your lenses, topics you follow"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.7 3.5-5.6 7-5.6s6.2 1.9 7 5.6"/></svg>You</a>` : ''}${THEME_BTN}<details class="more"><summary>More</summary><div>${more}</div></details></div></header>`;
+${THEME_BTN}<details class="more"><summary>More</summary><div>${more}</div></details>${ctx.users ? `<a class="mebtn" href="/me"${h.page === 'me' ? ' aria-current="page"' : ''} title="Your settings: front page, your lenses, topics you follow"><img src="/me/avatar" alt="Your settings" width="30" height="30"></a>` : ''}</div></header>`;
 }
 
 /** One block, drawn on its own: when its data is missing or its code throws, the page goes on without it. */
@@ -1616,6 +1616,7 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   const isMe = url.pathname === '/me' || url.pathname.startsWith('/me/');
   const viewer: Viewer = /^\/(viz|audio|image)\//.test(url.pathname) || url.pathname === '/robots.txt' ? { enabled: false, me: null } : await viewerOf(request, env);
   if (isMe && request.method === 'POST') return mePost(request, env, url, viewer);
+  if (url.pathname === '/me/avatar' && request.method === 'GET') return avatarResponse(request, env, url, viewer);
   if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD', ...NO_STORE } });
   if (url.pathname === '/robots.txt') {
     return new Response(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /custom\n`, { headers: { 'content-type': 'text/plain', 'cache-control': 'public, max-age=3600' } });

@@ -5,7 +5,7 @@ import { verifyAccess } from '../access';
 import { recordCost } from '../lib/costs';
 import { complete, defaultTiers } from '../llm/analysis';
 import type { Me } from '../durable-objects/users';
-import { cleanQuestion, keepLinks, OWN_PREFIX, TOPIC_SLUG } from '../users/model';
+import { cleanQuestion, initialSvg, keepLinks, OWN_PREFIX, profileOf, TOPIC_SLUG } from '../users/model';
 import { loadTopic } from './topicData';
 import { topicOut } from './agentText';
 import type { Lens } from '../signal/lens';
@@ -106,3 +106,36 @@ export async function answerAsk(env: Env, email: string, q: { slug: string; area
     return { error: `Could not answer just now (${err instanceof Error ? err.message : String(err)}). It did not count against today's questions.` };
   }
 }
+
+// ---- the avatar in the top bar: /me/avatar
+const PROFILE_MS = 7 * 86_400_000;
+/**
+ * The signed-in reader's picture, at one address for everyone (/me/avatar), so pages from the shared cache can show it: the Google picture when the
+ * login passes one on (read from Access's get-identity once a week, fetched here so the page loads nothing from elsewhere), else their initial.
+ * Kept in the reader's browser for a day, never in a shared cache.
+ */
+export async function avatarResponse(request: Request, env: Env, url: URL, viewer: Viewer): Promise<Response> {
+  const svg = (body: string) => new Response(body, { headers: { 'content-type': 'image/svg+xml', 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff' } });
+  const me = viewer.me;
+  if (!me) return svg(initialSvg('?', '?'));
+  let p = await users(env).profile(me.email);
+  if (Date.now() - p.at > PROFILE_MS) {
+    try {
+      const token = request.headers.get('Cf-Access-Jwt-Assertion') ?? '', cookie = request.headers.get('cookie') ?? '';
+      const r = await fetch(`${url.origin}/cdn-cgi/access/get-identity`, { headers: { cookie: /CF_Authorization=/.test(cookie) ? cookie : `CF_Authorization=${token}` } });
+      const identity = r.ok ? await r.json().catch(() => null) : null;
+      if (identity && typeof identity === 'object') console.log('avatar: identity fields', Object.keys(identity).join(','));   // which fields the login gives, not their values
+      const found = profileOf(identity);
+      await users(env).setProfile(me.email, found.name, found.picture);
+      p = { ...found, at: Date.now() };
+    } catch (err) { console.warn('avatar: no identity', err instanceof Error ? err.message : String(err)); }
+  }
+  if (p.picture) {
+    const img = await fetch(p.picture, { cf: { cacheTtl: 86_400 } } as RequestInit).catch(() => null);
+    const type = img?.headers.get('content-type') ?? '';
+    if (img?.ok && /^image\/(png|jpeg|webp|gif)$/.test(type.split(';')[0])) return new Response(img.body, { headers: { 'content-type': type, 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff' } });
+    await img?.body?.cancel();
+  }
+  return svg(initialSvg(p.name, me.email));
+}
+

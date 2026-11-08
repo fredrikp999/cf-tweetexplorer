@@ -85,3 +85,21 @@ describe('links in an answer', () => {
     assert.equal(keepLinks('Go to https://evil.example.com/x today', ok), 'Go to evil.example.com/x today');
   });
 });
+
+describe('the avatar', async () => {
+  const { profileOf, initialSvg } = await import('../src/users/model.ts');
+  test('a Google picture is found where the login puts it', () => {
+    assert.equal(profileOf({ name: 'Anna B', picture: 'https://lh3.googleusercontent.com/a/x=s96-c' }).picture, 'https://lh3.googleusercontent.com/a/x=s96-c');
+    assert.equal(profileOf({ oidc_fields: { picture: 'https://lh3.googleusercontent.com/a/y' } }).picture, 'https://lh3.googleusercontent.com/a/y');
+  });
+  test('a picture from anywhere else, or not https, is not used', () => {
+    assert.equal(profileOf({ picture: 'https://evil.example.com/a.png' }).picture, '');
+    assert.equal(profileOf({ picture: 'http://lh3.googleusercontent.com/a' }).picture, '');
+    assert.deepEqual(profileOf(null), { name: '', picture: '' });
+  });
+  test('the initial: the first letter, the same colour for the same reader, nothing that could be markup', () => {
+    assert.match(initialSvg('anna b', 'anna@x.com'), />A<\/text>/);
+    assert.equal(initialSvg('', 'bo@x.com'), initialSvg('', 'bo@x.com'));
+    assert.match(initialSvg('<script>', 'a@x.com'), />\?<\/text>/);
+  });
+});
