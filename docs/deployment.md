@@ -415,3 +415,22 @@ The public site can answer on several domains at once. Add the new one to `DEPLO
 - **`/admin` and `/mcp` stay on the domains you set up in Cloudflare Access.** On any other domain there is no Access token, so the Worker answers 403: nothing private is exposed. To use the admin on the new domain too, add that domain to the Access application.
 - **Each domain's pages name themselves as canonical**, so search engines see two copies of the site.
 - **A page cached on one domain is not shared with the other**, because the cache key includes the address.
+
+## Moving to another domain
+
+To move the site, admin and MCP server to a new domain and send the old one there:
+
+1. **Access first**, so the new domain is never open without a login. In Zero Trust → Access → Applications, add the new domain to each
+   application that has the old one: the login for the whole site (if you use one), `/admin`, and `/mcp`. Adding a domain to an application keeps
+   its audience tag, so `POLICY_AUD` and `MCP_POLICY_AUD` stay as they are. (A new application would have a new tag: then store it with
+   `wrangler secret put`.)
+2. **Say where the old domain goes**: `npx wrangler secret put MOVED_HOSTS --env=""` with `old.example.com=new.example.com` (several pairs
+   separated by commas). Every request to the old domain, private routes too, gets a permanent redirect (308) to the same path and query on the
+   new one, before anything else runs (`src/lib/hosts.ts`).
+3. **Deploy with every domain**, the old one included: it has to keep reaching the Worker to be redirected.
+   `DEPLOY_DOMAIN="new.example.com old.example.com" npm run release`. The smoke test of the old domain follows the redirect.
+4. **The Claude app connector** points at the old `/mcp`: remove it and add `https://new.example.com/mcp` (sign in again). The same for Claude
+   Code (`claude mcp add`). Clients are not trusted to follow a redirect through a sign-in.
+5. Afterwards: the old domain can leave the Access applications (it only redirects), and Web Analytics may need the new domain added as a site
+   (its token is set up per site).
+

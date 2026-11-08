@@ -1,3 +1,4 @@
+import { movedResponse, parseMovedHosts } from './lib/hosts';
 import { verifyAccess } from './access';
 import { json } from './lib/twitterapi';
 import { handleSummarize, summarizerFeatures } from './summarize/worker';
@@ -71,6 +72,9 @@ export default {
     useArxivGate(arxivThroughCollect(env));   // every request to arXiv goes through one place: its limit is for all of this app together
     useGateway(env);                      // OpenRouter and Workers AI calls through AI Gateway, when AI_GATEWAY is set
     const url = new URL(request.url);
+    // A host the site moved away from (the MOVED_HOSTS secret): everything, private routes too, goes to the same path on the new host.
+    const moved = movedResponse(url, parseMovedHosts(env.MOVED_HOSTS));
+    if (moved) return moved;
     // The public MCP server: no sign-in, read only, rate limited per address. It comes before the private one and is not behind Access (its address does not start with /mcp).
     if (url.pathname === '/agent/mcp') return await handleAgentMcp(request, env);
     // The MCP server has its own Access application (and audience), so a service token for it reaches nothing else.

@@ -16,6 +16,7 @@ Everything you can set: secrets, variables, and the options in the app. Step-by-
 | `AI_GATEWAY_TOKEN` | A Cloudflare API token with the permission **AI Gateway → Run**, so OpenRouter calls may pass through the gateway named in `AI_GATEWAY` (whose authentication is on). Without it, or if the gateway refuses it, OpenRouter is called directly. Optional. |
 | `ANTHROPIC_API_KEY` | Only if `SUMMARY_PROVIDER` is `anthropic`. |
 | `YOUTUBE_API_KEY` | A YouTube Data API key. When a channel's public feed fails (YouTube sometimes answers 404 for all of them for days), its videos are read through the API instead: 1 quota unit a check, 10,000 free a day. Optional. How to get one: [deployment.md](deployment.md#youtube-through-the-api-when-youtubes-feeds-fail). |
+| `MOVED_HOSTS` | Domains the site moved away from, as `old.example.com=new.example.com` (several separated by commas). A request to an old domain is redirected (308) to the same path on the new one. Optional. See [deployment.md](deployment.md#moving-to-another-domain). |
 | `CF_ANALYTICS_TOKEN` | The token of a Cloudflare Web Analytics site. The public pages then load its beacon (page views, no cookies). Without it they load no script, apart from the two picture pages. Optional. Where to find it: [deployment.md](deployment.md#visitor-statistics-cloudflare-web-analytics). |
 
 ## Variables (`wrangler.jsonc` → `vars`)

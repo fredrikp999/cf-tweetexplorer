@@ -16,4 +16,6 @@ interface Env {
   YOUTUBE_API_KEY: string;
   /** Cloudflare Web Analytics token for the public pages (no cookies). Optional secret. */
   CF_ANALYTICS_TOKEN: string;
+  /** Hosts the site moved away from, "old.example.com=new.example.com" (several separated by commas): redirected, path kept (src/lib/hosts.ts). Optional secret. */
+  MOVED_HOSTS: string;
 }
