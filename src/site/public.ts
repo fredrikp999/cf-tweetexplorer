@@ -33,7 +33,7 @@ import { aiModelInfo } from '../summarize/workers-ai.ts';
 export interface Brief { id: string; tldr: string; publishedAt: number; tweets: number; accounts?: number | null; /** Its theme headings (absent on answers from before themes were listed). */ themes?: string[] }
 export interface TopicInfo { slug: string; title: string; description: string; intervalHours: number; /** The area of the site it belongs to (none: AI). */ area?: Area }
 export interface IssueFull extends Brief { markdown: string; links?: string[]; windowHours: number; model: string; provenance?: Provenance; audio?: { seconds: number; v: number }; image?: { v: number; aspect: string } }
-export type PubTopic = TopicInfo & { latest: Brief; /** Its place in the order you set; absent when it has none. */ position?: number };
+export type PubTopic = TopicInfo & { latest: Brief; /** Its place in the order you set; absent when it has none. */ position?: number; /** Its newest published picture (/image/<slug>/<id>.jpg?v=), for its card on the landing page. */ pic?: { id: string; v: number } };
 /** The picture at the top of Today (publish.ts decides which). */
 interface PubHero { slug: string; title: string; id: string; v: number }
 interface PubXList { id: string; name: string; groups: string[]; description: string }
@@ -70,14 +70,15 @@ const date = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { timeZone
 const every = (h: number) => (h < 24 ? `every ${h} hours` : h === 24 ? 'daily' : h === 48 ? 'every other day' : h === 168 ? 'weekly' : `every ${h} hours`);
 
 const CSS = `
-:root{--bg:#f6f5f1;--card:#fff;--text:#16201f;--muted:#5d6b6a;--line:#e0ddd4;--accent:#b0214f;--soft:#f9e9ee;--bar:#1f7a8c;--rail:#0c2a31;--rail-text:#b7cfd2;--rail-dim:#7b9ca1;--rail-on:rgba(255,255,255,.1);
+:root{--bg:#f6f5f1;--card:#fff;--text:#16201f;--muted:#5d6b6a;--line:#e0ddd4;--accent:#b0214f;--on-accent:#fff;--soft:#f9e9ee;--bar:#1f7a8c;--link:#0f6474;--amber:#e09a00;--amber-bg:#fde7a6;--amber-ink:#5c3300;
+--sh1:0 1px 2px rgba(16,32,31,.06),0 1px 1px rgba(16,32,31,.04);--sh2:0 14px 30px -14px rgba(16,32,31,.38),0 2px 4px rgba(16,32,31,.05);--rail:#0c2a31;--rail-text:#b7cfd2;--rail-dim:#7b9ca1;--rail-on:rgba(255,255,255,.1);
 --ui:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;--read:Newsreader,"Iowan Old Style",Georgia,serif}
-@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0d1718;--card:#142224;--text:#e8efee;--muted:#93a8a6;--line:#243a3c;--accent:#ff7aa1;--soft:#3a1626;--bar:#4cb5c6;--rail:#06151a;--rail-on:rgba(255,255,255,.08);color-scheme:dark}}
-:root[data-theme=dark]{--bg:#0d1718;--card:#142224;--text:#e8efee;--muted:#93a8a6;--line:#243a3c;--accent:#ff7aa1;--soft:#3a1626;--bar:#4cb5c6;--rail:#06151a;--rail-on:rgba(255,255,255,.08);color-scheme:dark}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0d1718;--card:#162a2d;--text:#e8efee;--muted:#93a8a6;--line:#263d40;--accent:#ff7aa1;--on-accent:#2a0614;--soft:#3a1626;--bar:#4cb5c6;--link:#7fd3df;--amber:#f5b93a;--amber-bg:#f5b93a;--amber-ink:#2a1700;--sh1:inset 0 1px 0 rgba(255,255,255,.04),0 1px 2px rgba(0,0,0,.45);--sh2:inset 0 1px 0 rgba(255,255,255,.07),0 16px 34px -14px rgba(0,0,0,.85);--rail:#06151a;--rail-on:rgba(255,255,255,.08);color-scheme:dark}}
+:root[data-theme=dark]{--bg:#0d1718;--card:#162a2d;--text:#e8efee;--muted:#93a8a6;--line:#263d40;--accent:#ff7aa1;--on-accent:#2a0614;--soft:#3a1626;--bar:#4cb5c6;--link:#7fd3df;--amber:#f5b93a;--amber-bg:#f5b93a;--amber-ink:#2a1700;--sh1:inset 0 1px 0 rgba(255,255,255,.04),0 1px 2px rgba(0,0,0,.45);--sh2:inset 0 1px 0 rgba(255,255,255,.07),0 16px 34px -14px rgba(0,0,0,.85);--rail:#06151a;--rail-on:rgba(255,255,255,.08);color-scheme:dark}
 :root[data-theme=light]{color-scheme:light}
 .themebar{padding:0 10px}.themebtn{margin-top:10px;background:none;border:1px solid rgba(255,255,255,.2);color:inherit;border-radius:8px;padding:5px 10px;font:inherit;font-size:12.5px;cursor:pointer}.themebtn:hover{background:var(--rail-on);color:#fff}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 var(--ui)}
-a{color:var(--accent)}a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a{color:var(--link);text-decoration-color:color-mix(in srgb,currentColor 40%,transparent);text-underline-offset:2px}a:hover{color:var(--accent)}a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .app{min-height:calc(100vh - 56px)}
 .brand{display:flex;align-items:center;gap:10px;color:#fff!important;font-weight:700;font-size:18px;letter-spacing:-.01em;text-decoration:none}
 .brand svg{width:32px;height:32px;flex:none}.brand small{display:block;font-weight:500;font-size:12px;color:var(--rail-dim);letter-spacing:0;line-height:1.25}
@@ -231,9 +232,79 @@ ${lensColorCss()}
 .rstrip{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:12px 16px;margin:6px 0}.rstrip p{margin:0 0 6px}.rstrip ol{margin:6px 0;padding-left:20px}.rstrip li{margin:3px 0}
 .wr{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin:0 0 8px}.wr ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}.wr li{display:flex;flex-direction:column}.wr a{color:var(--text);font-weight:600;text-decoration:none}.wr a:hover{color:var(--accent)}.wr small{color:var(--muted);font-size:13px}.wr h3{font-size:14px;margin:0 0 8px;color:var(--muted)}
 .tb .themebtn{margin:0}.more .themebtn{border-color:rgba(255,255,255,.22)}
-@media(max-width:560px){.topbar{position:relative}.tb form{margin-left:0;flex:1}.tb input{width:auto;flex:1;min-width:0}.more>div{left:16px;right:16px;width:auto;max-width:none}.more>div .themebtn{margin-top:0}}`;
+@media(max-width:560px){.topbar{position:relative}.tb form{margin-left:0;flex:1}.tb input{width:auto;flex:1;min-width:0}.more>div{left:16px;right:16px;width:auto;max-width:none}.more>div .themebtn{margin-top:0}}
+/* ---- the visual layer: headings, depth, state colours, the masthead, briefing cards, motion */
+h1{font-weight:800;font-variation-settings:"opsz" 72}
+.topbar{border-bottom:0}.topbar::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--amber) 45%,transparent 85%);pointer-events:none}
+.lh,h2.sect{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;font-size:21px;font-weight:750;letter-spacing:-.015em;text-transform:none;color:var(--text);margin:32px 0 12px;font-variation-settings:"opsz" 48}
+.lh::before,h2.sect::before{content:'';align-self:center;width:18px;height:4px;border-radius:2px;background:linear-gradient(90deg,var(--accent),var(--amber));flex:none}
+.lh a{margin-left:auto;font-size:13.5px;font-weight:500;letter-spacing:0}.lgrid>div>section:first-child .lh{margin-top:6px}
+.topics a.card,.lcard,.panel,.rank,.kpis div,.tw,.lists li,.rstrip,.stat,.papers li,.pulse article,.days details,.inbrief,.ev,.listen,.daynav a,.vizlink{box-shadow:var(--sh1)}
+.topics a.card,.lcard,.daynav a,.vizlink,.papers li,.lists li{transition:box-shadow .18s,transform .18s,border-color .18s}
+.topics a.card:hover,.lcard:hover,.daynav a:hover,.vizlink:hover,.papers li:hover,.lists li:hover{box-shadow:var(--sh2);transform:translateY(-2px)}
+.pstate{border:0;padding:1px 9px;font-weight:700;letter-spacing:.01em;white-space:nowrap}
+.pstate.new{background:var(--amber-bg);color:var(--amber-ink)}.pstate.rising{background:var(--accent);color:var(--on-accent)}
+.pstate.spike{background:var(--accent);color:var(--on-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent),0 0 16px color-mix(in srgb,var(--accent) 45%,transparent)}
+.pstate.falling{background:none;border:1px solid var(--line);color:var(--muted);font-style:normal}
+.chip.up{background:var(--soft);border-color:transparent;font-weight:600}
+.rise{gap:8px;padding:14px 0;margin:8px 0 0}.rise b{margin-right:4px}.rise a{padding:4px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:14.5px;transition:transform .15s}
+.rise a:hover{transform:translateY(-1px);color:inherit}.rise a small{color:inherit;opacity:.75}
+.rise a.new{background:var(--amber-bg);color:var(--amber-ink);border-color:transparent;font-weight:600}.rise a.rising{background:var(--soft);color:var(--accent);border-color:transparent;font-weight:600}.rise a.falling{color:var(--muted)}
+.lrows{gap:7px}.lrow .lb{height:12px;border-radius:6px;background:color-mix(in srgb,var(--line) 70%,transparent)}
+.lrow .lb i{border-radius:6px;background:linear-gradient(90deg,var(--bar),color-mix(in srgb,var(--bar) 55%,var(--accent)));transform-origin:left;animation:grow .8s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--i,0) * 45ms)}
+.lrow.st-rising .lb i{background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 60%,var(--amber)))}.lrow.st-new .lb i{background:linear-gradient(90deg,var(--amber),color-mix(in srgb,var(--amber) 55%,var(--accent)))}.lrow.lensin .lb i{background:var(--lc)}
+.lrow .tags{align-items:center}.lrow .tags .meta{margin:0}.mix{display:inline-flex;width:56px;height:6px;border-radius:3px;overflow:hidden;align-self:center;background:var(--line)}.mix i{display:block;min-width:2px}
+.lcard{border-top-width:4px;box-shadow:var(--sh1)}.lcard:not([class*=" lc-"]).st-rising{border-top-color:var(--accent)}.lcard:not([class*=" lc-"]).st-new{border-top-color:var(--amber)}.lcard:not([class*=" lc-"]).st-steady,.lcard:not([class*=" lc-"]).st-falling{border-top-color:var(--bar)}
+.wave{display:flex;align-items:center;gap:10px;margin:44px 0 0;color:var(--line)}.wave::before,.wave::after{content:'';flex:1;height:2px;background:currentColor;border-radius:1px}.wave svg{width:44px;height:22px;flex:none;color:var(--accent)}.wave+.credit{border-top:0;margin-top:10px;padding-top:0}
+.app{overflow-x:clip}.page.home{padding-top:0}
+.mast{position:relative;isolation:isolate;overflow:hidden;margin:0 calc(50% - 50vw) 8px;padding:40px max(16px,calc(50vw - 35rem)) 36px;color:#e9f3f4;background:radial-gradient(90% 130% at 88% -10%,#17505c 0%,transparent 60%),radial-gradient(60% 90% at 0% 110%,rgba(176,33,79,.28) 0%,transparent 65%),var(--rail)}
+.mast a{color:#fff;text-decoration-color:rgba(255,255,255,.4)}.mast a:hover{color:#ffc2d6}
+.mastwave{position:absolute;inset:auto 0 0 0;width:100%;height:150px;color:rgba(255,255,255,.07);z-index:-1}
+.mastin{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:24px 36px;align-items:center}.mast.nobub .mastin{grid-template-columns:minmax(0,1fr)}.mast.nobub .masttext{max-width:46rem}
+.masteye{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#9fc3c8;margin:0 0 12px}.masteye .lsw{width:10px;height:10px;border-radius:3px;background:var(--lc)}
+.mast h1{font-size:clamp(32px,4.4vw,54px);line-height:1.06;letter-spacing:-.022em;margin:0 0 14px;font-variation-settings:"opsz" 60;text-wrap:balance}
+.mast h1 a{text-decoration:none;background:linear-gradient(90deg,#ff8fb8,#ffc56b);-webkit-background-clip:text;background-clip:text;color:transparent}.mast h1 a:hover{text-decoration:underline;text-decoration-color:#ff8fb8}
+.mastlede{margin:0 0 20px;color:#b7cfd2;font-size:16.5px;max-width:34rem}
+.lensmast{border-top:4px solid var(--lc)}
+.since{display:flex;flex-wrap:wrap;gap:10px;margin:0;font-size:14px}.since .sincelbl{flex-basis:100%;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:#9fc3c8;font-weight:600}
+.since .tile{display:flex;flex-direction:column;min-width:7.5rem;padding:10px 14px 11px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#b7cfd2;line-height:1.25;backdrop-filter:blur(4px)}
+.since .tile b{font-size:40px;font-weight:800;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums;margin-bottom:4px;font-variation-settings:"opsz" 96}
+.since .t-new b{color:#ffc56b}.since .t-rising b{color:#ff8fb8}.since .t-papers b{color:#7fd3df}
+.since .sincehint{flex-basis:100%;color:#9fc3c8;font-size:14px}.since .sincehint a{color:#fff}
+.mastviz .vizbox.land{margin:0;border:0;border-radius:16px;background:#142224;box-shadow:0 0 0 1px rgba(255,255,255,.1),0 30px 60px -30px rgba(0,0,0,.7)}.mastviz .vizbox.land iframe{height:380px;animation:fade .8s .2s both}
+.minibub{display:none;list-style:none;margin:18px 0 0;padding:0;flex-wrap:wrap;gap:8px;align-items:center}
+.minibub li{width:var(--s);height:var(--s);border-radius:50%;display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;background:rgba(127,211,223,.16);border:1px solid rgba(127,211,223,.5);animation:pop .5s cubic-bezier(.2,.9,.3,1.3) both}
+.minibub li.new{background:#f5b93a;border-color:#f5b93a}.minibub li.rising{background:#ff7aa1;border-color:#ff7aa1}
+.minibub a{color:#e9f3f4;text-decoration:none;font-size:11.5px;font-weight:700;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow-wrap:anywhere}.minibub .new a{color:#2a1700}.minibub .rising a{color:#2a0614}
+.bcards{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:12px}
+.bcards li{display:grid;grid-template-columns:118px minmax(0,1fr);gap:14px;align-items:start;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;box-shadow:var(--sh1);transition:box-shadow .18s,transform .18s,border-color .18s}
+.bcards li:hover{box-shadow:var(--sh2);transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
+.bimg{display:block;border-radius:10px;overflow:hidden;aspect-ratio:4/3;background:var(--line)}.bimg img,.bimg .ph{display:block;width:100%;height:100%;object-fit:cover;transition:transform .5s}.bcards li:hover .bimg img{transform:scale(1.05)}
+.ph{display:flex!important;align-items:center;justify-content:center;color:rgba(255,255,255,.6);background:linear-gradient(135deg,hsl(var(--h) 55% 36%),hsl(calc(var(--h) + 50) 60% 18%))}.ph svg{width:55%;height:auto}
+.bcards li:first-child{grid-template-columns:minmax(0,1fr);padding:0;overflow:hidden}.bcards li:first-child .bimg{aspect-ratio:16/9;border-radius:0}.bcards li:first-child .btxt{padding:4px 16px 14px}.bcards li:first-child .h a{font-size:22px;letter-spacing:-.015em}
+.btxt .h{display:flex;justify-content:space-between;gap:10px;align-items:baseline}.btxt .h a{text-decoration:none;color:var(--text);font-size:17px;line-height:1.25}.btxt .h a:hover{color:var(--accent)}
+.btxt small{color:var(--muted);white-space:nowrap;font-size:12.5px}.btxt p{margin:4px 0;font-size:14.5px;line-height:1.45}.btxt .th{font-size:13px;color:var(--muted)}.btxt .th a{color:var(--muted)}
+.bcards li:not(:first-child) .btxt p:not(.th){display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.btxt .up,.today small .up,.inbrief small.up{background:var(--amber-bg);color:var(--amber-ink);padding:0 7px;border-radius:999px;font-weight:700}
+@keyframes grow{from{transform:scaleX(0)}}@keyframes fade{from{opacity:0}}@keyframes fadeup{from{opacity:0;transform:translateY(10px)}}@keyframes pop{from{opacity:0;transform:scale(.6)}}
+.home>*{animation:fadeup .6s cubic-bezier(.2,.7,.2,1) both}.home>:nth-child(2){animation-delay:.06s}.home>:nth-child(3){animation-delay:.12s}.home>:nth-child(n+4){animation-delay:.18s}.home>.mast{animation:fade .5s both}
+@media(max-width:860px){.mastin{grid-template-columns:minmax(0,1fr)}.mast{padding-top:30px}}
+@media(max-width:520px){.minibub{display:flex}.mast{padding:26px 16px 24px}.since .tile{min-width:0;flex:1 1 6rem;padding:8px 10px}.since .tile b{font-size:30px}.bcards li{grid-template-columns:88px minmax(0,1fr);gap:10px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}`;
 
 const MARK = '<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#c9265f"/><polyline points="5,17 11,17 14,8 18,24 21,14 23,17 27,17" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/** The beat of the mark, as a divider above the foot of every page. */
+const BEAT = '<polyline points="0,12 14,12 18,4 24,20 28,9 31,12 48,12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>';
+const WAVE = `<div class="wave" aria-hidden="true"><svg viewBox="0 0 48 24">${BEAT}</svg></div>`;
+/** The same beat, three times across the foot of the landing page's masthead. */
+const MAST_WAVE = (() => {
+  const p = ['0,120'];
+  for (const b of [150, 540, 930]) p.push(`${b},120`, `${b + 16},120`, `${b + 28},38`, `${b + 44},188`, `${b + 58},78`, `${b + 68},120`);
+  return `<svg class="mastwave" viewBox="0 0 1200 200" preserveAspectRatio="none" aria-hidden="true"><polyline points="${p.join(' ')} 1200,120" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>`;
+})();
+/** A hue of its own for a briefing without a picture, from its slug. */
+const hueOf = (slug: string) => [...slug].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) % 360, 7);
 
 // The left rail on every public page: the brand, the topics (the one you are in opens its views), and a note.
 interface Active { slug: string; title: string; view: 'latest' | 'archive' | 'issue'; earlier: number }
@@ -265,7 +336,7 @@ function bar(ctx: Ctx, active?: Active, page?: Here['page'], board?: string, o: 
 /** Cloudflare Web Analytics for the public pages, from the CF_ANALYTICS_TOKEN secret: page views without cookies. Empty: no script at all. */
 let analyticsToken = '';
 
-function shell(title: string, top: string, body: string, opts: { description?: string; canonical?: string; image?: string; lang?: string; feed?: string; feedTitle?: string; /** The wider column of the landing page and the search. */ wide?: boolean } = {}): string {
+function shell(title: string, top: string, body: string, opts: { description?: string; canonical?: string; image?: string; lang?: string; feed?: string; feedTitle?: string; /** The wider column of the landing page and the search. */ wide?: boolean; /** The landing page: its masthead runs up to the top bar. */ home?: boolean } = {}): string {
   return `<!doctype html><html lang="${opts.lang === 'sv' ? 'sv' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>${opts.description ? `<meta name="description" content="${esc(opts.description.slice(0, 200))}">` : ''}
 <meta property="og:title" content="${esc(title)}">${opts.description ? `<meta property="og:description" content="${esc(opts.description.slice(0, 200))}">` : ''}
@@ -273,7 +344,7 @@ ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}$
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Newsreader:opsz,wght@6..72,400..600&display=swap" rel="stylesheet">
 ${THEME_INIT}<style>${CSS}${VIZ_CSS}</style>${analyticsToken ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${esc(analyticsToken)}"}'></script>` : ''}</head><body>
-${top}<div class="app"><main class="page${opts.wide ? ' wide' : ''}">${body}<p class="credit">${ARXIV_THANKS}</p></main></div></body></html>`;
+${top}<div class="app"><main class="page${opts.wide ? ' wide' : ''}${opts.home ? ' home' : ''}">${body}${WAVE}<p class="credit">${ARXIV_THANKS}</p></main></div></body></html>`;
 }
 
 const NOTE = '<p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals.</p>';
@@ -362,7 +433,8 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
   const since = guard(() => {
     if (!sig?.top) return '';
     const c = sinceCounts(topics, lens, rs.newPapers);
-    return `<p class="since" id="since" data-win="${win}"><b class="sincelbl">${wlabel}:</b> ${plural1(c.newTopics, 'new topic')} &middot; ${c.rising} rising${ai ? ` &middot; ${plural1(c.papers, 'new paper')}${lens ? ` in ${esc(lensName)}` : ''}` : ''}</p><script src="/viz/visit.js"></script>`;
+    const tile = (k: string, v: number, one: string, many: string) => `<span class="tile t-${k}"><b>${n(v)}</b>${v === 1 ? one : many}</span>`;
+    return `<div class="since" id="since" data-win="${win}"><b class="sincelbl">${wlabel}:</b>${tile('new', c.newTopics, 'new topic', 'new topics')}${tile('rising', c.rising, 'rising', 'rising')}${ai ? tile('papers', c.papers, lens ? `new paper in ${esc(lensName)}` : 'new paper', lens ? `new papers in ${esc(lensName)}` : 'new papers') : ''}</div><script src="/viz/visit.js"></script>`;
   });
 
   const brief = guard(() => {
@@ -379,9 +451,11 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
   const today = guard(() => {
     const list = inOrder(ctx.topics, (a, b) => b.latest.publishedAt - a.latest.publishedAt).filter((t) => !lens || lensMatch(lens, { term: [t.title, t.latest.tldr, ...(t.latest.themes ?? [])].join(' . ') })).slice(0, 6);
     if (!list.length) return '';
-    return `<section aria-labelledby="h-today"><h2 class="lh" id="h-today">${ai ? "Today's briefings" : 'Briefings'} <a href="${AREA_BRIEFINGS[area]}">All briefings &rarr;</a></h2><ul class="today">${list.map((t) => {
+    return `<section aria-labelledby="h-today"><h2 class="lh" id="h-today">${ai ? "Today's briefings" : 'Briefings'} <a href="${AREA_BRIEFINGS[area]}">All briefings &rarr;</a></h2><ul class="bcards">${list.map((t, i) => {
       const fresh = Date.now() - t.latest.publishedAt < 26 * 3600_000, th = (t.latest.themes ?? []).slice(0, 3);
-      return `<li><div class="h"><a href="/${esc(t.slug)}"><b>${esc(t.title)}</b></a><small>${fresh ? '<span class="up">new</span> ' : ''}${date(t.latest.publishedAt)}</small></div>${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class="th">${th.map((x) => `<a href="/${esc(t.slug)}#${esc(anchorOfTheme(x))}">${esc(x)}</a>`).join(' &middot; ')}</p>` : ''}</li>`;
+      // The picture repeats the title link, so it is hidden from screen readers and the keyboard. Without a picture: a colour of the briefing's own and the beat of the mark.
+      const pic = t.pic ? `<img src="/image/${esc(t.slug)}/${esc(t.pic.id)}.jpg?v=${t.pic.v}" alt="" loading="${i ? 'lazy' : 'eager'}" decoding="async">` : `<span class="ph" style="--h:${hueOf(t.slug)}"><svg viewBox="0 0 48 24">${BEAT}</svg></span>`;
+      return `<li><a class="bimg" href="/${esc(t.slug)}" tabindex="-1" aria-hidden="true">${pic}</a><div class="btxt"><div class="h"><a href="/${esc(t.slug)}"><b>${esc(t.title)}</b></a><small>${fresh ? '<span class="up">new</span> ' : ''}${date(t.latest.publishedAt)}</small></div>${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class="th">${th.map((x) => `<a href="/${esc(t.slug)}#${esc(anchorOfTheme(x))}">${esc(x)}</a>`).join(' &middot; ')}</p>` : ''}</div></li>`;
     }).join('')}</ul></section>`;
   });
 
@@ -390,16 +464,15 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
     if (!rank.rows.length) return '<section aria-labelledby="h-land"><h2 class="lh" id="h-land">The landscape</h2><p class="meta">No topic is mentioned often enough yet.</p></section>';
     const max = Math.max(1e-9, ...rank.rows.map((r) => r.topic.signal));
     return `<section aria-labelledby="h-land"><h2 class="lh" id="h-land">The landscape <a href="/signal/${esc(sig!.slug)}${win === 1 ? '/1' : win === 3 ? '/3' : ''}">Signal &rarr;</a></h2>
-<div class="landscape-graphic slot" id="landscape-graphic">${d.landscape?.bubbles.length ? vizFrame('landscape', `/overview.json?window=${win}${lens ? '&amp;lens=' + encodeURIComponent(lens.key) : ''}${ai ? '' : '&amp;area=politics'}`, 'The landscape: a bubble for each topic, sized by its score, grouped by topics talked about together. The ranked list below says the same.') : ''}</div>
-<ol class="lrows" aria-label="Topics by Signal score">${rank.rows.map((r) => { const t = r.topic;
-      return `<li class="lrow${r.part ? ' part' : ''}${lens ? (r.inLens ? ` lensin lc-${lens.color}` : ' lensout') : ''}" title="${sourceTitle(t)}"><span class="t"><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a></span><span class="lb" aria-hidden="true"><i style="width:${Math.max(2, (100 * t.signal) / max).toFixed(1)}%"></i></span><b>${sigPct(t.signal)}</b><span class="tags">${pill(t)}${lens && r.inLens ? lensTag(lens) : lens ? '' : lensTags(t)}${mixText(t.parts, groups) ? `<small class="meta">${esc(mixText(t.parts, groups))}</small>` : ''}</span></li>`; }).join('')}</ol>
+<ol class="lrows" aria-label="Topics by Signal score">${rank.rows.map((r, i) => { const t = r.topic, mix = mixText(t.parts, groups);
+      return `<li class="lrow st-${pop(t) || 'steady'}${r.part ? ' part' : ''}${lens ? (r.inLens ? ` lensin lc-${lens.color}` : ' lensout') : ''}" title="${sourceTitle(t)}" style="--i:${i}"><span class="t"><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a></span><span class="lb" aria-hidden="true"><i style="width:${Math.max(2, (100 * t.signal) / max).toFixed(1)}%"></i></span><b>${sigPct(t.signal)}</b><span class="tags">${pill(t)}${lens && r.inLens ? lensTag(lens) : lens ? '' : lensTags(t)}${mix ? `${mixBar(t.parts)}<small class="meta">${esc(mix)}</small>` : ''}</span></li>`; }).join('')}</ol>
 ${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in ${esc(lens.name)} come first; the others are dimmed, not removed.` : `No topic in ${esc(lens.name)} is big enough today.`}</p>` : ''}</section>`;
   });
 
   const rising = guard(() => {
     const items = risingStrip(topics, !!sig?.baselineOk);
     if (!items.length) return '';
-    return `<p class="rise" aria-label="Rising and falling"><b>Rising</b>${items.map((r) => `<a href="${topicUrl(r.term, area)}" class="${r.state === 'falling' ? '' : 'up'}"><span aria-hidden="true">${riseMark[r.state][0]}</span> ${esc(r.label)} <small>${r.state === 'new' ? 'new' : r.state === 'rising' ? `rising${r.change ? ` &times;${r.change.toFixed(1)}` : ''}` : 'falling'}</small></a>`).join('')}</p>`;
+    return `<p class="rise" aria-label="Rising and falling"><b>Rising</b>${items.map((r) => `<a href="${topicUrl(r.term, area)}" class="${r.state}"><span aria-hidden="true">${riseMark[r.state][0]}</span> ${esc(r.label)} <small>${r.state === 'new' ? 'new' : r.state === 'rising' ? `rising${r.change ? ` &times;${r.change.toFixed(1)}` : ''}` : 'falling'}</small></a>`).join('')}</p>`;
   });
 
   const cards = guard(() => {
@@ -410,7 +483,7 @@ ${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in
     if (!list.length) return lens ? `<section aria-labelledby="h-cards"><h2 class="lh" id="h-cards">${head}</h2><p class="meta">No topic in ${esc(lens.name)} is big enough ${win === 1 ? 'today' : 'in this period'}.</p>${out}</section>` : '';
     return `<section aria-labelledby="h-cards"><h2 class="lh" id="h-cards">${head}</h2><ul class="lcards">${list.map(({ topic: t }) => {
       const sp = extras?.series[t.term.toLowerCase()];
-      return `<li class="lcard${lens ? ` lc-${lens.color}` : ''}"><h3><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a> ${pill(t)}</h3><p>${esc(cardLine(t, extras?.lines[topicSlug(t.term)], groups))}</p>${sp && extras ? topicSpark({ days: extras.days, counts: sp, usual: 0 }) : ''}<small>${esc(mixText(t.parts, groups) || (t.kind === 'single' ? 'one group of sources' : ''))}</small></li>`;
+      return `<li class="lcard${lens ? ` lc-${lens.color}` : ''} st-${pop(t) || 'steady'}"><h3><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a> ${pill(t)}</h3><p>${esc(cardLine(t, extras?.lines[topicSlug(t.term)], groups))}</p>${sp && extras ? topicSpark({ days: extras.days, counts: sp, usual: 0 }) : ''}<small>${esc(mixText(t.parts, groups) || (t.kind === 'single' ? 'one group of sources' : ''))}</small></li>`;
     }).join('')}</ul>${out}</section>`;
   });
 
@@ -432,10 +505,30 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
 <div class="wr">${reads.articles.length ? `<div><h3>${reads.reacted ? 'Most reacted articles' : 'Latest articles'}</h3><ul>${reads.articles.map(li).join('')}</ul></div>` : ''}${reads.hn.length ? `<div><h3>Hacker News highlights</h3><ul>${reads.hn.map(li).join('')}</ul></div>` : ''}</div></section>`;
   });
 
-  const lensHead = lens ? `<header class="lenshead lc-${lens.color}"><span class="lenstag lc-${lens.color}">Lens</span><h1>${esc(lens.name)}</h1><p>${lens.description ? esc(lens.description) + ' ' : ''}${rank.inCount ? `${plural1(rank.inCount, 'topic')} in this lens ${win === 1 ? 'today' : 'in the last ' + win + ' days'}. ` : ''}<a href="${landingHref({ window: win }, area)}">Show everything</a></p></header>` : '';
-  const body = `${lensHead}${since}${ai || sig ? '' : `<header class="pagehead"><h1>Politics</h1><p class="lede">Nothing is published here yet.</p></header>`}<div class="lgrid"><div>${brief}${today}</div><div>${landscape}</div></div>${rising}${cards}${research}${watch}
+  // The masthead: what leads, in a sentence made from the ranked topics, the counts as tiles, and the landscape picture (on a phone, the biggest topics as plain bubbles).
+  const own = rank.rows.filter((r) => !r.part && (!lens || r.inLens)).map((r) => r.topic);
+  const headline = guard(() => {
+    const top = own[0];
+    if (!top) return '';
+    const riser = risingStrip(lens ? own : topics, !!sig?.baselineOk).find((r) => r.state !== 'falling' && r.term !== top.term);
+    const l = (term: string, label: string) => `<a href="${topicUrl(term, area)}">${esc(label)}</a>`;
+    return `${l(top.term, top.label)} leads the conversation${win === 1 ? ' today' : ` over ${win} days`}${riser ? `, and ${l(riser.term, riser.label)} is ${riser.state === 'new' ? 'new' : 'climbing'}` : ''}`;
+  });
+  const mini = guard(() => {
+    const big = own.slice(0, 6), mx = Math.max(1e-9, big[0]?.signal ?? 0);
+    return big.length ? `<ol class="minibub" aria-label="Biggest topics">${big.map((t, i) => `<li class="${pop(t) || 'steady'}" style="--s:${Math.round(52 + 50 * Math.sqrt(t.signal / mx))}px;animation-delay:${i * 60}ms"><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a></li>`).join('')}</ol>` : '';
+  });
+  const bubbles = !!(d.landscape?.bubbles.length && rank.rows.length);
+  const graphic = bubbles ? `<div class="mastviz landscape-graphic" id="landscape-graphic">${vizFrame('landscape', `/overview.json?window=${win}${lens ? '&amp;lens=' + encodeURIComponent(lens.key) : ''}${ai ? '' : '&amp;area=politics'}`, 'The landscape: a bubble for each topic, sized by its score, grouped by topics talked about together. The ranked list on this page says the same.')}</div>` : '';
+  const lede = lens ? `${lens.description ? esc(lens.description) + ' ' : ''}${headline ? headline + '. ' : rank.inCount ? '' : `No topic in ${esc(lens.name)} is big enough ${win === 1 ? 'today' : 'in this period'}. `}<a href="${landingHref({ window: win }, area)}">Show everything</a>`
+    : ai ? 'Short briefings, the topics being talked about across news, blogs, X, YouTube and Hacker News, and the research behind them.'
+    : sig ? 'Short briefings and the topics being talked about across news, blogs, X, YouTube and Hacker News.' : 'Nothing is published here yet.';
+  const mast = `<section class="mast${bubbles ? '' : ' nobub'}${lens ? ` lensmast lc-${lens.color}` : ''}" aria-labelledby="h-mast">${MAST_WAVE}<div class="mastin"><div class="masttext">
+<div class="masteye">${lens ? `<span class="lsw" aria-hidden="true"></span>Lens &middot; ${esc(AREA_LABEL[area])}` : `${date(Date.now())} &middot; ${esc(AREA_LABEL[area])}`}</div>
+<h1 id="h-mast">${lens ? esc(lens.name) : headline || (ai ? 'What is going on in AI' : 'Politics')}</h1><p class="mastlede">${lede}</p>${since}${mini}</div>${graphic}</div></section>`;
+  const body = `${mast}<div class="lgrid"><div>${brief}${today}</div><div>${landscape}</div></div>${rising}${cards}${research}${watch}
 <p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals. <a href="/signal/method">How the numbers are worked out</a>.</p>`;
-  return shell(ai ? 'Agent Cortex' : 'Politics · Agent Cortex', topBar(ctx, { lenses, lens, window: win, href: (p) => landingHref(p, area), here: {} }), body, { wide: true, canonical: origin ? origin + AREA_HOME[area] : undefined,
+  return shell(ai ? 'Agent Cortex' : 'Politics · Agent Cortex', topBar(ctx, { lenses, lens, window: win, href: (p) => landingHref(p, area), here: {} }), body, { wide: true, home: true, canonical: origin ? origin + AREA_HOME[area] : undefined,
     description: ai ? 'What is going on in AI: short briefings, the topics being talked about across news, blogs, X, YouTube and Hacker News, and the research behind them.'
       : 'What is going on in politics: short briefings and the topics being talked about across news, blogs, X, YouTube and Hacker News.' });
 }
@@ -474,6 +567,8 @@ function stripHtml(st: SigStrip, title: string): string {
 // ---- Signal: what the watched sources are talking about, combined. Counted automatically (no AI), from the groups marked public in the admin.
 const SIG_COLORS = ['#1f7a8c', '#e3a008', '#7c5cbf', '#c2410c', '#2f9e6b', '#d6336c', '#4263eb', '#868e96'];
 const sigColor = (i: number) => SIG_COLORS[i % SIG_COLORS.length];
+/** Where a topic's score comes from, as a small bar in the colours of the groups of sources (the same colours as on the Signal page). The text next to it says it in words. */
+const mixBar = (parts: number[]) => { const sum = parts.reduce((a, b) => a + b, 0); return sum > 0 && parts.length > 1 ? `<span class="mix" aria-hidden="true">${parts.map((p, i) => (p > 0 ? `<i style="flex:${(p / sum).toFixed(3)};background:${sigColor(i)}"></i>` : '')).join('')}</span>` : ''; };
 const sigPct = (x: number) => { const p = x * 100; return (p < 10 ? p.toFixed(1) : String(Math.round(p))) + '%'; };
 
 // ---- Research pulse: counts of new papers per topic. Script-free, like the other public pages.
@@ -576,8 +671,9 @@ export const topicAngle = (v: string | null): Angle => ANGLES.find(([k]) => k ==
 function topicSpark(s: TopicData['series']): string {
   const c = s.counts; if (c.length < 2) return '';
   const W = 280, H = 64, top = Math.max(1, ...c, s.usual) * 1.1, x = (i: number) => (i / (c.length - 1)) * W, y = (v: number) => H - 3 - (v / top) * (H - 6);
+  const pts = c.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
   const label = `Items per day, ${s.days[0]} to ${s.days[s.days.length - 1]}: ${c.join(', ')}${s.usual ? `. Usual level about ${+s.usual.toFixed(1)} a day` : ''}`;
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">${s.usual ? `<line x1="0" x2="${W}" y1="${y(s.usual).toFixed(1)}" y2="${y(s.usual).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>` : ''}<polyline fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" points="${c.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}"/></svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">${s.usual ? `<line x1="0" x2="${W}" y1="${y(s.usual).toFixed(1)}" y2="${y(s.usual).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>` : ''}<polygon fill="var(--accent)" fill-opacity=".13" points="0,${H} ${pts} ${W},${H}"/><polyline fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" points="${pts}"/></svg>`;
 }
 
 /** One segment per kind of source, each in its own unit, then the Signal score with the link to how it is worked out. Never one blended number. */

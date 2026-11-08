@@ -22,7 +22,7 @@ export const LENS_PALETTE = {
 export type LensColor = keyof typeof LENS_PALETTE;
 export const LENS_COLORS = Object.keys(LENS_PALETTE) as LensColor[];
 /** The page and card backgrounds of the public site in both themes (kept in step with `CSS` in src/site/public.ts); the contrast test reads them. */
-export const PAGE_BG = { light: ['#f6f5f1', '#ffffff'], dark: ['#0d1718', '#142224'] } as const;
+export const PAGE_BG = { light: ['#f6f5f1', '#ffffff'], dark: ['#0d1718', '#162a2d'] } as const;
 
 /** The CSS variables for the lens colours, for the three places the public site sets its theme (automatic dark, forced dark, forced light is the default). */
 export function lensColorCss(): string {

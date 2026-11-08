@@ -38,7 +38,8 @@ export const HOST_JS = `(function () {
     return '';
   };
   // The picture follows the page's theme (light, dark or automatic), as a host's light and dark would.
-  var themeNow = function () { var t = document.documentElement && document.documentElement.getAttribute('data-theme'); return t === 'light' || t === 'dark' ? t : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; };
+  // On the landing page the picture sits in the dark masthead, so it is always dark there.
+  var themeNow = function () { if (f.closest && f.closest('.mast')) return 'dark'; var t = document.documentElement && document.documentElement.getAttribute('data-theme'); return t === 'light' || t === 'dark' ? t : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; };
   window.addEventListener('message', function (e) {
     if (e.source !== f.contentWindow || !e.data) return;
     var m = e.data, p = m.params || {}, ok = function (r) { to({ id: m.id, result: r }); }, no = function (text) { to({ id: m.id, error: { code: -32601, message: text } }); };

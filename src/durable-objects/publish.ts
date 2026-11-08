@@ -676,7 +676,8 @@ export class PublishDO extends DurableObject<Env> {
         const order = this.briefingOrder();
         const out = this.topics().filter((t) => t.listed).flatMap((t) => {
           const latest = this.issues(t.slug, 'published', 1)[0], position = order.indexOf(t.slug);
-          return latest ? [{ ...this.publicTopic(t), latest: this.brief(latest), ...(position >= 0 ? { position } : {}) }] : [];
+          const pic = latest ? this.newestPicture(t.slug) : undefined;   // the card picture on the landing page: the newest finished one, which need not be the newest issue's
+          return latest ? [{ ...this.publicTopic(t), latest: this.brief(latest), ...(position >= 0 ? { position } : {}), ...(pic?.image ? { pic: { id: pic.id, v: pic.image.created } } : {}) }] : [];
         });
         return json(out);
       }
