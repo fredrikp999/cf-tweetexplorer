@@ -5,7 +5,7 @@ import { lensMatch, applyLens, lensesOfTopic, LENS_PALETTE, type Lens } from '..
 import { partsAfterParents } from '../signal/topics.ts';
 import { topicHref, type Area } from '../signal/area.ts';
 import { topicSlug, topicState, type TopicState } from '../signal/topicpage.ts';
-import type { Layout } from '../signal/landscape.ts';
+import { layoutLens, type Layout } from '../signal/landscape.ts';
 
 /** The time windows of the page (`?window=`), in days. */
 export const WINDOWS = [1, 3, 7] as const;
@@ -86,10 +86,10 @@ export function risingStrip(topics: SigTopic[], baselineOk: boolean, max = 8, ma
 // ---- the landscape (a ranked list for now; the graphic of step 5 replaces it)
 export interface RankRow { topic: SigTopic; inLens: boolean; /** Drawn under the topic it is part of. */ part: boolean }
 /** Topics ranked by Signal score, parts under their topic; with a lens its topics first (the rest stay, marked `inLens: false`). */
-export function rankList(topics: SigTopic[], lens: Lens | undefined, max = 15): { rows: RankRow[]; outside: SigTopic[]; inCount: number } {
+export function rankList(topics: SigTopic[], lens: Lens | undefined, max = 15, only = false): { rows: RankRow[]; outside: SigTopic[]; inCount: number } {
   const ranked = partsAfterParents([...topics].sort((a, b) => b.signal - a.signal));
   const ap = applyLens(ranked, lens), rows: RankRow[] = [];
-  for (const x of ap.ordered.slice(0, max)) {
+  for (const x of (only && lens ? ap.ordered.filter((y) => y.inLens) : ap.ordered).slice(0, max)) {
     const prev = rows[rows.length - 1];
     rows.push({ topic: x.topic, inLens: x.inLens, part: !!x.topic.parent && !!prev && (prev.topic.term === x.topic.parent || (prev.part && prev.topic.parent === x.topic.parent)) });
   }
@@ -164,6 +164,10 @@ export interface LandscapeData { w: number; h: number; clusters: Array<{ id: str
  * is left out (the ranked list still has it); a cluster whose members are all gone is dropped. With a lens chosen its topics take its colour and the rest stay grey; with none, a topic takes the colour of its first lens.
  */
 export function landscapeOf(layout: Layout | null | undefined, topics: SigTopic[], o: { lens?: Lens; lenses: Lens[]; groups: string[]; baselineOk: boolean; origin: string; stateOf: (t: SigTopic) => TopicState | null; /** The area the topics are from: a politics topic's link says so. */ area?: Area }): LandscapeData | null {
+  if (o.lens) {   // a lens gets its own picture: only its topics, as large as the box allows (the shared layout would show the same bubbles with other colours)
+    const mine = applyLens(topics, o.lens).ordered.filter((x) => x.inLens).map((x) => x.topic);
+    layout = layoutLens(mine.map((t) => ({ key: topicSlug(t.term), label: t.label, score: t.signal, parent: t.parent ? topicSlug(t.parent) : undefined })));
+  }
   if (!layout?.bubbles.length) return null;
   const bySlug = new Map<string, SigTopic>();
   for (const t of topics) { const k = topicSlug(t.term); if (!bySlug.has(k)) bySlug.set(k, t); }

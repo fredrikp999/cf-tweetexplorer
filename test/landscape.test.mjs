@@ -106,3 +106,23 @@ describe('from one day to the next', () => {
     assert.equal(cleanLayout({ bubbles: [{ key: 'a', x: 'no' }], clusters: [] }).bubbles.length, 0);
   });
 });
+
+describe('broad topics and lens layout', async () => {
+  const { isBroadTopic, layoutLens, LAND_W, LAND_H } = await import('../src/signal/landscape.ts');
+  test('a topic made only of field-wide words is broad; a specific one is not', () => {
+    assert.ok(isBroadTopic('AI agent') && isBroadTopic('LLM models') && isBroadTopic('AI'));
+    assert.ok(!isBroadTopic('Claude Code') && !isBroadTopic('agent sdk') && !isBroadTopic('MCP'));
+  });
+  test('a broad topic does not pull others into a group', () => {
+    const ts = [{ key: 'ai-agent', label: 'AI agent', score: 3 }, { key: 'mcp', label: 'MCP', score: 2 }, { key: 'rag', label: 'RAG', score: 1 }];
+    const co = { n: new Map([['ai-agent', 10], ['mcp', 5], ['rag', 5]]), pair: new Map([['ai-agent\u0000mcp', 5], ['ai-agent\u0000rag', 5]]) };
+    assert.deepEqual(clusterTopics(ts, co), [['ai-agent'], ['mcp'], ['rag']]);
+  });
+  test('layoutLens fits every bubble in the box without overlap, bigger than the shared layout allows', () => {
+    const l = layoutLens(Array.from({ length: 6 }, (_, i) => ({ key: 'k' + i, label: 'K' + i, score: 10 - i })));
+    assert.equal(l.bubbles.length, 6);
+    for (const b of l.bubbles) assert.ok(b.x - b.r >= 0 && b.y - b.r >= 0 && b.x + b.r <= LAND_W && b.y + b.r <= LAND_H);
+    for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) assert.ok(Math.hypot(l.bubbles[i].x - l.bubbles[j].x, l.bubbles[i].y - l.bubbles[j].y) >= l.bubbles[i].r + l.bubbles[j].r);
+    assert.ok(l.bubbles[0].r > 64);
+  });
+});

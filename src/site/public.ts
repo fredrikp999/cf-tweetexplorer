@@ -24,7 +24,7 @@ import { loadOverview } from './overview';
 import { overviewOut } from './agentText';
 import type { Layout } from '../signal/landscape';
 import { AREA_BRIEFINGS, AREA_HOME, AREA_LABEL, areaHint, areaOfRequest, areaOf, boardsOfArea, parseArea, publishedAreas, topicHref, topicsOfArea, type Area } from '../signal/area';
-import { LENS_JS, applyLens, chosenLens, lensColorCss, lensesOfTopic, type Lens } from '../signal/lens';
+import { LENS_JS, applyLens, lensMatch, chosenLens, lensColorCss, lensesOfTopic, type Lens } from '../signal/lens';
 import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
 import { HOST_JS, VIZ_CSS, VIZ_VIEWS, vizFrame, viewCsp } from './viz';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
@@ -197,6 +197,7 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .firstsay{font-size:17px;max-width:44rem;margin:0 0 12px}.firstlist{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:10px;max-width:44rem}.firstlist li{border-left:3px solid var(--bar);padding-left:12px}.firstlist .when{color:var(--muted);font-size:13.5px}.firstlist .fnum{display:inline-block;min-width:1.6em;font-weight:700;color:var(--bar)}
 .watchcards small{color:var(--muted)}.watchcards .play{position:relative;display:block}.watchcards .play::after{content:'▶';position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.65);color:#fff;border-radius:6px;padding:1px 7px;font-size:12px}
 ${lensColorCss()}
+.lenshead{margin:0 0 14px;padding:10px 14px;border-left:4px solid var(--lc);background:var(--card,rgba(127,127,127,.08));border-radius:0 8px 8px 0}.lenshead h1{margin:2px 0 4px;font-size:22px}.lenshead p{margin:0;color:var(--muted)}
 .lensbar{align-items:center}.lenslbl{font-size:13px;color:var(--muted);margin-right:4px}.lensbar a .lsw{display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--lc);margin-right:6px}
 .lensbar a[aria-current=page]{border-color:var(--lc,var(--accent));box-shadow:inset 0 0 0 1px var(--lc,var(--accent));font-weight:600}
 .lenstag{display:inline-block;font-size:12px;padding:0 8px;border-radius:999px;border:1px solid var(--lc);color:var(--lc);white-space:nowrap;text-decoration:none}
@@ -258,7 +259,7 @@ type Here = { page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'firs
 
 /** The top bar for every page that is not the landing page or the search: no lens or window of its own, so a lens link goes to the landing page of the area unless the page says otherwise (`o.href`). */
 function bar(ctx: Ctx, active?: Active, page?: Here['page'], board?: string, o: { lens?: Lens; href?: (p: { lens?: string; window?: number }) => string } = {}): string {
-  return topBar(ctx, { lenses: ctx.lenses ?? [], lens: o.lens, href: o.href ?? ((p) => landingHref(p, ctx.area)), here: { page, board, slug: active?.slug } });
+  return topBar(ctx, { lenses: ctx.lenses ?? [], lens: o.lens, restore: !!o.href, href: o.href ?? ((p) => landingHref(p, ctx.area)), here: { page, board, slug: active?.slug } });
 }
 
 /** Cloudflare Web Analytics for the public pages, from the CF_ANALYTICS_TOKEN secret: page views without cookies. Empty: no script at all. */
@@ -312,7 +313,7 @@ export const landingHref = (p: { lens?: string; window?: number }, area: Area = 
  * The top bar that replaces the long left menu (INTENT.md section 6): name, the lens chooser, the time window (only when `window` is given), a search box and a "More" menu with the deep pages.
  * Reusable: pass `href` to say where a lens or window link goes on the page that shows it. The area (AI / Politics) joins in step 9; there is one area now, so it is not a choice.
  */
-export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: LandingWindow; href: (p: { lens?: string; window?: number }) => string; q?: string; /** Where the page sits, to mark it in the More menu. */ here?: Here }): string {
+export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: LandingWindow; href: (p: { lens?: string; window?: number }) => string; /** Whether this page filters by lens: only then does the saved lens put itself back in the address. Briefings and other pages do not, so they must not be sent away. Default yes. */ restore?: boolean; q?: string; /** Where the page sits, to mark it in the More menu. */ here?: Here }): string {
   const firstBoard = ctx.boards.find(hasFirst), area = ctx.area, ai = area === 'ai', aq = areaQs(area), h = o.here ?? {};
   // Everything the long left menu reached, in short groups. The page you are on is marked in words (aria-current), as before; a link that is only the same kind of page (a Signal) is marked when it is that one.
   const a = (href: string, text: string, on = false) => `<a href="${href}"${on ? ' aria-current="page"' : ''}>${text}</a>`;
@@ -333,7 +334,8 @@ export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: Land
   // The area chooser: plain links, shown only when there is more than AI to choose. The current area is marked in words too (aria-current), not by position.
   const chooser = ctx.areas.length > 1 ? `<nav class="sgwin areabar" aria-label="Area"><span class="lenslbl">Area</span>${ctx.areas.map((a) => `<a href="${AREA_HOME[a]}"${a === area ? ' aria-current="page"' : ''}>${AREA_LABEL[a]}</a>`).join('')}</nav>` : '';
   return `<header class="topbar"><div class="tb"><a class="brand" href="${AREA_HOME[area]}">${MARK}<span>Agent Cortex<small>${esc(AREA_LABEL[area])}</small></span></a>
-${chooser}${lensBar(o.lenses, o.lens, (k) => o.href({ lens: k, window: o.window }))}${win}
+<nav class="sgwin tbbrief" aria-label="Briefings"><a href="${AREA_BRIEFINGS[area]}"${h.page === 'briefings' || h.slug ? ' aria-current="page"' : ''}>Briefings</a></nav>
+${chooser}${lensBar(o.lenses, o.lens, (k) => o.href({ lens: k, window: o.window }), o.restore !== false)}${win}
 <form action="/search" method="get" role="search"><input type="search" name="q" value="${esc(o.q ?? '')}" placeholder="Search" aria-label="Search topics, items, papers and briefings" maxlength="80">${o.lens ? `<input type="hidden" name="lens" value="${esc(o.lens.key)}">` : ''}${ai ? '' : '<input type="hidden" name="area" value="politics">'}<button class="go" type="submit">Search</button></form>
 ${THEME_BTN}<details class="more"><summary>More</summary><div>${more}</div></details></div></header>`;
 }
@@ -354,7 +356,7 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
   const pop = (t: SigTopic) => (t.isNew ? 'new' : t.change !== null && t.change >= 1.5 ? 'rising' : t.change !== null && sig?.baselineOk && t.change <= 0.67 ? 'falling' : '');
   const pill = (t: SigTopic) => { const k = pop(t); return k ? `<span class="pstate ${k}">${riseMark[k][0]} ${riseMark[k][1]}</span>` : ''; };
   const sourceTitle = (t: SigTopic) => esc([`${t.label}: score ${sigPct(t.signal)} of items`, mixText(t.parts, groups) && `from ${mixText(t.parts, groups)}`, t.kind === 'shared' ? 'in most groups of sources' : t.kind === 'single' ? 'in one group only' : ''].filter(Boolean).join('; '));
-  const rank = rankList(topics, lens, 15);
+  const rank = rankList(topics, lens, 15, true);   // with a lens only its topics are listed; the big ones outside it get a line of their own
   const lensTags = (t: SigTopic) => lensesOfTopic(lenses, t).slice(0, 2).map(lensTag).join('');
 
   const since = guard(() => {
@@ -364,9 +366,23 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
   });
 
   const brief = guard(() => {
-    const lines = inBrief(ctx.topics.map((t) => ({ slug: t.slug, title: t.title, publishedAt: t.latest.publishedAt, tldr: t.latest.tldr, themes: t.latest.themes, position: t.position })), ((sig7 ?? sig)?.top ?? []) as SigTopic[], 5, Date.now(), area);
-    if (!lines.length) return '';
-    return `<section aria-labelledby="h-brief"><h2 class="lh" id="h-brief">In brief <a href="${AREA_BRIEFINGS[area]}">Full briefings &rarr;</a></h2><ul class="brief">${lines.map((l) => `<li><a href="${esc(l.href)}">${esc(l.text)}</a>${l.topic ? '' : `<small>from the ${esc(l.briefing.title)} briefing</small>`}</li>`).join('')}</ul></section>`;
+    const top7 = ((sig7 ?? sig)?.top ?? []) as SigTopic[];
+    const mine = lens ? new Set(applyLens(top7, lens).ordered.filter((x) => x.inLens).map((x) => x.topic.label)) : null;
+    // With a lens, only lines about its topics (or whose words match it): the lines are picked from more candidates first, so five are left.
+    const lines = inBrief(ctx.topics.map((t) => ({ slug: t.slug, title: t.title, publishedAt: t.latest.publishedAt, tldr: t.latest.tldr, themes: t.latest.themes, position: t.position })), top7, lens ? 30 : 5, Date.now(), area)
+      .filter((l) => !lens || (l.label ? mine!.has(l.label) : lensMatch(lens, { term: l.text }))).slice(0, 5);
+    if (!lines.length) return lens ? `<section aria-labelledby="h-brief"><h2 class="lh" id="h-brief">In brief: ${esc(lens.name)} <a href="${AREA_BRIEFINGS[area]}">Full briefings &rarr;</a></h2><p class="meta">No briefing line today is about ${esc(lens.name)}.</p></section>` : '';
+    return `<section aria-labelledby="h-brief"><h2 class="lh" id="h-brief">In brief${lens ? ': ' + esc(lens.name) : ''} <a href="${AREA_BRIEFINGS[area]}">Full briefings &rarr;</a></h2><ul class="brief">${lines.map((l) => `<li><a href="${esc(l.href)}">${esc(l.text)}</a>${l.topic ? '' : `<small>from the ${esc(l.briefing.title)} briefing</small>`}</li>`).join('')}</ul></section>`;
+  });
+
+  // The briefings of the day, so the landing page still leads to them: each briefing's headline, short summary and themes (the same list /briefings shows, newest first).
+  const today = guard(() => {
+    const list = inOrder(ctx.topics, (a, b) => b.latest.publishedAt - a.latest.publishedAt).filter((t) => !lens || lensMatch(lens, { term: [t.title, t.latest.tldr, ...(t.latest.themes ?? [])].join(' . ') })).slice(0, 6);
+    if (!list.length) return '';
+    return `<section aria-labelledby="h-today"><h2 class="lh" id="h-today">${ai ? "Today's briefings" : 'Briefings'} <a href="${AREA_BRIEFINGS[area]}">All briefings &rarr;</a></h2><ul class="today">${list.map((t) => {
+      const fresh = Date.now() - t.latest.publishedAt < 26 * 3600_000, th = (t.latest.themes ?? []).slice(0, 3);
+      return `<li><div class="h"><a href="/${esc(t.slug)}"><b>${esc(t.title)}</b></a><small>${fresh ? '<span class="up">new</span> ' : ''}${date(t.latest.publishedAt)}</small></div>${t.latest.tldr ? `<p>${inline(t.latest.tldr)}</p>` : ''}${th.length ? `<p class="th">${th.map((x) => `<a href="/${esc(t.slug)}#${esc(anchorOfTheme(x))}">${esc(x)}</a>`).join(' &middot; ')}</p>` : ''}</li>`;
+    }).join('')}</ul></section>`;
   });
 
   // The landscape: a ranked list. Step 5 of INTENT.md puts the bubble graphic in a sandboxed frame inside .landscape-graphic, above this list, which stays as its text form.
@@ -416,7 +432,8 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
 <div class="wr">${reads.articles.length ? `<div><h3>${reads.reacted ? 'Most reacted articles' : 'Latest articles'}</h3><ul>${reads.articles.map(li).join('')}</ul></div>` : ''}${reads.hn.length ? `<div><h3>Hacker News highlights</h3><ul>${reads.hn.map(li).join('')}</ul></div>` : ''}</div></section>`;
   });
 
-  const body = `${since}${ai || sig ? '' : `<header class="pagehead"><h1>Politics</h1><p class="lede">Nothing is published here yet.</p></header>`}<div class="lgrid"><div>${brief}</div><div>${landscape}</div></div>${rising}${cards}${research}${watch}
+  const lensHead = lens ? `<header class="lenshead lc-${lens.color}"><span class="lenstag lc-${lens.color}">Lens</span><h1>${esc(lens.name)}</h1><p>${lens.description ? esc(lens.description) + ' ' : ''}${rank.inCount ? `${plural1(rank.inCount, 'topic')} in this lens ${win === 1 ? 'today' : 'in the last ' + win + ' days'}. ` : ''}<a href="${landingHref({ window: win }, area)}">Show everything</a></p></header>` : '';
+  const body = `${lensHead}${since}${ai || sig ? '' : `<header class="pagehead"><h1>Politics</h1><p class="lede">Nothing is published here yet.</p></header>`}<div class="lgrid"><div>${brief}${today}</div><div>${landscape}</div></div>${rising}${cards}${research}${watch}
 <p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals. <a href="/signal/method">How the numbers are worked out</a>.</p>`;
   return shell(ai ? 'Agent Cortex' : 'Politics · Agent Cortex', topBar(ctx, { lenses, lens, window: win, href: (p) => landingHref(p, area), here: {} }), body, { wide: true, canonical: origin ? origin + AREA_HOME[area] : undefined,
     description: ai ? 'What is going on in AI: short briefings, the topics being talked about across news, blogs, X, YouTube and Hacker News, and the research behind them.'
@@ -539,9 +556,9 @@ const areaQs = (area: Area, first = '?') => (area === 'politics' ? first + 'area
 
 // ---- Lenses (src/signal/lens.ts): chosen with ?lens=<key>, so each lens page is shareable and cached on its own. They order and mark; nothing is hidden.
 /** The lens chooser: plain links, one per lens, with the lens named in words (the colour is a second cue). The small script remembers the choice in this browser. */
-function lensBar(lenses: Lens[], cur: Lens | undefined, href: (key: string) => string): string {
+function lensBar(lenses: Lens[], cur: Lens | undefined, href: (key: string) => string, restore = true): string {
   if (!lenses.length) return '';
-  return `<nav class="sgwin lensbar" aria-label="Lens"><span class="lenslbl">Lens</span><a data-lens="" href="${href('')}"${cur ? '' : ' aria-current="page"'}>All</a>${lenses.map((l) => `<a class="lc-${l.color}" data-lens="${esc(l.key)}" href="${href(l.key)}"${l.description ? ` title="${esc(l.description)}"` : ''}${cur?.key === l.key ? ' aria-current="page"' : ''}><i class="lsw"></i>${esc(l.name)}</a>`).join('')}</nav><script src="/viz/lens.js"></script>`;
+  return `<nav class="sgwin lensbar" aria-label="Lens"${restore ? '' : ' data-pagelens="1" title="Briefings are not filtered by lens. Choose a lens to go back to the front page with it."'}><span class="lenslbl">Lens</span><a data-lens="" href="${href('')}"${cur ? '' : ' aria-current="page"'}>All</a>${lenses.map((l) => `<a class="lc-${l.color}" data-lens="${esc(l.key)}" href="${href(l.key)}"${l.description ? ` title="${esc(l.description)}"` : ''}${cur?.key === l.key ? ' aria-current="page"' : ''}><i class="lsw"></i>${esc(l.name)}</a>`).join('')}</nav><script src="/viz/lens.js"></script>`;
 }
 /** "Outside your lens, big today": one or two topics that are not in the lens but are big anyway. */
 const outsideLine = (topics: Array<{ term: string; label?: string }>, area: Area = 'ai') => (topics.length

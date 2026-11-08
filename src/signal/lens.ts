@@ -190,5 +190,5 @@ export function parseSuggestions(text: string, lenses: Pick<Lens, 'key'>[], topi
 
 // ---- the small script (served at /viz/lens.js, never inline): keeps the lens in this browser, and puts it back in the address when a page is opened without one.
 export const LENS_JS = `(function(){function g(){try{return localStorage.getItem('lens')}catch(e){return null}}function s(v){try{localStorage.setItem('lens',v)}catch(e){}}
-var q=location.search;if(!/[?&]lens=/.test(q)){var k=g();if(k&&k!=='all'){var a=document.querySelector('a[data-lens="'+k.replace(/[^a-z0-9-]/g,'')+'"]');if(a)try{location.replace(a.getAttribute('href'))}catch(e){}}}
+var q=location.search,k=g(),bar=document.querySelector('.lensbar');if(k&&k!=='all'&&bar){var a=bar.querySelector('a[data-lens="'+k.replace(/[^a-z0-9-]/g,'')+'"]');if(a){if(bar.hasAttribute('data-pagelens')){var c=bar.querySelectorAll('a[aria-current]');for(var i=0;i<c.length;i++)c[i].removeAttribute('aria-current');a.setAttribute('aria-current','page')}else if(!/[?&]lens=/.test(q))try{location.replace(a.getAttribute('href'))}catch(e){}}}
 document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[data-lens]'):null;if(a)s(a.getAttribute('data-lens')||'all')})})();`;

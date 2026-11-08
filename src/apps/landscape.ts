@@ -20,9 +20,9 @@ button:hover,select:hover{border-color:var(--mut)}button[aria-pressed=true]{bord
 button:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
 #wins{display:inline-flex;gap:4px}
 #stage{position:relative}svg{display:block;width:100%;height:auto;max-width:100%}
-.cl circle{fill:none;stroke:var(--line);stroke-width:1.5;stroke-dasharray:5 5}.cl text{fill:var(--mut);font-weight:600;paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}
+.cl circle{fill:var(--fg);fill-opacity:.04;stroke:var(--line);stroke-width:1.5;stroke-dasharray:5 5}.cl text{fill:var(--mut);font-weight:600;paint-order:stroke;stroke:var(--bg);stroke-width:4px;stroke-linejoin:round}
 .b{cursor:pointer;outline:none}.b .dot{stroke-width:2}.b .ring{fill:none;stroke:var(--ac);stroke-width:3}.b .mk{fill:var(--ac);font-weight:700;text-anchor:middle}
-.b text.lb{fill:var(--fg);text-anchor:middle;pointer-events:none;paint-order:stroke;stroke:var(--bg);stroke-width:3px;stroke-linejoin:round}
+.b text.lb{fill:var(--fg);text-anchor:middle;pointer-events:none;font-weight:600}.b text.lb.out{paint-order:stroke;stroke:var(--bg);stroke-width:3px;stroke-linejoin:round}.b text.pc{fill:var(--mut);text-anchor:middle;pointer-events:none}
 .b:hover .dot,.b:focus .dot{stroke-width:4}.b:focus .focus{display:block}.focus{display:none;fill:none;stroke:var(--fg);stroke-width:2;stroke-dasharray:2 3}
 .b.sel .dot{stroke-width:5}.b .tick{display:none;fill:var(--fg);font-weight:700;text-anchor:middle}.b.sel .tick{display:block}
 .pick .b{cursor:copy}.dim{opacity:.55}
@@ -103,11 +103,9 @@ function draw() {
     g.setAttribute('aria-label', b.label + (stateText(b) ? ', ' + stateText(b) : '') + ', ' + pct(b.score) + ' of items' + (picking ? '. Press Enter to pick or drop it.' : '. Press Enter to open it.'));
     g.appendChild(sv('circle', { 'class': 'focus', cx: b.x, cy: b.y, r: b.r + fs(6) }));
     if (b.state === 'new' || b.state === 'rising') g.appendChild(sv('circle', { 'class': 'ring', cx: b.x, cy: b.y, r: b.r + fs(3.5) }));
-    g.appendChild(sv('circle', { 'class': 'dot', cx: b.x, cy: b.y, r: b.r, fill: col || 'var(--grey)', 'fill-opacity': col ? 0.28 : 0.2, stroke: col || 'var(--grey)' }));
-    if (px >= 22) {
-      if (name.length > chars) name = name.slice(0, Math.max(3, chars - 1)).replace(/\\s+$/, '') + '\\u2026';
-      g.appendChild(sv('text', { 'class': 'lb', x: b.x, y: b.y + fs(4), 'font-size': fs(12) }, name));
-    }
+    var gid = gradient(svg, col || (dark() ? '#8fa4a7' : '#7d8d90'));
+    g.appendChild(sv('circle', { 'class': 'dot', cx: b.x, cy: b.y, r: b.r, fill: 'url(#' + gid + ')', stroke: col || 'var(--grey)' }));
+    label(g, b, px, sc, fs, name, chars);
     if (b.state === 'new' || b.state === 'rising' || b.state === 'falling') {
       var a = Math.PI / 4, mx = b.x + Math.cos(a) * (b.r + fs(3.5)), my = b.y - Math.sin(a) * (b.r + fs(3.5));
       g.appendChild(sv('text', { 'class': 'mk', x: mx, y: my + fs(4), 'font-size': fs(16), fill: b.state === 'falling' ? 'var(--mut)' : 'var(--ac)' }, b.state === 'new' ? '\\u2726' : b.state === 'rising' ? '\\u25B2' : '\\u25BC'));
@@ -122,6 +120,35 @@ function draw() {
     svg.appendChild(g);
   });
   reportSize();
+}
+var gids = {};
+function gradient(svg, color) {
+  var id = 'g' + color.replace(/[^a-z0-9]/gi, ''), defs = svg.querySelector('defs');
+  if (!defs) { defs = sv('defs', {}); svg.insertBefore(defs, svg.firstChild); }
+  if (!svg.querySelector('#' + id)) {
+    var rg = sv('radialGradient', { id: id, cx: '35%', cy: '30%', r: '80%' });
+    rg.appendChild(sv('stop', { offset: '0%', 'stop-color': color, 'stop-opacity': 0.62 }));
+    rg.appendChild(sv('stop', { offset: '100%', 'stop-color': color, 'stop-opacity': 0.2 }));
+    defs.appendChild(rg);
+  }
+  return id;
+}
+// The name goes inside the bubble, broken over up to three lines, as large as fits; a bubble too small for that has its name beneath it.
+function label(g, b, px, sc, fs, name) {
+  var f = Math.max(11, Math.min(20, px * 0.27)), inner = px * 1.55, perLine = Math.max(4, Math.floor(inner / (f * 0.56))), words = name.split(/\\s+/), lines = [], cur = '', i;
+  for (i = 0; i < words.length; i++) {
+    if (cur && (cur + ' ' + words[i]).length > perLine) { lines.push(cur); cur = words[i]; } else cur = cur ? cur + ' ' + words[i] : words[i];
+  }
+  if (cur) lines.push(cur);
+  var fits = px >= 30 && lines.length <= 3 && lines.every(function (l) { return l.length <= perLine + 2; }) && lines.length * f * 1.15 <= px * 1.7;
+  if (fits) {
+    var showPc = px >= 44 && lines.length <= 2, total = lines.length + (showPc ? 0.9 : 0);
+    var top = b.y - fs(((total - 1) * f * 1.15) / 2) + fs(f * 0.35);
+    lines.forEach(function (l, k) { g.appendChild(sv('text', { 'class': 'lb', x: b.x, y: top + fs(k * f * 1.15), 'font-size': fs(f) }, l)); });
+    if (showPc) g.appendChild(sv('text', { 'class': 'pc', x: b.x, y: top + fs(lines.length * f * 1.15 + 1), 'font-size': fs(Math.max(10.5, f * 0.75)) }, pct(b.score)));
+  } else if (px >= 10) {
+    g.appendChild(sv('text', { 'class': 'lb out', x: b.x, y: b.y + b.r + fs(14), 'font-size': fs(12) }, name.length > 22 ? name.slice(0, 21) + '\u2026' : name));
+  }
 }
 function showTip(b) {
   var t = el('tip'), w = el('stage').getBoundingClientRect().width, x = b.x * scale, y = b.y * scale, r = b.r * scale, together = togetherWith(b), st = stateText(b);
@@ -165,7 +192,7 @@ function renderLegend() {
   p.appendChild(mk('b', '', 'How to read it. '));
   p.appendChild(document.createTextNode('A bigger bubble is a bigger share of the day\\u2019s items. A ring with \\u2726 is a new topic, a ring with \\u25B2 a rising one, \\u25BC one that is falling. A dashed circle holds topics that are talked about together.'));
   if (L.lens) {
-    p.appendChild(document.createTextNode(' Coloured: topics in ' + L.lens.name + '; grey: the others.'));
+    p.appendChild(document.createTextNode(' Only the topics of ' + L.lens.name + ' are shown, drawn on their own.'));
   } else if ((L.lenses || []).length) {
     p.appendChild(document.createTextNode(' Colour is the lens a topic belongs to:'));
     L.lenses.forEach(function (l) { var s = mk('span', 'sw'); s.style.borderColor = dark() ? l.dark : l.light; p.appendChild(s); p.appendChild(document.createTextNode(l.name)); });

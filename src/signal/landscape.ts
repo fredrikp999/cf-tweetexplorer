@@ -13,6 +13,10 @@ const MIN_AFFINITY = 0.08, MIN_SHARED = 2;
 const STAY_BONUS = 0.15;
 const R_MIN = 15, R_MAX = 64;
 
+/** Words that name the whole field rather than a subject in it. A topic made only of these ("AI agent", "AI", "LLM models") is too broad to group others under or to name a group. */
+const BROAD = new Set('ai artificial intelligence agent agents agentic model models llm llms tool tools tech technology data new app apps software system systems chatbot chatbots generative genai gen'.split(' '));
+export const isBroadTopic = (label: string): boolean => { const w = String(label).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean); return !w.length || w.every((x) => BROAD.has(x)); };
+
 export interface LandTopic { key: string; label: string; score: number }
 export interface LandBubble { key: string; x: number; y: number; r: number; /** The cluster's id; '' for a topic that has no partner. */ cluster: string }
 export interface LandCluster { id: string; name: string; x: number; y: number; r: number; /** The key of its strongest topic. */ lead: string; members: string[] }
@@ -40,11 +44,11 @@ export function coCounts(topics: Array<{ key: string; names: string[] }>, items:
  * (alone when it has no partner). `before` is the cluster each topic was in the last time, which makes a pair that sat together stay together. Strongest topic first in each group.
  */
 export function clusterTopics(topics: LandTopic[], co: { n: Map<string, number>; pair: Map<string, number> }, before: Map<string, string> = new Map()): string[][] {
-  const score = new Map(topics.map((t) => [t.key, t.score] as const)), keys = topics.map((t) => t.key);
+  const score = new Map(topics.map((t) => [t.key, t.score] as const)), keys = topics.map((t) => t.key), broad = new Set(topics.filter((t) => isBroadTopic(t.label)).map((t) => t.key));
   const edges: Array<{ a: string; b: string; w: number }> = [];
   for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
     const a = keys[i], b = keys[j], both = co.pair.get(pairKey(a, b)) ?? 0;
-    if (both < MIN_SHARED) continue;
+    if (both < MIN_SHARED || broad.has(a) || broad.has(b)) continue;   // a topic as broad as "AI agent" is talked about with everything: it would pull unrelated topics into one group
     const w = both / Math.max(1, (co.n.get(a) ?? 0) + (co.n.get(b) ?? 0) - both) + (before.get(a) && before.get(a) === before.get(b) ? STAY_BONUS : 0);
     if (w >= MIN_AFFINITY) edges.push({ a, b, w });
   }
@@ -187,4 +191,60 @@ export function cleanLayout(raw: unknown): Layout | null {
   const bubbles = l.bubbles.filter((b) => typeof b?.key === 'string' && num(b.x) && num(b.y) && num(b.r) && typeof b.cluster === 'string');
   const clusters = l.clusters.filter((c) => typeof c?.id === 'string' && typeof c.name === 'string' && num(c.x) && num(c.y) && num(c.r) && typeof c.lead === 'string' && Array.isArray(c.members));
   return { w: LAND_W, h: LAND_H, bubbles, clusters };
+}
+
+/**
+ * The picture for one lens: only the topics of the lens, drawn as large as the box allows, so a lens looks different from the whole landscape instead of the same bubbles with other colours.
+ * A topic that is part of a bigger topic in the list sits against it and they share a ring. No history and no co-counts are needed, so it is made on the spot; the same input gives the same picture.
+ * Bubble area follows the score, as in layoutLandscape.
+ */
+export function layoutLens(topics: Array<LandTopic & { parent?: string }>): Layout {
+  const list = [...topics].sort((a, b) => b.score - a.score || (a.key < b.key ? -1 : 1)).slice(0, 30);
+  if (!list.length) return { w: LAND_W, h: LAND_H, clusters: [], bubbles: [] };
+  const have = new Set(list.map((t) => t.key)), top = Math.max(1e-9, list[0].score);
+  const kids = new Map<string, string[]>();
+  const broadKey = new Set(list.filter((t) => isBroadTopic(t.label)).map((t) => t.key));
+  for (const t of list) if (t.parent && have.has(t.parent) && t.parent !== t.key && !broadKey.has(t.parent)) (kids.get(t.parent) ?? kids.set(t.parent, []).get(t.parent)!).push(t.key);
+  const child = new Set([...kids.values()].flat());
+  const heads = list.filter((t) => !child.has(t.key));
+  const cx = LAND_W / 2, cy = LAND_H / 2;
+
+  const tryPlace = (k: number): Map<string, Disc> | null => {
+    const radius = (key: string) => Math.max(16, k * Math.sqrt(list.find((t) => t.key === key)!.score / top));
+    const pos = new Map<string, Disc>(), taken: Disc[] = [];
+    const spot = (r: number, c: { x: number; y: number }, gap: number): Disc | null => {
+      for (let i = 0; i < 4000; i++) {
+        const a = i * 2.399963, d = 3 * Math.sqrt(i), x = c.x + Math.cos(a) * d * 1.55, y = c.y + Math.sin(a) * d;
+        if (x < r + 4 || y < r + 4 || x > LAND_W - r - 4 || y > LAND_H - r - 4) continue;
+        if (taken.every((t) => Math.hypot(t.x - x, t.y - y) >= t.r + r + gap)) return { x, y, r };
+      }
+      return null;
+    };
+    for (const h of heads) {
+      const d = spot(radius(h.key), { x: cx, y: cy }, 14);
+      if (!d) return null;
+      pos.set(h.key, d); taken.push(d);
+      for (const kid of kids.get(h.key) ?? []) {
+        const e = spot(radius(kid), { x: d.x, y: d.y }, 5);
+        if (!e) return null;
+        pos.set(kid, e); taken.push(e);
+      }
+    }
+    return pos;
+  };
+  let k = 230, pos = tryPlace(k);
+  while (!pos && k > 20) { k *= 0.94; pos = tryPlace(k); }
+  const at = pos ?? new Map<string, Disc>();
+  const round = (v: number) => Math.round(v * 10) / 10;
+  const clusters: LandCluster[] = [];
+  for (const [head, ks] of kids) {
+    const members = [head, ...ks].filter((x) => at.has(x));
+    if (members.length < 2) continue;
+    const mx = members.reduce((s, x) => s + at.get(x)!.x, 0) / members.length, my = members.reduce((s, x) => s + at.get(x)!.y, 0) / members.length;
+    const r = Math.max(...members.map((x) => Math.hypot(at.get(x)!.x - mx, at.get(x)!.y - my) + at.get(x)!.r)) + 8;
+    clusters.push({ id: 'c-' + head, name: list.find((t) => t.key === head)!.label, x: round(mx), y: round(my), r: round(r), lead: head, members });
+  }
+  const inCluster = new Map<string, string>();
+  for (const c of clusters) for (const m of c.members) inCluster.set(m, c.id);
+  return { w: LAND_W, h: LAND_H, clusters, bubbles: list.filter((t) => at.has(t.key)).map((t) => ({ key: t.key, x: round(at.get(t.key)!.x), y: round(at.get(t.key)!.y), r: round(at.get(t.key)!.r), cluster: inCluster.get(t.key) ?? '' })) };
 }

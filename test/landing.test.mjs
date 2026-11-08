@@ -152,9 +152,11 @@ describe('landscapeOf', async () => {
     assert.deepEqual(l.bubbles.map((b) => b.lensColor), ['orange', 'orange', 'blue']); assert.equal(l.bubbles[0].inLens, null);
     assert.equal(l.lenses[0].light.startsWith('#'), true); assert.equal(l.lens, null);
   });
-  test('with a lens its topics take its colour and the rest are grey and marked outside', () => {
+  test('with a lens the picture holds only its topics, in its colour, laid out afresh (the shared layout is not reused)', () => {
     const l = landscapeOf(layout, topics, { ...base, lens: lenses[0] });
-    assert.deepEqual(l.bubbles.map((b) => [b.lensColor, b.inLens]), [['orange', true], ['orange', true], [null, false]]);
+    assert.deepEqual(l.bubbles.map((b) => [b.slug, b.lensColor, b.inLens]).sort(), [['mcp-auth', 'orange', true], ['oauth', 'orange', true]]);
+    assert.ok(Math.max(...l.bubbles.map((b) => b.r)) > 64, 'fills the box: larger than in the whole landscape');
+    assert.equal(landscapeOf(layout, topics, { ...base, lens: lenses[1] }).bubbles.length, 1);
   });
   test('a cluster left with one visible member is dropped and its bubble stands alone', () => {
     const l = landscapeOf(layout, [topics[0], topics[2]], base);
