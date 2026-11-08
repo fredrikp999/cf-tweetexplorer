@@ -252,6 +252,10 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .heat{--hc:var(--lc,var(--accent))}.hkey{display:inline-flex;align-items:center;gap:3px;font-size:12px}.hkey i{display:inline-block;width:11px;height:11px;border-radius:3px}
 .bimg{position:relative}.bmap{position:absolute;right:6px;bottom:6px;width:38%;max-width:96px;aspect-ratio:1.4;padding:4px;border-radius:9px;background:rgba(6,16,18,.62);backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,.3);display:flex}
 .bmap svg{width:100%;height:100%}.bmap circle{fill:rgba(255,255,255,.16);stroke:rgba(255,255,255,.28);stroke-width:3}.bmap circle.on{fill:#ff7aa1;stroke:#fff;stroke-width:5}
+.sky{margin:0 0 6px;border-radius:16px;overflow:hidden;background:radial-gradient(120% 90% at 70% 0%,#1b2f4a 0%,#0b1426 55%,#060b16 100%);box-shadow:var(--sh2)}.sky svg{display:block;width:100%;height:auto}
+.sky .lines line{stroke:#9fc3ff;stroke-opacity:.32;stroke-width:1}.sky .core{fill:#f4f8ff}.sky .talked .core{fill:#ffe3a3}.sky a:hover .core,.sky a:focus .core{fill:#ff9ec0;stroke:#fff;stroke-width:1.5}
+.sky text{fill:#dfe9ff;font-size:12px;font-weight:600;paint-order:stroke;stroke:#060b16;stroke-width:3px}
+@media(max-width:560px){.sky text{font-size:20px}}
 .tline{margin:0 0 6px}.tline svg{display:block;width:100%;height:auto;max-width:30rem}.tline text{fill:var(--muted);font-size:13px}.tline .base{stroke:var(--line);stroke-width:1}.tline .lane{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}.tline .dot{fill:var(--bar);stroke:var(--card);stroke-width:1.5}
 .tkey{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted)}.tkey b{color:var(--bar);margin-right:4px}.twords{margin:0 0 20px;padding-left:1.2em;color:var(--muted);font-size:13.5px}
 .firstsay{font-size:17px;max-width:44rem;margin:0 0 12px}.firstlist{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:10px;max-width:44rem}.firstlist li{border-left:3px solid var(--bar);padding-left:12px}.firstlist .when{color:var(--muted);font-size:13.5px}.firstlist .fnum{display:inline-block;min-width:1.6em;font-weight:700;color:var(--bar)}
@@ -677,7 +681,7 @@ function pulseSpark(t: PubPulseTopic): string {
 }
 interface PubPaper { id: string; published: number; title: string; authors: string[]; categories: string[]; abstract: string; absUrl: string; pdfUrl: string; also: Array<{ slug: string; title: string }>;
   attention: { top: boolean; hf?: { upvotes: number; url: string }; hn?: { points: number; comments: number; url: string }; mentions: Array<{ by: string; url: string; reactions: number }>; accounts: number } }
-export interface PubResearchPage { topic: PubPulseTopic; others: Array<{ slug: string; title: string }>; attention: PubPaper[]; papers: PubPaper[]; total: number; page: number; pages: number; keepDays: number; topDays: number; updated: number }
+export interface PubResearchPage { /** The constellation (first page only, with eight papers or more that have a meaning vector). */ sky?: { stars: Array<{ id: string; title: string; x: number; y: number; score: number; talked: boolean }>; lines: Array<[number, number]> } | null; topic: PubPulseTopic; others: Array<{ slug: string; title: string }>; attention: PubPaper[]; papers: PubPaper[]; total: number; page: number; pages: number; keepDays: number; topDays: number; updated: number }
 const httpsOnly = (u: string) => (/^https:\/\//.test(u) ? u : '');
 const ext = (u: string, text: string) => (httpsOnly(u) ? `<a href="${esc(u)}" rel="noopener noreferrer nofollow" target="_blank">${text}</a>` : text);
 function paperHtml(p: PubPaper): string {
@@ -688,12 +692,40 @@ function paperHtml(p: PubPaper): string {
 ${signals ? `<p class="psig">${signals}</p>` : ''}<details><summary>Abstract</summary><p>${esc(p.abstract)}</p></details>
 <p class="plinks">${ext(p.absUrl, 'On arXiv')} · ${ext(p.pdfUrl, 'PDF')}${p.also.length ? ` · Also in ${p.also.map((t) => `<a href="/research/${esc(t.slug)}">${esc(t.title)}</a>`).join(', ')}` : ''}</p></li>`;
 }
+/**
+ * The constellation of a research topic (src/signal/constellation.ts): every new paper of the last 30 days a star, placed by what it is about, brighter and bigger the more attention
+ * it has had; papers being discussed glow, and the five with the most attention are named. Faint lines join near neighbours. Each star links to the paper. Always a night sky, in both themes.
+ */
+function skyHtml(sky: PubResearchPage['sky']): string {
+  if (!sky?.stars.length) return '';
+  const W = 760, H = 400, P = 26, X = (x: number) => P + x * (W - 2 * P), Y = (y: number) => P + y * (H - 2 * P - 10);
+  const max = Math.max(1, ...sky.stars.map((s) => s.score)), size = (s: { score: number }) => 1.6 + 4.4 * Math.sqrt(s.score / max);
+  // a fixed field of faint background stars, from a hash of the papers, so the sky is the same on every load
+  let h = sky.stars.length * 2654435761 >>> 0; const rnd = () => ((h = (Math.imul(h ^ (h >>> 15), 2246822507) + 0x9e3779b9) >>> 0) / 4294967296);
+  const dust = Array.from({ length: 90 }, () => `<circle cx="${(rnd() * W).toFixed(1)}" cy="${(rnd() * H).toFixed(1)}" r="${(0.3 + rnd() * 0.7).toFixed(2)}" fill="#fff" fill-opacity="${(0.15 + rnd() * 0.35).toFixed(2)}"/>`).join('');
+  const lines = sky.lines.map(([a, b]) => `<line x1="${X(sky.stars[a].x).toFixed(1)}" y1="${Y(sky.stars[a].y).toFixed(1)}" x2="${X(sky.stars[b].x).toFixed(1)}" y2="${Y(sky.stars[b].y).toFixed(1)}"/>`).join('');
+  // the five with the most attention are named, skipping a name that would sit on one already placed
+  const named = new Set<string>(), boxes: Array<[number, number, number, number]> = [];
+  for (const s of sky.stars.filter((x) => x.score > 0).sort((a, b) => b.score - a.score)) {
+    if (named.size >= 5) break;
+    const w = Math.min(46, s.title.length) * 6.6, x = X(s.x), y = Y(s.y) - size(s) - 6, x0 = x < 140 ? x : x > W - 140 ? x - w : x - w / 2, b: [number, number, number, number] = [x0 - 4, y - 14, x0 + w + 4, y + 4];
+    if (boxes.some((o) => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1])) continue;
+    boxes.push(b); named.add(s.id);
+  }
+  const stars = sky.stars.slice().sort((a, b) => a.score - b.score).map((s) => { const x = X(s.x), y = Y(s.y), r = size(s), t = s.title.length > 46 ? s.title.slice(0, 45) + '…' : s.title;
+    return `<a href="https://arxiv.org/abs/${esc(s.id)}" rel="noopener noreferrer"><g class="star${s.talked ? ' talked' : ''}">${s.talked ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(r * 3.2).toFixed(1)}" fill="url(#skyglow)"/>` : ''}<circle class="core" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(2)}"/><title>${esc(s.title)}${s.talked ? ' (being discussed)' : ''}</title></g>${named.has(s.id) ? `<text x="${x.toFixed(1)}" y="${(y - r - 6).toFixed(1)}" text-anchor="${x < 140 ? 'start' : x > W - 140 ? 'end' : 'middle'}">${esc(t)}</text>` : ''}</a>`; }).join('');
+  const talked = sky.stars.filter((s) => s.talked).length;
+  return `<h2>The month as a sky</h2><div class="sky"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${sky.stars.length} papers of the last 30 days placed by what they are about; ${talked} being discussed. The most discussed: ${sky.stars.filter((s) => named.has(s.id)).map((s) => s.title).join('; ')}.`)}"><defs><radialGradient id="skyglow"><stop offset="0" stop-color="#ffd27a" stop-opacity=".55"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/></radialGradient></defs>${dust}<g class="lines">${lines}</g>${stars}</svg></div>
+<p class="meta">Each star is a new paper on this topic, placed near papers about similar things (from what their titles and abstracts mean), bigger and brighter the more attention it has had; a glow means it is being discussed. Lines join near neighbours. Position says what a paper is about, not how good it is.</p>`;
+}
+
 export function researchTopicHtml(d: PubResearchPage, ctx: Ctx): string {
   const t = d.topic, base = `/research/${esc(t.slug)}`;
   const facts = t.state === 'building' ? 'Collecting past weeks to compare with.' : `${n(t.n)} new papers, ${esc(t.from)} to ${esc(t.end)}: ${pct1(t.share)} of AI papers, against a usual ${pct1(t.baseline)}.`;
   const pager = d.pages > 1 ? `<nav class="pager" aria-label="Pages">${d.page > 1 ? `<a href="${base}${d.page > 2 ? `?page=${d.page - 1}` : ''}" rel="prev">&larr; Newer</a>` : '<span></span>'}<span>Page ${n(d.page)} of ${n(d.pages)}</span>${d.page < d.pages ? `<a href="${base}?page=${d.page + 1}" rel="next">Older &rarr;</a>` : '<span></span>'}</nav>` : '';
   return shell(`${t.title} · Research pulse · Undercurrent`, bar(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h1>
 ${t.blurb ? `<p class="lede">${esc(t.blurb)}</p>` : ''}<p class="meta">${facts}${d.others.length ? ` Other topics: ${d.others.map((x) => `<a href="/research/${esc(x.slug)}">${esc(x.title)}</a>`).join(', ')}.` : ''}</p></header>
+${skyHtml(d.sky)}
 ${d.attention.length ? `<h2>Getting attention</h2><p class="meta">From the last ${d.topDays} days: upvotes on Hugging Face, points on Hacker News, and posts collected on this site that link to a paper. Attention is not quality, and most new papers have not had time to get any.</p><ol class="papers">${d.attention.map(paperHtml).join('')}</ol>` : ''}
 <h2>New papers</h2><p class="meta">${d.total ? `${n(d.total)} papers from the last ${d.keepDays} days at most, newest first.` : 'Reading the papers. This fills in by itself.'}</p>
 <ol class="papers">${d.papers.map(paperHtml).join('')}</ol>${pager}

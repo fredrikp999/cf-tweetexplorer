@@ -1,5 +1,6 @@
 // Monitor: what is watched, the Live feed and Signal's counts. The fetching itself is done by the collection layer (collect.ts): this object tells it what
 // is watched, and it delivers new items and each watch's status to /mon/collected. The browser polls /mon/state and /mon/feed (no long-lived streams to pay for).
+import { constellationLines, project2d, type Star } from '../signal/constellation';
 import { DurableObject } from 'cloudflare:workers';
 import { json } from '../lib/twitterapi';
 import { recordCost } from '../lib/costs';
@@ -643,7 +644,17 @@ export class MonitorDO extends DurableObject<Env> {
     const total = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM research_topic_papers WHERE topic = ?', topic.id).one().n, pages = Math.max(1, Math.ceil(total / RESEARCH_PAGE)), page = Math.min(pages, Math.max(1, Math.floor(pageIn) || 1));
     const attention = page === 1 ? sql.exec<Row>(`SELECT ${COLS} FROM ${FROM} WHERE x.topic = ? AND p.top = 1 AND x.published >= ? ORDER BY p.score DESC, x.published DESC LIMIT 10`, topic.id, Date.now() - RESEARCH_TOP_DAYS * 86_400_000).toArray().map(shape) : [];
     const papers = sql.exec<Row>(`SELECT ${COLS} FROM ${FROM} WHERE x.topic = ? ORDER BY x.published DESC, x.paper DESC LIMIT ? OFFSET ?`, topic.id, RESEARCH_PAGE, (page - 1) * RESEARCH_PAGE).toArray().map(shape);
-    return { topic: this.pulseView().topics.find((t) => t.id === topic.id)!, others: this.pulseTopics().filter((t) => t.id !== topic.id).map((t) => ({ slug: t.slug, title: t.title })), attention, papers, total, page, pages, keepDays: RESEARCH_KEEP_DAYS, topDays: RESEARCH_TOP_DAYS, updated: this.getMeta<number>('attentionRun', 0) };
+    // The constellation (first page only): the topic's papers of the last 30 days that have a meaning vector, placed by it, with their attention.
+    let sky: { stars: Star[]; lines: Array<[number, number]> } | null = null;
+    if (page === 1) {
+      const rows = sql.exec<{ id: string; title: string; signals: string; authors: string; v: ArrayBuffer }>(`SELECT p.id, p.title, p.signals, p.authors, v.v FROM ${FROM} JOIN research_vectors v ON v.paper = p.id WHERE x.topic = ? AND x.published >= ? ORDER BY x.published DESC LIMIT 240`, topic.id, Date.now() - 30 * 86_400_000).toArray();
+      if (rows.length >= 8) {
+        const pts = project2d(rows.map((r) => fromBlob(r.v)));
+        const stars = rows.map((r, i) => { const a = attentionOf(JSON.parse(r.signals) as PaperSignals, JSON.parse(r.authors) as string[]); return { id: r.id, title: r.title, x: pts[i][0], y: pts[i][1], score: Math.round(a.score * 10) / 10, talked: !!(a.hf || a.hn || a.mentions.length) }; });
+        sky = { stars, lines: constellationLines(pts) };
+      }
+    }
+    return { sky, topic: this.pulseView().topics.find((t) => t.id === topic.id)!, others: this.pulseTopics().filter((t) => t.id !== topic.id).map((t) => ({ slug: t.slug, title: t.title })), attention, papers, total, page, pages, keepDays: RESEARCH_KEEP_DAYS, topDays: RESEARCH_TOP_DAYS, updated: this.getMeta<number>('attentionRun', 0) };
   }
   /** Every topic's state, from what has been read so far. The same for the admin and for readers: counts and the searches behind them, which are public anyway. */
   private pulseView() {
