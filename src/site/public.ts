@@ -23,6 +23,7 @@ import { loadTopic } from './topicData';
 import { CARD_FONT, CARD_W, shareCardSvg } from './shareCard';
 import { svgToPng } from '../media/png';
 import { PHASE_LABEL, PHASE_MARK, PHASE_TRACK, lifecycle, smooth, type Lifecycle } from '../signal/lifecycle';
+import { soften, streamLayout, type StreamLayer } from '../signal/stream';
 import { loadOverview } from './overview';
 import { overviewOut } from './agentText';
 import type { Layout } from '../signal/landscape';
@@ -219,7 +220,17 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .phase,.ltrack li.on{color:var(--ph)}.life .ltrack li.on{color:var(--ph)}.ltrack li:nth-child(1).on{--ph:#1f8a5b}.ltrack li:nth-child(2).on{--ph:var(--accent)}.ltrack li:nth-child(3).on{--ph:var(--muted)}.ltrack li.loop.on{--ph:#7c5cbf}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .ph-emerging,:root:not([data-theme=light]) .ltrack li:nth-child(1).on{--ph:#5fd39b}:root:not([data-theme=light]) .ph-returning,:root:not([data-theme=light]) .ltrack li.loop.on{--ph:#b8a1f0}}
 :root[data-theme=dark] .ph-emerging,:root[data-theme=dark] .ltrack li:nth-child(1).on{--ph:#5fd39b}:root[data-theme=dark] .ph-returning,:root[data-theme=dark] .ltrack li.loop.on{--ph:#b8a1f0}
-@media(max-width:560px){.ltrack li.loop{margin-left:0}}
+@media(max-width:560px){.ltrack li.loop{margin-left:0}.spread .sbl{font-size:22px}.spread .sax{font-size:22px}.spin circle{r:14px}.spin text{font-size:16px}.life .lpt{font-size:20px}}
+.spread{margin:0 0 4px;padding:10px 12px 4px;border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:var(--sh1)}.spread svg{display:block;width:100%;height:auto}
+.sb{stroke:var(--card);stroke-width:1.2;fill-opacity:.88}.sb:hover{fill-opacity:1}.sbl{fill:#fff;font-size:12.5px;font-weight:700;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,.28);stroke-width:2.5px}
+.smid{stroke:var(--line);stroke-dasharray:2 4}.sax{fill:var(--muted);font-size:12px}.srail{stroke:var(--line)}.spaper{fill:var(--k-arxiv);stroke:var(--card);stroke-width:1.5}
+.spin circle{fill:var(--card);stroke:var(--text);stroke-width:2}.spin text{fill:var(--text);font-size:11.5px;font-weight:800}
+.k-x{fill:var(--k-x);background:var(--k-x)}.k-hn{fill:var(--k-hn);background:var(--k-hn)}.k-youtube{fill:var(--k-youtube);background:var(--k-youtube)}.k-rss{fill:var(--k-rss);background:var(--k-rss)}
+.sflow{list-style:none;margin:10px 0 4px;padding:0;display:flex;flex-wrap:wrap;gap:6px 10px;font-size:14px}.sflow li{display:flex;align-items:center;gap:6px}.sflow li+li::before{content:"→";color:var(--muted);margin-right:4px}
+.sflow .sk{width:12px;height:12px;border-radius:3px;flex:none}.sflow small{color:var(--muted)}
+:root{--k-x:#1f7a8c;--k-hn:#d9480f;--k-youtube:#c2255c;--k-rss:#6741d9;--k-arxiv:#2b8a3e}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--k-x:#3fa5b8;--k-hn:#f76707;--k-youtube:#e64980;--k-rss:#845ef7;--k-arxiv:#40c057}}
+:root[data-theme=dark]{--k-x:#3fa5b8;--k-hn:#f76707;--k-youtube:#e64980;--k-rss:#845ef7;--k-arxiv:#40c057}
 .tline{margin:0 0 6px}.tline svg{display:block;width:100%;height:auto;max-width:30rem}.tline text{fill:var(--muted);font-size:13px}.tline .base{stroke:var(--line);stroke-width:1}.tline .lane{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}.tline .dot{fill:var(--bar);stroke:var(--card);stroke-width:1.5}
 .tkey{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted)}.tkey b{color:var(--bar);margin-right:4px}.twords{margin:0 0 20px;padding-left:1.2em;color:var(--muted);font-size:13.5px}
 .firstsay{font-size:17px;max-width:44rem;margin:0 0 12px}.firstlist{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:10px;max-width:44rem}.firstlist li{border-left:3px solid var(--bar);padding-left:12px}.firstlist .when{color:var(--muted);font-size:13.5px}.firstlist .fnum{display:inline-block;min-width:1.6em;font-weight:700;color:var(--bar)}
@@ -780,9 +791,56 @@ function timelineHtml(d: TopicData): string {
   }).join('');
   const days = d.series.days, ticks = [0, Math.floor((days.length - 1) / 2), days.length - 1].map((i, j) => `<text x="${(j === 0 ? L : j === 2 ? W - R : (L + W - R) / 2).toFixed(0)}" y="${H - 6}" text-anchor="${j === 0 ? 'start' : j === 2 ? 'end' : 'middle'}">${esc(shortDay(days[i]))}</text>`).join('');
   const label = `Timeline of the last ${days.length} days. ${timelineWords(dots).join('. ')}.`;
-  return `<h2 class="sect">Over time</h2><div class="tline"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${lanes.map((l) => `<line class="lane" x1="${L}" x2="${W - R}" y1="${l.y}" y2="${l.y}"/><text x="${L - 8}" y="${l.y + 4}" text-anchor="end">${esc(KIND_MARK[l.k].short)}</text>`).join('')}<line class="base" x1="${L}" x2="${W - R}" y1="${H - 22}" y2="${H - 22}"/>${marks}${ticks}</svg></div>
+  return `<h2 class="sect">Item by item</h2><div class="tline"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${lanes.map((l) => `<line class="lane" x1="${L}" x2="${W - R}" y1="${l.y}" y2="${l.y}"/><text x="${L - 8}" y="${l.y + 4}" text-anchor="end">${esc(KIND_MARK[l.k].short)}</text>`).join('')}<line class="base" x1="${L}" x2="${W - R}" y1="${H - 22}" y2="${H - 22}"/>${marks}${ticks}</svg></div>
 <ul class="tkey" aria-hidden="true">${kinds.map((k) => `<li><b>${{ circle: '&#9679;', square: '&#9632;', triangle: '&#9650;', diamond: '&#9670;' }[KIND_MARK[k].shape]}</b>${esc(KIND_NAME[k])}</li>`).join('')}</ul>
 <ul class="twords">${timelineWords(dots).map((l) => `<li>${esc(l)}</li>`).join('')}</ul><p class="meta">Each mark stands for the items of one kind of source in a slot of the period (a bigger mark: more items). The most reacted one is named when you hover or focus the mark${d.board.proof ? '' : ', and only on Signals that show their sources'}.</p>`;
+}
+
+/** A smooth band between two edges of a stream: along the top from left to right, back along the bottom (Catmull-Rom as cubic Béziers). */
+function bandPath(xs: number[], top: number[], bottom: number[]): string {
+  const seg = (px: number[], py: number[], move: boolean) => {
+    let d = `${move ? 'M' : 'L'}${px[0].toFixed(1)},${py[0].toFixed(1)}`;
+    for (let i = 0; i < px.length - 1; i++) {
+      const a = Math.max(0, i - 1), b = Math.min(px.length - 1, i + 2);
+      d += ` C${(px[i] + (px[i + 1] - px[a]) / 6).toFixed(1)},${(py[i] + (py[i + 1] - py[a]) / 6).toFixed(1)} ${(px[i + 1] - (px[b] - px[i]) / 6).toFixed(1)},${(py[i + 1] - (py[b] - py[i]) / 6).toFixed(1)} ${px[i + 1].toFixed(1)},${py[i + 1].toFixed(1)}`;
+    }
+    return d;
+  };
+  return `${seg(xs, top, true)} ${seg([...xs].reverse(), [...bottom].reverse(), false)} Z`;
+}
+/** Where a band's name fits: the point where it is thickest, kept off the ends and away from the numbered pins (`free`). */
+const bandLabelAt = (l: StreamLayer, n: number, free: (i: number) => boolean = () => true) => { let best = -1, w = 0; for (let i = 2; i < n - 2; i++) { const t = l.y1[i] - l.y0[i]; if (t > w && free(i)) { w = t; best = i; } } return { i: best < 0 ? l.peak : best, w }; };
+
+/**
+ * How a topic spread: one band per kind of source over the last 14 days, as thick as its items, starting where that kind first had it. The order the kinds had the latest wave in
+ * (Who said it first) is numbered on the stream and spelled out under it, with how long after the first each came; new papers on the subject sit on a rail above.
+ * Inline SVG, no script. The bands are of different units of attention and are only drawn side by side, never added into one number.
+ */
+function spreadHtml(d: TopicData): string {
+  const dots: TimelineDot[] = d.timeline ?? [];
+  if (dots.length < 2) return '';
+  const S = 42, kinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).filter((k) => dots.some((t) => t.kind === k));
+  const series = kinds.map((k) => { const v = new Array<number>(S).fill(0); for (const t of dots) if (t.kind === k) v[Math.min(S - 1, Math.max(0, Math.round(t.x * S - 0.5)))] += t.n; return { key: k, values: soften(v) }; });
+  const lay = streamLayout(series, { order: 'inside-out' });
+  if (!lay.layers.length) return '';
+  const W = 720, H = 236, L = 8, R = 8, top = 40, bottom = 26, from = d.first.since, span = 14 * 86_400_000;
+  const xs = Array.from({ length: S }, (_, i) => L + ((i + 0.5) / S) * (W - L - R)), tx = (ts: number) => L + Math.min(1, Math.max(0, (ts - from) / span)) * (W - L - R);
+  const room = H - top - bottom, k = Math.min((room * 0.92) / Math.max(1e-9, lay.max - lay.min), 26), mid = top + room / 2, ty = (v: number) => mid - v * k;
+  const bands = lay.layers.map((l) => `<path class="sb k-${l.key}" d="${bandPath(xs, l.y1.map(ty), l.y0.map(ty))}"><title>${esc(KIND_NAME[l.key as EvKind])}: ${n(Math.round(l.total))} ${Math.round(l.total) === 1 ? 'item' : 'items'}</title></path>`).join('');
+  // the order of the latest wave, numbered where each kind came in
+  const arr = d.first.arrivals.filter((a) => a.ts >= from), at = (kind: EvKind) => lay.layers.find((l) => l.key === kind);
+  const pins = arr.map((a, i) => { const l = at(a.kind); if (!l) return ''; const x = tx(a.ts), j = Math.min(S - 1, Math.max(0, Math.round(((a.ts - from) / span) * S - 0.5))), y = ty((l.y0[j] + l.y1[j]) / 2);
+    return `<g class="spin"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9"/><text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle">${i + 1}</text><title>${esc(`${i + 1}. ${KIND_NAME[a.kind]}, ${stampUtc(a.ts)}`)}</title></g>`; }).join('');
+  const pinX = arr.map((a) => tx(a.ts));
+  const names = lay.layers.map((l) => { const at = bandLabelAt(l, S, (i) => pinX.every((px) => Math.abs(px - xs[i]) > 30)); return at.w * k >= 15 ? `<text class="sbl" x="${xs[at.i].toFixed(1)}" y="${(ty((l.y0[at.i] + l.y1[at.i]) / 2) + 4.5).toFixed(1)}" text-anchor="middle">${esc(KIND_MARK[l.key as EvKind].short)}</text>` : ''; }).join('');
+  const papers = d.papers.list.filter((p) => p.published >= from && p.published <= from + span);
+  const rail = papers.length ? `<line class="srail" x1="${L}" x2="${W - R}" y1="14" y2="14"/>${papers.map((p) => { const x = tx(p.published); return `<path class="spaper" d="M${x.toFixed(1)},7 L${(x + 6).toFixed(1)},14 L${x.toFixed(1)},21 L${(x - 6).toFixed(1)},14 Z"><title>${esc(p.title)} (${esc(date(p.published))})</title></path>`; }).join('')}<text class="sax" x="${L}" y="33">${n(papers.length)} new ${papers.length === 1 ? 'paper' : 'papers'}</text>` : '';
+  const days = d.series.days, ticks = days.length ? [0, Math.floor((days.length - 1) / 2), days.length - 1].map((i, j) => `<text class="sax" x="${(j === 0 ? L : j === 2 ? W - R : W / 2).toFixed(0)}" y="${H - 6}" text-anchor="${j === 0 ? 'start' : j === 2 ? 'end' : 'middle'}">${esc(shortDay(days[i]))}</text>`).join('') : '';
+  const flow = arr.length > 1 ? `<ol class="sflow" aria-label="The order the kinds of source had the latest wave in">${arr.map((a, i) => `<li><span class="sk k-${a.kind}" aria-hidden="true"></span><b>${i + 1}. ${esc(KIND_NAME[a.kind])}</b><small>${a.lag <= TIE_MS ? (i ? 'at the same time' : esc(stampUtc(a.ts))) : '+' + esc(lagWords(a.lag))}</small></li>`).join('')}</ol>` : '';
+  const words = lay.layers.slice().sort((a, b) => a.start - b.start).map((l) => `${KIND_NAME[l.key as EvKind]} from ${shortDay(days[Math.min(days.length - 1, Math.floor((l.start / S) * days.length))] ?? days[0])}, most around ${shortDay(days[Math.min(days.length - 1, Math.floor((l.peak / S) * days.length))] ?? days[0])}`).join('; ');
+  const label = `How it spread over ${days.length} days: ${words}.${papers.length ? ` ${papers.length} new papers on the subject.` : ''}${arr.length ? ' ' + firstSentence(d.first) : ''}`;
+  return `<h2 class="sect">How it spread</h2><div class="spread"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}"><line class="smid" x1="${L}" x2="${W - R}" y1="${mid}" y2="${mid}"/>${rail}${bands}${names}${pins}${ticks}</svg></div>
+${flow}<p class="meta">One band per kind of source, as thick as its items at the time${papers.length ? '; diamonds above are new papers on the subject' : ''}. Numbers mark the order the kinds had the latest wave in, among the sources we follow; it does not say where the story began. Each kind is shown in its own band and never added into one number.</p>`;
 }
 
 function firstPanel(d: TopicData): string {
@@ -845,6 +903,7 @@ export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', len
 ${lifeHtml(d.series)}
 <p class="meta">Items per day over the last 14 days: bars for each day, the curve their three-day average${d.series.usual ? ', the dashed line the usual level' : ''}. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p>
 ${evidenceHtml(d)}
+${spreadHtml(d)}
 ${timelineHtml(d)}
 <h2 class="sect">The angles</h2>${tabs}
 <section id="angle">${topicPanel(d, angle)}</section>
