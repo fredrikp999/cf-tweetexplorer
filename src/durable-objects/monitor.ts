@@ -45,6 +45,8 @@ const HINT_TOP = 25, HINT_MAX = 60, NAME_POOL = 400, NAME_EMBED_MAX = 200, SUGGE
 const RESEARCH_EVERY_MS = 6 * 3_600_000, RESEARCH_FIRST_DAYS = 14, RESEARCH_KEEP_DAYS = 60, RESEARCH_TOP_DAYS = 30, RESEARCH_PAGE = 25, HF_DAYS = 5, HF_FIRST_DAYS = 35;
 const MIN_INTERVAL = 15, MAX_INTERVAL = 86_400;
 const SIGNAL_KEEP_DAYS = 30;   // Signal keeps daily term counts this long: two windows of at most SIGNAL_MAX_DAYS, with room to spare
+/** The days of the heat calendars (a topic page, the landing page): all the daily counts that are kept. */
+const HEAT_DAYS = SIGNAL_KEEP_DAYS;
 const SIGNAL_MAX_DAYS = 14;
 const FIRST_MAX_ITEMS = 8000;   // the newest items Who Said It First reads; anything older is not judged
 const BRIEF_WEIGHT = 2;    // the starting weight of a group that only holds briefing posts
@@ -396,6 +398,15 @@ export class MonitorDO extends DurableObject<Env> {
     }
     return { state: 'ready' as const, built: row.built, from: m.from, days: Math.floor((row.built - start) / 86_400_000), lagDays: 2, topics: shown, leaves: m.leaves, joins: m.joins, papers, lenses: lenses.map((l) => ({ key: l.key, name: l.name })) };
   }
+  /** Mentions per day of a topic's names (`names`, as counted in the terms table) for `days` (ISO, oldest first), from the watches `keep` allows. */
+  private dailyCounts(names: string[], keep: (watch: string) => boolean, days: string[]): number[] {
+    const counts = days.map(() => 0), at = new Map(days.map((d, i) => [d, i] as const));
+    for (const r of this.ctx.storage.sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${this.tables().terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify(names), days[0])) {
+      const i = at.get(r.day);
+      if (i !== undefined && keep(r.watch)) counts[i] += r.n;
+    }
+    return counts;
+  }
   /**
    * What the landing page needs besides Signal: the latest written summaries (by topic address), the last 14 days of mentions for the topics asked for (`spark`: topic names),
    * the papers of the last week with how much attention each has had, the research topics that are rising, and the most reacted articles and Hacker News stories of public feed pages.
@@ -407,13 +418,11 @@ export class MonitorDO extends DurableObject<Env> {
     // The daily counts of a card: only the groups of the Signal it is on, so a politics card does not count AI sources.
     const pub = new Set(this.boards().filter((b) => b.public && (!boardSlug || b.slug === boardSlug)).flatMap((b) => b.groups)), { of } = await this.groups();
     const days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), series: Record<string, number[]> = {};
+    const days30 = Array.from({ length: HEAT_DAYS }, (_, i) => dayOf(now - (HEAT_DAYS - 1 - i) * 86_400_000)), heat = days30.map(() => 0);
     for (const term of spark) {
-      const counts = days.map(() => 0);
-      for (const r of sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${this.tables().terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify(this.namesOf(term)), days[0])) {
-        const g = of.get(r.watch), i = days.indexOf(r.day);
-        if (g && pub.has(g) && i >= 0) counts[i] += r.n;
-      }
-      series[term] = counts;
+      const c30 = this.dailyCounts(this.namesOf(term), (w) => { const g = of.get(w); return !!g && pub.has(g); }, days30);
+      series[term] = c30.slice(-14);
+      c30.forEach((v, i) => { heat[i] += v; });
     }
     const papers = sql.exec<{ id: string; title: string; published: number; signals: string; authors: string }>('SELECT id, title, published, signals, authors FROM research_papers WHERE published >= ? ORDER BY published DESC LIMIT 600', now - 7 * 86_400_000).toArray().map((r) => {
       const a = attentionOf(JSON.parse(r.signals) as PaperSignals, JSON.parse(r.authors) as string[]);
@@ -422,7 +431,7 @@ export class MonitorDO extends DurableObject<Env> {
     const risingResearch = this.pulseView().topics.filter((t) => t.state === 'rising' || t.state === 'spike').map((t) => ({ slug: t.slug, title: t.title, state: t.state }));
     const reads = new Map<string, ReturnType<MonitorDO['viewItems']>[number]>();
     for (const v of this.views().filter((x) => x.public)) for (const i of this.viewItems({ ...v, count: 60, show: 'top', days: 7, perSource: false })) if (i.url && (i.kind === 'rss' || i.kind === 'hn') && !reads.has(i.url)) reads.set(i.url, i);
-    return { lines, series, days, papers, risingResearch, reads: [...reads.values()].slice(0, 80) };
+    return { lines, series, days, heat: { days: days30, counts: heat }, papers, risingResearch, reads: [...reads.values()].slice(0, 80) };
   }
   /**
    * A topic's items for the public MCP server (`get_topic_items`), 25 a page, by kind of source and newest or most reacted first. Only for a Signal that shows its sources (like the Talk angle);
@@ -1557,6 +1566,8 @@ export class MonitorDO extends DurableObject<Env> {
     const days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), counts = days.map(() => 0);
     for (const h of hits) { const d = days.indexOf(dayOf(h.ts)); if (d >= 0) counts[d]++; }
     const papers = this.topicPapers(names), segments = evidenceSegments(items, papers, proof), state = topicState(topic);
+    const heatDays = Array.from({ length: HEAT_DAYS }, (_, i) => dayOf(now - (HEAT_DAYS - 1 - i) * 86_400_000)), boardGroups = new Set(board.groups), { of: groupOf } = await this.groups();
+    const heat = { days: heatDays, counts: this.dailyCounts([...new Set(names.flatMap((x) => this.namesOf(x)))], (w) => boardGroups.has(groupOf.get(w) ?? ''), heatDays) };
     const byKind: TopicData['counts'] = {};
     for (const i of items) byKind[i.kind] = (byKind[i.kind] ?? 0) + 1;
     const weight = (i: EvItem) => Math.max(0, i.likes) + 2 * Math.max(0, i.replies) + Math.max(0, i.views) / 100;
@@ -1580,7 +1591,7 @@ export class MonitorDO extends DurableObject<Env> {
       talk, papers, related,
       // Step 7: the order the kinds of source had it in, items over time, and videos. Titles and links only on a Signal that shows its sources.
       first: firstByKind(wide, { since: now - 14 * 86_400_000, hide: !proof }), timeline: timelineDots(wide, { from: now - 14 * 86_400_000, to: now, hide: !proof }),
-      watch: this.topicWatch(wide, names, proof),
+      watch: this.topicWatch(wide, names, proof), heat,
     };
   }
   /** Videos and talks on a topic: the Signal's YouTube items (when it shows its sources) and matches from the public feed pages, which are public whatever the Signal shows. */

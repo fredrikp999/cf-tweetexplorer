@@ -24,6 +24,7 @@ import { CARD_FONT, CARD_W, shareCardSvg } from './shareCard';
 import { svgToPng } from '../media/png';
 import { PHASE_LABEL, PHASE_MARK, PHASE_TRACK, lifecycle, smooth, type Lifecycle } from '../signal/lifecycle';
 import { soften, streamLayout, type StreamLayer } from '../signal/stream';
+import { WEEKDAYS, calendar } from '../signal/calendar';
 import { STREAM_TOPICS, loadOverview } from './overview';
 import { overviewOut } from './agentText';
 import type { Layout } from '../signal/landscape';
@@ -235,6 +236,11 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .tsb{stroke:var(--card);stroke-width:1.2;fill-opacity:.86;transition:fill-opacity .15s}.tstream a:hover .tsb,.tstream a:focus .tsb{fill-opacity:1;stroke:var(--text);stroke-width:1.5}.tstream:hover .tsb{fill-opacity:.55}.tstream:hover a:hover .tsb{fill-opacity:1}
 .tsl{fill:#fff;font-weight:700;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,.3);stroke-width:2.5px}
 .tskey{list-style:none;margin:8px 0 2px;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13.5px}.tskey li{display:flex;align-items:center;gap:6px}.tskey .sk{width:11px;height:11px;border-radius:3px}.tskey a{color:var(--text);text-decoration:none}.tskey a:hover{color:var(--accent);text-decoration:underline}
+.heat{display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center;margin:0 0 8px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:var(--sh1)}.heat svg{display:block;max-width:100%;height:auto}
+.heattext{flex:1 1 14rem;font-size:14px;color:var(--muted)}.heattext p{margin:0 0 6px}.heattext b{color:var(--text);font-size:22px}
+.hc.h0,.hkey .h0{fill:var(--line);background:var(--line)}.hc.h1,.hkey .h1{fill:color-mix(in srgb,var(--hc) 16%,var(--card));background:color-mix(in srgb,var(--hc) 16%,var(--card))}.hc.h2,.hkey .h2{fill:color-mix(in srgb,var(--hc) 38%,var(--card));background:color-mix(in srgb,var(--hc) 38%,var(--card))}
+.hc.h3,.hkey .h3{fill:color-mix(in srgb,var(--hc) 66%,var(--card));background:color-mix(in srgb,var(--hc) 66%,var(--card))}.hc.h4,.hkey .h4{fill:var(--hc);background:var(--hc)}.hc:hover{stroke:var(--text);stroke-width:1.5}
+.heat{--hc:var(--lc,var(--accent))}.hkey{display:inline-flex;align-items:center;gap:3px;font-size:12px}.hkey i{display:inline-block;width:11px;height:11px;border-radius:3px}
 .tline{margin:0 0 6px}.tline svg{display:block;width:100%;height:auto;max-width:30rem}.tline text{fill:var(--muted);font-size:13px}.tline .base{stroke:var(--line);stroke-width:1}.tline .lane{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}.tline .dot{fill:var(--bar);stroke:var(--card);stroke-width:1.5}
 .tkey{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted)}.tkey b{color:var(--bar);margin-right:4px}.twords{margin:0 0 20px;padding-left:1.2em;color:var(--muted);font-size:13.5px}
 .firstsay{font-size:17px;max-width:44rem;margin:0 0 12px}.firstlist{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:10px;max-width:44rem}.firstlist li{border-left:3px solid var(--bar);padding-left:12px}.firstlist .when{color:var(--muted);font-size:13.5px}.firstlist .fnum{display:inline-block;min-width:1.6em;font-weight:700;color:var(--bar)}
@@ -425,7 +431,7 @@ ${ctx.reports.length ? `<h2 class="sect">Reports</h2><ul class="topics">${report
 
 // ---- The landing page at / (INTENT.md section 6): top bar, since your last visit, in brief, the landscape (a ranked list until step 5 draws it), rising, lens cards, research, watch and read.
 /** What the landing page reads besides the briefings and Signal: the Monitor's `landing-public`. */
-export interface LandingExtras { lines: Record<string, string>; series: Record<string, number[]>; days: string[]; papers: RecentPaper[]; risingResearch: Array<{ slug: string; title: string; state: string }>; reads: ReadItem[] }
+export interface LandingExtras { lines: Record<string, string>; series: Record<string, number[]>; days: string[]; /** The mentions of all the topics asked for, per day over 30 days (the heat calendar). */ heat?: { days: string[]; counts: number[] }; papers: RecentPaper[]; risingResearch: Array<{ slug: string; title: string; state: string }>; reads: ReadItem[] }
 export interface LandingData { /** The area of the page (default: the one of the Ctx). */ area?: Area; window: LandingWindow; lenses: Lens[]; lens?: Lens; /** Signal for the window, and for 7 days (what In brief matches against). */ sig: PubSignal | null; sig7: PubSignal | null; extras: LandingExtras | null; /** Where the bubbles of the landscape sit; the frame is drawn only when there is a layout. */ landscape?: Layout | null }
 
 /** The address of the landing page of an area with a lens and a window. */
@@ -544,7 +550,8 @@ ${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in
     if (!ex?.days?.length) return '';
     const rows = rank.rows.filter((r) => !r.part && (!lens || r.inLens)).map((r) => r.topic).filter((t) => (ex.series[t.term.toLowerCase()] ?? []).some((v) => v > 0)).slice(0, STREAM_TOPICS);
     if (rows.length < 2) return '';
-    return `<section aria-labelledby="h-stream"><h2 class="lh" id="h-stream">Two weeks of talk${lens ? ': ' + esc(lens.name) : ''}</h2>${topicStream(rows.map((t) => ({ term: t.term, label: t.label, href: topicUrl(t.term, area), values: ex.series[t.term.toLowerCase()] })), ex.days, lens?.color)}</section>`;
+    const hm = ex.heat?.counts.some((v) => v > 0) ? `<h3 class="azh">The last ${ex.heat.days.length} days</h3>${heatHtml(ex.heat, `Mentions of these ${rows.length} topics`)}` : '';
+    return `<section aria-labelledby="h-stream"><h2 class="lh" id="h-stream">Two weeks of talk${lens ? ': ' + esc(lens.name) : ''}</h2>${topicStream(rows.map((t) => ({ term: t.term, label: t.label, href: topicUrl(t.term, area), values: ex.series[t.term.toLowerCase()] })), ex.days, lens?.color)}${hm}</section>`;
   });
 
   const research = guard(() => {
@@ -879,6 +886,24 @@ function topicStream(topics: Array<{ term: string; label: string; href: string; 
 <p class="meta">Each band is a topic, as thick as its mentions each day across the sources this page counts; the bands are stacked around a moving centre, so a band&rsquo;s height, not its place, is what counts. Click one to open it.</p></div>`;
 }
 
+/**
+ * A heat calendar (src/signal/calendar.ts): a square per day, a column per week and a row per weekday, darker for busier days. Each square says its day and count on hover;
+ * the sentences under it (busiest day, a weekday that stands out) are its text form. Inline SVG, no script.
+ */
+function heatHtml(h: { days: string[]; counts: number[] } | undefined, what: string): string {
+  if (!h?.days.length) return '';
+  const c = calendar(h.days, h.counts);
+  if (!c.total) return '';
+  const S = 18, G = 4, L = 34, T = 18, W = L + c.weeks * (S + G), H = T + 7 * (S + G);
+  const cells = c.cells.map((x) => `<rect class="hc h${x.level}" x="${L + x.col * (S + G)}" y="${T + x.row * (S + G)}" width="${S}" height="${S}" rx="4"><title>${esc(shortDay(x.day))}: ${n(x.n)} ${x.n === 1 ? 'mention' : 'mentions'}</title></rect>`).join('');
+  const rows = [0, 2, 4].map((r) => `<text class="sax" x="${L - 6}" y="${T + r * (S + G) + S - 5}" text-anchor="end">${WEEKDAYS[r].slice(0, 3)}</text>`).join('');
+  let lastMonth = '';
+  const months = c.cells.filter((x) => x.row === 0 || x === c.cells[0]).map((x) => { const m = shortDay(x.day).split(' ')[1]; if (m === lastMonth) return ''; lastMonth = m; return `<text class="sax" x="${L + x.col * (S + G)}" y="12">${esc(m)}</text>`; }).join('');
+  const key = `<span class="hkey" aria-hidden="true">Less ${[0, 1, 2, 3, 4].map((l) => `<i class="h${l}"></i>`).join('')} More</span>`;
+  return `<div class="heat"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(`${what}, per day over the last ${h.days.length} days: ${n(c.total)} in all. ${c.busiest} ${c.pattern}`)}">${months}${rows}${cells}</svg>
+<div class="heattext"><p><b>${n(c.total)}</b> ${c.total === 1 ? 'mention' : 'mentions'} in ${h.days.length} days</p>${c.busiest ? `<p>${esc(c.busiest)}</p>` : ''}${c.pattern ? `<p>${esc(c.pattern)}</p>` : ''}${key}</div></div>`;
+}
+
 function firstPanel(d: TopicData): string {
   const f = d.first, say = firstSentence(f);
   if (!f.arrivals.length) return '<p class="meta">No mention with a time of day was logged for this topic in the last two weeks, so there is no order to show.</p>';
@@ -941,6 +966,7 @@ ${lifeHtml(d.series)}
 ${evidenceHtml(d)}
 ${spreadHtml(d)}
 ${timelineHtml(d)}
+${d.heat?.counts.some((v) => v > 0) ? `<h2 class="sect">The last ${d.heat.days.length} days</h2>${heatHtml(d.heat, `Mentions of ${d.label}`)}<p class="meta">Mentions per day as Signal counts them (the topic&rsquo;s names in the items of its sources), over all the days the counts are kept.</p>` : ''}
 <h2 class="sect">The angles</h2>${tabs}
 <section id="angle">${topicPanel(d, angle)}</section>
 ${d.related.length ? `<h2 class="sect">Goes with</h2><p class="meta">${d.related.map((r) => `<a href="${esc(topicHref(r.slug, d.area))}">${esc(r.label)}</a>`).join(' &middot; ')}</p>` : ''}`,

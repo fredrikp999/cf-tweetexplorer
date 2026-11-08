@@ -149,6 +149,8 @@ export interface TopicData {
   /** Step 7 angles (src/signal/topicview.ts): the order the kinds of source had it in, items over time, and videos. Titles and links only when the Signal shows its sources (videos from feed pages are public anyway). */
   first: TopicFirst; timeline: TimelineDot[]; watch: TopicWatch[];
   related: Array<{ slug: string; label: string }>;
+  /** Mentions per day for the heat calendar: the 30 days the counts are kept, from the terms table (names as Signal counts them, so they can differ a little from the items above). */
+  heat?: { days: string[]; counts: number[] };
   /** Added by src/site/topicData.ts (they live in the Publish object). */
   briefings?: TopicBriefing[];
 }
