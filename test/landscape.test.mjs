@@ -126,3 +126,17 @@ describe('broad topics and lens layout', async () => {
     assert.ok(l.bubbles[0].r > 64);
   });
 });
+
+describe('replayFrames', async () => {
+  const { replayFrames, labelOfKey } = await import('../src/signal/landscape.ts');
+  const lay = (keys, label = true) => JSON.stringify({ w: 1000, h: 640, clusters: [], bubbles: keys.map((k, i) => ({ key: k, ...(label ? { label: k.toUpperCase() } : {}), x: 100 + i * 50, y: 100, r: 20, cluster: '' })) });
+  test('the days before today, oldest first, at most max, with names', () => {
+    const rows = [{ day: '2026-11-03', json: lay(['b']) }, { day: '2026-11-01', json: lay(['a']) }, { day: '2026-11-02', json: lay(['a', 'b'], false) }, { day: '2026-11-04', json: lay(['c']) }, { day: '2026-10-31', json: '{bad' }];
+    const f = replayFrames(rows, '2026-11-04', 2);
+    assert.deepEqual(f.map((x) => x.day), ['2026-11-02', '2026-11-03']);
+    assert.deepEqual(f[0].bubbles.map((b) => b.l), ['a', 'b']);
+    assert.equal(f[1].bubbles[0].l, 'B');
+    assert.deepEqual(Object.keys(f[1].bubbles[0]).sort(), ['k', 'l', 'r', 'x', 'y']);
+  });
+  test('a name from an address', () => assert.equal(labelOfKey('mcp-auth-bypass'), 'mcp auth bypass'));
+});

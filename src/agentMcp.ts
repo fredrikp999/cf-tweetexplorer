@@ -23,7 +23,7 @@ import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPromp
 
 /** The Landscape view of get_overview. Bump the suffix when the page changes: hosts keep the resource they were given. */
 /** v3: the view keeps the area of the data it was given (politics has its own lenses) and passes it back to get_overview. */
-export const LANDSCAPE_UI = 'ui://undercurrent/landscape-v4.html';
+export const LANDSCAPE_UI = 'ui://undercurrent/landscape-v5.html';
 /** The Topic hub, the view of get_topic. */
 export const TOPIC_UI = 'ui://undercurrent/topic-v3.html';
 /** The Research map, the view of get_papers (it reads its data with get_research_map). */

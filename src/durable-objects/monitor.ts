@@ -18,7 +18,7 @@ import { distinctive, findEvergreen, notSteady, rising, scoreTerms, type Counts,
 import { boostByEngagement, indexItems, mergeTopics, nestTopics, partsAfterParents, REACTION_CAP, relatedTerms, topicEngagement, topicItems, type TopicItem } from '../signal/topics';
 import { QUIET_MS, findWaves, foldTerm, publicFirst, rankWaves, watchStartMs, scoreFirsts, type FirstItem } from '../signal/first';
 import { cleanTitle, isBait } from '../signal/clean';
-import { cleanLayout, coCounts, layoutKeys, layoutLandscape, type Layout } from '../signal/landscape';
+import { cleanLayout, coCounts, layoutKeys, layoutLandscape, replayFrames, type Layout, type ReplayFrame } from '../signal/landscape';
 import { firstByKind, pickWatch, timelineDots, type TopicWatch } from '../signal/topicview';
 import { evidenceSegments, fallbackSummary, topicSlug, topicState, usualLevel, type EvItem, type EvKind, type TopicData, type TopicPaper } from '../signal/topicpage';
 import { areaHint, areaOf, parseArea, rankByArea, type Area } from '../signal/area';
@@ -1202,6 +1202,13 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('DELETE FROM landscape WHERE day < ?', dayOf(now - 14 * 86_400_000));
     return layout;
   }
+  /** The layouts kept for the days before today (at most a week), for the landscape's replay. Read only: a day nobody opened the page has no layout and is simply missing. */
+  private landscapeReplay(slug: string, daysIn: number): ReplayFrame[] {
+    const board = this.boards().find((b) => b.public && b.slug === slug), win = daysIn === 3 || daysIn === 7 ? daysIn : 1;
+    if (!board) return [];
+    const rows = this.ctx.storage.sql.exec<{ day: string; json: string }>('SELECT day, json FROM landscape WHERE board = ? AND win = ? AND day >= ? ORDER BY day', board.id, win, dayOf(Date.now() - 8 * 86_400_000)).toArray();
+    return replayFrames(rows, today());
+  }
   private async signalOverview(daysIn: number, boardRef = '', hideSteady = true) {
     const board = boardRef ? this.findBoard(boardRef) : undefined;
     if (boardRef && !board) throw new Error('unknown Signal');
@@ -1740,6 +1747,13 @@ export class MonitorDO extends DurableObject<Env> {
           const slug = url.searchParams.get('slug') ?? '', days = Number(url.searchParams.get('days')), k = `land|${slug}|${days}`, hit = this.pubCache.get(k);
           if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
           const v = await this.landscapePublic(slug, days);
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
+        if (name === 'landscape-replay-public') {   // the layouts of the last days, for the replay on the landing page: kept for two minutes
+          const slug = url.searchParams.get('slug') ?? '', days = Number(url.searchParams.get('days')), k = `landr|${slug}|${days}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = this.landscapeReplay(slug, days);
           this.pubCache.set(k, { at: Date.now(), v });
           return json(v);
         }

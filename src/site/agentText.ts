@@ -8,7 +8,7 @@ import { anchorOf } from './brief.ts';
 import { inBrief, cardLine, firstLine, landscapeOf, mixText, pickReads, plainLine, rankList, researchStrip, risingStrip, sinceCounts, type BriefIn, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing.ts';
 import { AREA_HOME, AREA_LABEL, AREAS, topicHref, type Area } from '../signal/area.ts';
 import { lensesOfTopic, type Lens } from '../signal/lens.ts';
-import type { Layout } from '../signal/landscape.ts';
+import type { Layout, ReplayFrame } from '../signal/landscape.ts';
 import { KIND_TITLE, KIND_WORDS, firstCaveat, firstSentence, lagWords, stampUtc, startedWithin, timelineWords, type TopicFirst } from '../signal/topicview.ts';
 import { SEARCH_KINDS, KIND_TITLE as SEARCH_TITLE, type SearchAnswer } from './search.ts';
 import { roughly, STATE_LABEL, topicSlug, type EvItem, type EvKind, type TopicData, type TopicState } from '../signal/topicpage.ts';
@@ -92,6 +92,8 @@ export interface OverviewIn {
   extras: { lines: Record<string, string>; papers: RecentPaper[]; risingResearch: Array<{ slug: string; title: string; state: string }>; reads: ReadItem[] } | null;
   briefs: BriefIn[];
   landscape?: Layout | null;
+  /** The landscape of the days before today, for the replay of the landing page's picture (only /overview.json asks for it). */
+  replay?: ReplayFrame[] | null;
 }
 const stateOf = (t: SigTopic, baselineOk: boolean): TopicState | null => (t.isNew ? 'new' : t.change !== null && t.change >= 1.5 ? 'rising' : t.change !== null && baselineOk && t.change <= 0.67 ? 'falling' : null);
 
@@ -115,6 +117,7 @@ export function overviewOut(d: OverviewIn, origin: string, detail: Detail = 'bri
     since: counts, inBrief: lines.map((l) => ({ text: l.text, topic: l.topic ? l.href.replace('/t/', '') : null, url: origin + l.href, briefing: { slug: l.briefing.slug, title: l.briefing.title, url: `${origin}/${l.briefing.slug}` } })),
     rising: rising.map((r) => ({ slug: topicSlug(r.term), label: r.label, state: r.state, change: r.change, url: origin + topicPath(topicSlug(r.term), area) })),
     landscape: landscapeOf(d.landscape, topics, { area, lens, lenses, groups, baselineOk: !!sig?.baselineOk, origin, stateOf: (t) => stateOf(t, !!sig?.baselineOk) }),
+    ...(d.replay?.length && !lens ? { replay: { today: new Date(now).toISOString().slice(0, 10), frames: d.replay } } : {}),
     topics: ranked, outsideLens: rank.outside.map((t) => ({ slug: slugOf(t), label: t.label, url: urlOf(t) })),
     research: !ai ? null : { newPapers: rs.newPapers, paperDays, discussed: rs.discussed, risingTopics: (extras?.risingResearch ?? []).map((r) => ({ slug: r.slug, title: r.title, state: r.state, url: `${origin}/research/${r.slug}` })),
       mostDiscussed: rs.top.map((p) => ({ id: p.id, title: p.title, url: `https://arxiv.org/abs/${p.id}` })), mapUrl: origin + '/research/map' },

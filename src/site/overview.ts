@@ -2,7 +2,7 @@
 // Every read is on its own: one source failing leaves that block empty and the rest as it was. Never starts a model call.
 import { pickBoard, topicsOfArea, type Area } from '../signal/area';
 import { chosenLens, type Lens } from '../signal/lens';
-import type { Layout } from '../signal/landscape';
+import type { Layout, ReplayFrame } from '../signal/landscape';
 import { rankList, type BriefIn, type LandingWindow, type SigTopic } from './landing';
 import type { LandingExtras, PubBoard, PubSignal, PubTopic } from './public';
 
@@ -18,6 +18,8 @@ export interface OverviewData {
   briefs: BriefIn[];
   /** Where the landscape's bubbles sit (kept by the Monitor for the day); null when there is none yet. */
   landscape: Layout | null;
+  /** The kept layouts of the days before today, oldest first, when asked for (`replay`) and no lens is chosen; else null. */
+  replay: ReplayFrame[] | null;
 }
 
 export const briefsOf = (topics: PubTopic[]): BriefIn[] => topics.map((t) => ({ slug: t.slug, title: t.title, publishedAt: t.latest.publishedAt, tldr: t.latest.tldr, themes: t.latest.themes, position: t.position }));
@@ -33,7 +35,7 @@ export const loadBoards = (env: Env): Promise<PubBoard[]> => monitor(env, 'signa
  * The overview of an area (AI unless asked) for a lens and a window (1, 3 or 7 days). `boards` and `briefs` are passed by a caller that has them already (the page reads them for its menu); either may hold both areas, the area picks.
  * Papers, feed pages and what was read most are not tagged with an area: they belong to AI, so a politics overview has none of them.
  */
-export async function loadOverview(env: Env, o: { window: LandingWindow; lens?: string | null; boards?: PubBoard[]; briefs?: BriefIn[]; area?: Area; /** A signed-in reader's own lenses of the area (src/site/me.ts): chosen like the site's. */ own?: Lens[] }): Promise<OverviewData> {
+export async function loadOverview(env: Env, o: { window: LandingWindow; lens?: string | null; boards?: PubBoard[]; briefs?: BriefIn[]; area?: Area; /** A signed-in reader's own lenses of the area (src/site/me.ts): chosen like the site's. */ own?: Lens[]; /** Also read the layouts of the last days, for the landscape's replay (the landing page's frame; the MCP tool does not). */ replay?: boolean }): Promise<OverviewData> {
   const win = o.window, area = o.area ?? 'ai';
   const [lenses, boards, briefs] = await Promise.all([
     loadLenses(env, area),
@@ -43,11 +45,12 @@ export async function loadOverview(env: Env, o: { window: LandingWindow; lens?: 
   lenses.push(...(o.own ?? []));
   const lens = chosenLens(lenses, o.lens), board = pickBoard(boards, area);
   const signal = (days: number) => (board ? monitor(env, `signal-public?slug=${board.slug}&days=${days}`).then((r) => (r.ok ? (r.json() as Promise<PubSignal>) : null)).then((d) => (d?.top ? d : null)).catch(() => null) : Promise.resolve(null));
-  const [sig, sig7, landscape] = await Promise.all([signal(win), win === 7 ? null : signal(7),
-    board ? monitor(env, `landscape-public?slug=${board.slug}&days=${win}`).then((r) => (r.ok ? (r.json() as Promise<Layout | null>) : null)).catch(() => null) : null]);
+  const [sig, sig7, landscape, replay] = await Promise.all([signal(win), win === 7 ? null : signal(7),
+    board ? monitor(env, `landscape-public?slug=${board.slug}&days=${win}`).then((r) => (r.ok ? (r.json() as Promise<Layout | null>) : null)).catch(() => null) : null,
+    board && o.replay && !lens ? monitor(env, `landscape-replay-public?slug=${board.slug}&days=${win}`).then((r) => (r.ok ? (r.json() as Promise<ReplayFrame[]>) : null)).catch(() => null) : null]);
   // The cards and the streamgraph want a daily count each: ask for the topics that will be on them (the cards take the first six, the stream up to STREAM_TOPICS).
   const cardTerms = sig ? rankList(sig.top as SigTopic[], lens, 15).rows.filter((r) => !r.part && (!lens || r.inLens)).slice(0, STREAM_TOPICS).map((r) => r.topic.term.toLowerCase()) : [];
   let extras = await monitor(env, `landing-public?spark=${encodeURIComponent(cardTerms.join('|'))}${board && area !== 'ai' ? '&board=' + encodeURIComponent(board.slug) : ''}`).then((r) => (r.ok ? (r.json() as Promise<LandingExtras>) : null)).catch(() => null);
   if (extras && area !== 'ai') extras = { ...extras, papers: [], risingResearch: [], reads: [] };
-  return { area, window: win, lenses, lens, board, sig, sig7: win === 7 ? sig : sig7, extras, briefs, landscape: landscape ?? null };
+  return { area, window: win, lenses, lens, board, sig, sig7: win === 7 ? sig : sig7, extras, briefs, landscape: landscape ?? null, replay: replay ?? null };
 }

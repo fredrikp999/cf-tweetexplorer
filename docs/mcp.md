@@ -246,7 +246,7 @@ and, for the Claude app or claude.ai, a custom connector with the same address (
 
 **Areas.** `area: "politics"` on `get_overview` gives the politics landing page's data (first published politics Signal, politics briefings, politics lenses; `research` and `read` are `null`: papers and feed pages are AI's). `structuredContent.area` says which area an answer is from, and a politics topic's `url` ends in `?area=politics`. The `catch_up` prompt takes `area` too. The Landscape view keeps the area of its data and sends it back to `get_overview`, so its lens list is the area's own.
 
-**The Landscape view** (`src/apps/landscape.ts`, `ui://undercurrent/landscape-v4.html`, bump the suffix when the page changes): `get_overview` carries `_meta.ui.resourceUri`, on both `/agent/mcp` and the private `/mcp` (it is registered by `registerAgentTools`). Hosts without MCP Apps get the same text and `structuredContent` as before. The view reads `structuredContent.landscape`:
+**The Landscape view** (`src/apps/landscape.ts`, `ui://undercurrent/landscape-v5.html`, bump the suffix when the page changes): `get_overview` carries `_meta.ui.resourceUri`, on both `/agent/mcp` and the private `/mcp` (it is registered by `registerAgentTools`). Hosts without MCP Apps get the same text and `structuredContent` as before. The view reads `structuredContent.landscape`:
 
 ```
 landscape: { w, h,                                      // the box the coordinates are in (1000 x 640)
@@ -255,7 +255,10 @@ landscape: { w, h,                                      // the box the coordinat
               state: 'new'|'rising'|'falling'|null, change, score,
               lensColor: 'orange'|…|null, inLens: bool|null, mix: 'X 50%, Hacker News 33%'|null }],
   lens: { key, name } | null, lenses: [{ key, name, color, light, dark }] } | null
+replay: { today, frames: [{ day, bubbles: [{ k, x, y, r, l }] }] }   // only in /overview.json (the site's frame), never from the tool
 ```
+
+With `replay` (and no lens) the view shows a **Replay** button: the kept layouts of up to seven days before today play one after another, bubbles moving, growing and fading between days, and the replay ends on today's picture. Nothing moves until it is pressed; with reduced motion the days are shown one by one without the moves. The MCP tool does not send `replay`, so in the Claude app the button never shows.
 
 The view draws it as SVG (hover or focus gives label, state, score, source mix and the topics it goes with; Tab moves between bubbles, Enter opens the topic page). It follows `hostContext.theme` and has a fullscreen button (`ui/request-display-mode`). Its **lens** and **window** controls call `tools/call get_overview` with `{ window, lens? }` through the host and redraw from the reply (`structuredContent`, or the JSON text when a host gives only text; on the site `/viz/host.js` answers from `/overview.json`). A click on a bubble depends on the host (`act` in the view): where the host lets a view message Claude (`hostCapabilities.message`) it sends `ui/message` "Show me the topic <slug>", which makes Claude call `get_topic` and draw the Topic hub (a view cannot swap itself for another tool's view); where it cannot (the site's host.js lists only `openLinks`) it calls `ui/open-link` with the bubble's `url`, the topic page. After the message a button *Open the page instead* is shown. *Pick topics* switches clicks to selecting bubbles; the picks go to Claude's context with `ui/update-model-context` and *Ask Claude about these* sends `ui/message`. These two are shown unless the host lists its capabilities without `message` and `updateModelContext` (the site's host does, so the site has neither buttons); on the site host.js answers both harmlessly anyway.
 

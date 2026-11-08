@@ -18,7 +18,7 @@ const BROAD = new Set('ai artificial intelligence agent agents agentic model mod
 export const isBroadTopic = (label: string): boolean => { const w = String(label).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean); return !w.length || w.every((x) => BROAD.has(x)); };
 
 export interface LandTopic { key: string; label: string; score: number }
-export interface LandBubble { key: string; x: number; y: number; r: number; /** The cluster's id; '' for a topic that has no partner. */ cluster: string }
+export interface LandBubble { key: string; x: number; y: number; r: number; /** The cluster's id; '' for a topic that has no partner. */ cluster: string; /** Its name that day (layouts kept before names were stored have none). */ label?: string }
 export interface LandCluster { id: string; name: string; x: number; y: number; r: number; /** The key of its strongest topic. */ lead: string; members: string[] }
 export interface Layout { w: number; h: number; clusters: LandCluster[]; bubbles: LandBubble[] }
 
@@ -173,7 +173,7 @@ export function layoutLandscape(topics: LandTopic[], co: { n: Map<string, number
   }
 
   const round = (v: number) => Math.round(v * 10) / 10;
-  const bubbles: LandBubble[] = list.map((t) => { const d = pos.get(t.key)!; return { key: t.key, x: round(d.x), y: round(d.y), r: round(d.r), cluster: clusterOf.get(t.key)?.id ?? '' }; });
+  const bubbles: LandBubble[] = list.map((t) => { const d = pos.get(t.key)!; return { key: t.key, label: t.label, x: round(d.x), y: round(d.y), r: round(d.r), cluster: clusterOf.get(t.key)?.id ?? '' }; });
   return {
     w: LAND_W, h: LAND_H, bubbles,
     clusters: clusters.map((c) => { const e = extent(c); return { id: c.id, name: c.name, x: round(e.x), y: round(e.y), r: round(e.r + 8), lead: c.lead, members: c.g }; }),
@@ -188,7 +188,7 @@ export function cleanLayout(raw: unknown): Layout | null {
   const l = raw as Layout | null;
   if (!l || !Array.isArray(l.bubbles) || !Array.isArray(l.clusters)) return null;
   const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
-  const bubbles = l.bubbles.filter((b) => typeof b?.key === 'string' && num(b.x) && num(b.y) && num(b.r) && typeof b.cluster === 'string');
+  const bubbles = l.bubbles.filter((b) => typeof b?.key === 'string' && num(b.x) && num(b.y) && num(b.r) && typeof b.cluster === 'string').map((b) => (b.label === undefined || typeof b.label === 'string' ? b : { ...b, label: undefined }));
   const clusters = l.clusters.filter((c) => typeof c?.id === 'string' && typeof c.name === 'string' && num(c.x) && num(c.y) && num(c.r) && typeof c.lead === 'string' && Array.isArray(c.members));
   return { w: LAND_W, h: LAND_H, bubbles, clusters };
 }
@@ -247,4 +247,25 @@ export function layoutLens(topics: Array<LandTopic & { parent?: string }>): Layo
   const inCluster = new Map<string, string>();
   for (const c of clusters) for (const m of c.members) inCluster.set(m, c.id);
   return { w: LAND_W, h: LAND_H, clusters, bubbles: list.filter((t) => at.has(t.key)).map((t) => ({ key: t.key, x: round(at.get(t.key)!.x), y: round(at.get(t.key)!.y), r: round(at.get(t.key)!.r), cluster: inCluster.get(t.key) ?? '' })) };
+}
+
+// ---- the replay: the layouts of the last days, one after the other
+/** One day of the replay: each bubble as its address, place, size and name. Small on purpose: it rides in the overview JSON. */
+export interface ReplayFrame { day: string; bubbles: Array<{ k: string; x: number; y: number; r: number; l: string }> }
+/** A name for a bubble kept without one (layouts from before names were stored): the words of its address ("mcp-auth-bypass" → "mcp auth bypass"). */
+export const labelOfKey = (key: string): string => key.replace(/-/g, ' ');
+/**
+ * The days before `today` that have a kept layout, oldest first, at most `max` of them, each as a ReplayFrame. Today's own frame is the picture already drawn, so it is not repeated.
+ * A day with no bubbles is left out; a stored layout that does not parse is skipped.
+ */
+export function replayFrames(rows: Array<{ day: string; json: string }>, today: string, max = 7): ReplayFrame[] {
+  const out: ReplayFrame[] = [];
+  for (const r of [...rows].sort((a, b) => (a.day < b.day ? -1 : 1))) {
+    if (r.day >= today) continue;
+    let l: Layout | null = null;
+    try { l = cleanLayout(JSON.parse(r.json)); } catch { l = null; }
+    if (!l?.bubbles.length) continue;
+    out.push({ day: r.day, bubbles: l.bubbles.map((b) => ({ k: b.key, x: b.x, y: b.y, r: b.r, l: b.label || labelOfKey(b.key) })) });
+  }
+  return out.slice(-max);
 }

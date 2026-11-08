@@ -5,6 +5,7 @@
 // A click on a bubble: ask Claude to show the topic where the host allows messages (see act), else open its page.
 // Data: the structuredContent of get_overview (or its JSON text, which is what the site gives): { window, lens: {key,name}|null, landscape: { w, h, clusters: [{id,name,x,y,r,members}],
 //   bubbles: [{slug,label,url,x,y,r,cluster,state,change,score,lensColor,inLens,mix}], lens, lenses: [{key,name,color,light,dark}] } | null, topics: [...], since, rising }.
+// On the site only (no lens): replay: { today, frames: [{ day, bubbles: [{k,x,y,r,l}] }] }, the layouts of the days before today, for the Replay button.
 export default `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 :root{color-scheme:light dark;--bg:#fff;--fg:#1c2b2d;--mut:#566a6d;--line:#d6dedb;--grey:#7d8d90;--ac:#b0245f;--btn:#eef2f0;--halo:rgba(255,255,255,.55)}
@@ -37,12 +38,16 @@ button:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{
 details{margin-top:4px}summary{cursor:pointer;color:var(--mut);font-size:13px}
 ol{margin:6px 0 0;padding-left:0;list-style:none;display:grid;gap:2px}ol li button{display:flex;gap:8px;width:100%;text-align:left;border:0;background:none;padding:3px 4px;border-radius:5px}ol li button:hover{background:var(--btn)}
 ol li .n{flex:1}ol li .t{color:var(--ac);font-size:12.5px}ol li .p{color:var(--mut);font-variant-numeric:tabular-nums}
+#rp{position:absolute;left:8px;bottom:8px;display:flex;gap:10px;align-items:center;z-index:4}#rp button{background:var(--bg);box-shadow:0 1px 8px rgba(0,0,0,.22);font-weight:700;border-color:var(--ac);color:var(--ac)}
+#rdots{display:inline-flex;gap:4px}#rdots i{width:7px;height:7px;border-radius:50%;background:var(--line)}#rdots i.on{background:var(--ac)}
+#rday{position:absolute;left:8px;top:6px;z-index:4;font-weight:800;font-size:15px;color:var(--fg);background:var(--halo);padding:2px 12px;border-radius:999px;pointer-events:none;backdrop-filter:blur(3px)}
+.rb text.lb{pointer-events:none}
 body.full #app{min-height:100vh}
 body.hero #bar,body.hero #lbox,body.hero #note:empty{display:none!important}body.hero #app{padding:8px 10px 6px}body.hero svg{height:340px}body.hero #legend{text-align:center;margin:6px 2px 2px}
 </style></head><body><div id="s">Reading the landscape…</div><div id="app" class="hide">
 <div id="bar"><label>Lens <select id="lens" aria-label="Lens"></select></label><span id="wins" role="group" aria-label="Time window"></span><span class="sp"></span>
 <button id="pickb" class="hide" aria-pressed="false" title="Click bubbles to pick them, then ask Claude about them">Pick topics</button><button id="ask" class="hide"></button><button id="fs" class="hide">Fullscreen</button></div>
-<div id="stage"><svg id="svg" role="group" aria-label="The landscape of topics"></svg><div id="tip" class="hide" role="status"></div></div>
+<div id="stage"><svg id="svg" role="group" aria-label="The landscape of topics"></svg><div id="tip" class="hide" role="status"></div><div id="rday" class="hide" aria-live="polite"></div><div id="rp" class="hide"><button id="play" type="button"></button><span id="rdots" aria-hidden="true"></span></div></div>
 <p id="legend"></p><p id="note" aria-live="polite"></p>
 <details id="lbox"><summary>The topics as a list</summary><ol id="list"></ol></details></div>
 <script>
@@ -92,6 +97,7 @@ function togetherWith(b) {
 
 // ---- drawing
 function draw() {
+  if (playing) { drawReplay(rT); return; }
   var svg = el('svg'), w = L.w, h = L.h, vx = 0, vy = 0, sc, fs, rect;
   svg.textContent = '';
   if (hero) {   // the box around the bubbles and groups, with room for names, instead of the whole layout
@@ -211,6 +217,98 @@ function showTip(b) {
 }
 function hideTip() { el('tip').classList.add('hide'); }
 
+// ---- the replay: the layouts kept for the days before today (D.replay, only on the site's frame and with no lens), played one after another and ending on today's picture.
+// Bubbles move, grow, shrink and fade between days. Nothing moves until the button is pressed; with reduced motion the days are shown one by one, without the moves in between.
+var RF = null, playing = false, rT = 0, rRaf = 0, rLast = 0, rTimer = 0, STEP_MS = 1500;
+var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], WDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function reduced() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+function dayText(iso) { var d = new Date(iso + 'T12:00:00Z'); return isNaN(d) ? iso : WDAYS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()]; }
+function setupReplay() {
+  RF = null;
+  var r = D && D.replay, frames = r && r.frames ? r.frames : [];
+  if (L && !L.lens && frames.length) {
+    RF = frames.slice(-7).map(function (f) { var m = {}; (f.bubbles || []).forEach(function (b) { m[b.k] = b; }); return { day: f.day, m: m }; });
+    var now = {}; L.bubbles.forEach(function (b) { now[b.slug] = { k: b.slug, x: b.x, y: b.y, r: b.r, l: b.label }; });
+    RF.push({ day: r.today, m: now, today: true });
+  }
+  el('rp').classList.toggle('hide', !RF);
+  el('rday').classList.add('hide');
+  renderPlay();
+}
+function renderPlay() {
+  if (!RF) return;
+  var b = el('play'), n = RF.length, mid = rT > 0 && rT < n - 1;
+  b.textContent = playing ? '❚❚ Pause' : mid ? '▶ Go on' : '▶ Replay ' + n + ' days';
+  b.setAttribute('aria-label', playing ? 'Pause the replay' : 'Replay how the landscape changed over the last ' + n + ' days, ending today');
+  var dots = el('rdots'); dots.textContent = '';
+  RF.forEach(function (f, i) { dots.appendChild(mk('i', (playing || mid) && i <= Math.floor(rT + 0.5) ? 'on' : '')); });
+}
+function startReplay() {
+  if (!RF) return;
+  if (rT >= RF.length - 1) rT = 0;
+  playing = true; hideTip(); rLast = 0;
+  el('rday').classList.remove('hide');
+  renderPlay(); drawReplay(rT);
+  if (reduced()) rTimer = setInterval(function () { rT = Math.floor(rT) + 1; if (rT >= RF.length - 1) endReplay(); else { drawReplay(rT); renderPlay(); } }, 1100);
+  else rRaf = requestAnimationFrame(tick);
+}
+function stopReplay() { playing = false; cancelAnimationFrame(rRaf); clearInterval(rTimer); }
+function endReplay() {
+  stopReplay(); rT = RF.length - 1;
+  el('rday').textContent = dayText(RF[RF.length - 1].day) + ' · today';
+  setTimeout(function () { if (!playing) el('rday').classList.add('hide'); }, 1600);
+  draw(); renderPlay();
+}
+function tick(ts) {
+  if (!playing) return;
+  if (!rLast) rLast = ts;
+  rT += Math.min(100, ts - rLast) / STEP_MS; rLast = ts;
+  if (rT >= RF.length - 1) { endReplay(); return; }
+  drawReplay(rT);
+  if (Math.floor(rT * 4) !== Math.floor((rT - 0.02) * 4)) renderPlay();
+  rRaf = requestAnimationFrame(tick);
+}
+function ease(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+/** The box around a set of discs, with room for names, as the hero draws it. */
+function boxOf(list) {
+  var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  list.forEach(function (b) { x0 = Math.min(x0, b.x - b.r); y0 = Math.min(y0, b.y - b.r); x1 = Math.max(x1, b.x + b.r); y1 = Math.max(y1, b.y + b.r); });
+  var pad = Math.max(x1 - x0, y1 - y0) * 0.07 + 4;
+  return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + 2 * pad, h: y1 - y0 + 2 * pad };
+}
+function drawReplay(t) {
+  var n = RF.length, i = Math.min(n - 1, Math.floor(t)), j = Math.min(n - 1, i + 1), f = t - i, e = f < 0.25 ? 0 : f > 0.9 ? 1 : ease((f - 0.25) / 0.65);
+  var A = RF[i].m, B = RF[j].m, keys = {}, k, list = [];
+  for (k in A) keys[k] = 1;
+  for (k in B) keys[k] = 1;
+  for (k in keys) {
+    var a = A[k], b = B[k], o;
+    if (a && b) o = { k: k, x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e, r: a.r + (b.r - a.r) * e, l: b.l || a.l, op: 1 };
+    else if (a) o = { k: k, x: a.x, y: a.y, r: a.r * (1 - e), l: a.l, op: 1 - e };
+    else o = { k: k, x: b.x, y: b.y, r: b.r * e, l: b.l, op: e };
+    if (o.r > 0.5) list.push(o);
+  }
+  var svg = el('svg'), vb, rect, sc, fs;
+  svg.textContent = '';
+  if (hero) {   // the box around every day's bubbles, closing in on today's box over the last step, so the picture lands where the still one is
+    var all = []; RF.forEach(function (fr) { for (var q in fr.m) all.push(fr.m[q]); });
+    var u = boxOf(all), td = boxOf(L.bubbles.concat(L.clusters)), z = i >= n - 2 ? e : 0;
+    vb = { x: u.x + (td.x - u.x) * z, y: u.y + (td.y - u.y) * z, w: u.w + (td.w - u.w) * z, h: u.h + (td.h - u.h) * z };
+  } else vb = { x: 0, y: 0, w: L.w, h: L.h };
+  svg.setAttribute('viewBox', vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h);
+  rect = svg.getBoundingClientRect();
+  sc = hero && rect.height ? Math.min((rect.width || 600) / vb.w, rect.height / vb.h) : (rect.width || 600) / vb.w;
+  fs = function (px) { return Math.round(px / sc * 10) / 10; };
+  list.sort(function (p, q) { return q.r - p.r; }).forEach(function (o) {
+    var cur = byKey(o.k), col = cur ? colorOf(cur) : null, g = sv('g', { 'class': 'b rb', opacity: Math.max(0, Math.min(1, o.op)).toFixed(3) }), gid = gradient(svg, col || (dark() ? '#8fa4a7' : '#7d8d90'));
+    g.appendChild(sv('circle', { 'class': 'dot', cx: o.x, cy: o.y, r: o.r, fill: 'url(#' + gid + ')', stroke: col || 'var(--grey)' }));
+    if (o.r * sc >= 22) label(g, o, o.r * sc, sc, fs, o.l || o.k);
+    svg.appendChild(g);
+  });
+  var d = RF[e >= 0.5 ? j : i];
+  el('rday').textContent = dayText(d.day) + (d.today ? ' · today' : '');
+}
+el('play').onclick = function () { if (playing) { stopReplay(); renderPlay(); } else startReplay(); };
 // ---- the page around it
 function renderBar() {
   var s = el('lens'), ls = L.lenses || [];
@@ -282,7 +380,8 @@ function show(data) {
   }
   var keep = {}; L.bubbles.forEach(function (b) { if (sel[b.slug]) keep[b.slug] = true; }); sel = keep;
   el('s').classList.add('hide'); el('app').classList.remove('hide');
-  renderBar(); renderLegend(); renderList(); draw();
+  stopReplay(); rT = 0;
+  renderBar(); renderLegend(); renderList(); draw(); setupReplay();
   el('note').textContent = '';
 }
 function reload() {
@@ -365,6 +464,6 @@ window.addEventListener('message', function (e) {
     send({ id: m.id, result: {} });
   }
 });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideTip(); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { hideTip(); if (playing) { stopReplay(); rT = 0; el('rday').classList.add('hide'); draw(); renderPlay(); } } });
 send({ id: 1, method: 'ui/initialize', params: { appInfo: { name: 'undercurrent-landscape', version: '0.1.0' }, appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' } });
 </script></body></html>`;

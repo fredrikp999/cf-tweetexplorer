@@ -1542,7 +1542,7 @@ async function vizData(env: Env, parts: string[], url: URL, me: Me | null = null
   if (parts[0] === 'overview.json' && parts.length === 1) {   // /overview.json?window=&lens=&area=: what get_overview answers, for the landscape frame on the landing page
     const w = url.searchParams.get('window') ?? '1', lens = url.searchParams.get('lens');
     if (!/^[137]$/.test(w) || (lens !== null && !/^[a-z][a-z0-9-]{1,19}$/.test(lens))) return NOT_FOUND_JSON();
-    const area = parseArea(url.searchParams.get('area')), d = await loadOverview(env, { window: windowOf(w), lens, area, own: ownLenses(me, area) });
+    const area = parseArea(url.searchParams.get('area')), d = await loadOverview(env, { window: windowOf(w), lens, area, own: ownLenses(me, area), replay: true });
     return new Response(JSON.stringify(overviewOut(d, url.origin, 'brief').data), { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } });
   }
   if (parts[0] === 'lenses.json' && parts.length === 1) return jsonOf(await env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/lenses-public?area=' + parseArea(url.searchParams.get('area')))));   // /lenses.json?area=: the lenses of an area (AI unless asked): key, name, one line, colour and terms
