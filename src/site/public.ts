@@ -77,6 +77,15 @@ const ISSUE_ID = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
 const date = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' });
 const every = (h: number) => (h < 24 ? `every ${h} hours` : h === 24 ? 'daily' : h === 48 ? 'every other day' : h === 168 ? 'weekly' : `every ${h} hours`);
 
+/**
+ * A chosen lens colours the whole page, not only its masthead: the line under the top bar, the marks before the headings, links on hover, the bars of the ranked list and the heat calendar
+ * take the lens colour (--lc, set on <body> from the top bar's lens class). The lens is also named in words wherever it filters, so colour is never the only cue.
+ */
+const LENS_ACCENT_CSS = `body:has(>.topbar.haslens) .topbar::after{height:3px;background:linear-gradient(90deg,var(--lc),color-mix(in srgb,var(--lc) 55%,transparent) 55%,transparent 90%)}
+body:has(>.topbar.haslens) .lh::before,body:has(>.topbar.haslens) h2.sect::before{background:var(--lc)}
+body:has(>.topbar.haslens) main a:hover{color:color-mix(in srgb,var(--lc) 70%,var(--text))}
+body:has(>.topbar.haslens) .lrow.lensin .lb i{background:var(--lc)}
+body:has(>.topbar.haslens) .page{background:radial-gradient(1200px 260px at 50% -40px,color-mix(in srgb,var(--lc) 12%,transparent),transparent 70%) no-repeat}`;
 const CSS = `
 :root{--bg:#f6f5f1;--card:#fff;--text:#16201f;--muted:#5d6b6a;--line:#e0ddd4;--accent:#b0214f;--on-accent:#fff;--soft:#f9e9ee;--bar:#1f7a8c;--link:#0f6474;--amber:#e09a00;--amber-bg:#fde7a6;--amber-ink:#5c3300;
 --sh1:0 1px 2px rgba(16,32,31,.06),0 1px 1px rgba(16,32,31,.04);--sh2:0 14px 30px -14px rgba(16,32,31,.38),0 2px 4px rgba(16,32,31,.05);--rail:#0c2a31;--rail-text:#b7cfd2;--rail-dim:#7b9ca1;--rail-on:rgba(255,255,255,.1);
@@ -246,6 +255,8 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .firstsay{font-size:17px;max-width:44rem;margin:0 0 12px}.firstlist{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:10px;max-width:44rem}.firstlist li{border-left:3px solid var(--bar);padding-left:12px}.firstlist .when{color:var(--muted);font-size:13.5px}.firstlist .fnum{display:inline-block;min-width:1.6em;font-weight:700;color:var(--bar)}
 .watchcards small{color:var(--muted)}.watchcards .play{position:relative;display:block}.watchcards .play::after{content:'▶';position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.65);color:#fff;border-radius:6px;padding:1px 7px;font-size:12px}
 ${lensColorCss()}
+${LENS_COLORS.map((c) => `body:has(>.topbar.lc-${c}){--lc:var(--lc-${c})}`).join('')}
+${LENS_ACCENT_CSS}
 .lenshead{margin:0 0 14px;padding:10px 14px;border-left:4px solid var(--lc);background:var(--card,rgba(127,127,127,.08));border-radius:0 8px 8px 0}.lenshead h1{margin:2px 0 4px;font-size:22px}.lenshead p{margin:0;color:var(--muted)}
 .lensbar{align-items:center}.lenslbl{font-size:13px;color:var(--muted);margin-right:4px}.lensbar a .lsw{display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--lc);margin-right:6px}
 .lensbar a[aria-current=page]{border-color:var(--lc,var(--accent));box-shadow:inset 0 0 0 1px var(--lc,var(--accent));font-weight:600}
@@ -461,7 +472,7 @@ export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: Land
   const win = o.window ? `<nav class="sgwin" aria-label="Time window">${WINDOWS.map((w) => `<a data-win="${w}" href="${o.href({ lens: o.lens?.key, window: w })}"${o.window === w ? ' aria-current="page"' : ''}>${WINDOW_LABEL[w]}</a>`).join('')}</nav>` : '';
   // The area chooser: plain links, shown only when there is more than AI to choose. The current area is marked in words too (aria-current), not by position.
   const chooser = ctx.areas.length > 1 ? `<nav class="sgwin areabar" aria-label="Area"><span class="lenslbl">Area</span>${ctx.areas.map((a) => `<a href="${AREA_HOME[a]}"${a === area ? ' aria-current="page"' : ''}>${AREA_LABEL[a]}</a>`).join('')}</nav>` : '';
-  return `<header class="topbar"><div class="tb"><a class="brand" href="${AREA_HOME[area]}">${MARK}<span>Undercurrent<small>${esc(AREA_LABEL[area])}</small></span></a>
+  return `<header class="topbar${o.lens ? ` haslens lc-${o.lens.color}` : ''}"><div class="tb"><a class="brand" href="${AREA_HOME[area]}">${MARK}<span>Undercurrent<small>${esc(AREA_LABEL[area])}</small></span></a>
 <nav class="sgwin tbbrief" aria-label="Briefings"><a href="${AREA_BRIEFINGS[area]}"${h.page === 'briefings' || h.slug ? ' aria-current="page"' : ''}>Briefings</a></nav>
 ${chooser}${lensBar(o.lenses, o.lens, (k) => o.href({ lens: k, window: o.window }), o.restore !== false)}${win}
 <form action="/search" method="get" role="search"><input type="search" name="q" value="${esc(o.q ?? '')}" placeholder="Search" aria-label="Search topics, items, papers and briefings" maxlength="80">${o.lens ? `<input type="hidden" name="lens" value="${esc(o.lens.key)}">` : ''}${ai ? '' : '<input type="hidden" name="area" value="politics">'}<button class="go" type="submit">Search</button></form>
@@ -874,7 +885,9 @@ function topicStream(topics: Array<{ term: string; label: string; href: string; 
   if (!lay.layers.length) return '';
   const S = days.length, W = 960, H = 300, L = 4, R = 4, top = 12, bottom = 24, room = H - top - bottom;
   const xs = Array.from({ length: S }, (_, i) => L + (S > 1 ? i / (S - 1) : 0.5) * (W - L - R)), k = (room * 0.94) / Math.max(1e-9, lay.max - lay.min), mid = top + room / 2, ty = (v: number) => mid - v * k;
-  const byTerm = new Map(topics.map((t, i) => [t.term, { ...t, color: i === 0 && lensColor ? `var(--lc-${lensColor}, ${STREAM_COLORS[0]})` : STREAM_COLORS[i % STREAM_COLORS.length] }] as const));
+  // with a lens its colour leads, and the warm colours that could be mistaken for it step aside
+  const pal = lensColor ? STREAM_COLORS.filter((c) => c !== '#e3a008' && c !== '#c2410c') : STREAM_COLORS;
+  const byTerm = new Map(topics.map((t, i) => [t.term, { ...t, color: lensColor ? (i === 0 ? `var(--lc-${lensColor}, ${pal[0]})` : pal[(i - 1) % pal.length]) : pal[i % pal.length] }] as const));
   const bands = lay.layers.map((l) => { const t = byTerm.get(l.key)!, total = Math.round(t.values.reduce((a, b) => a + b, 0));
     return `<a href="${t.href}"><path class="tsb" style="fill:${t.color}" d="${bandPath(xs, l.y1.map(ty), l.y0.map(ty))}"><title>${esc(t.label)}: ${n(total)} ${total === 1 ? 'mention' : 'mentions'} in ${S} days</title></path></a>`; }).join('');
   const names = lay.layers.map((l) => { const t = byTerm.get(l.key)!, at = bandLabelAt(l, S), w = at.w * k, size = Math.min(15, Math.max(11, w * 0.45)), max = Math.floor(150 / (size * 0.55));
