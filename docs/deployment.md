@@ -434,3 +434,24 @@ To move the site, admin and MCP server to a new domain and send the old one ther
 5. Afterwards: the old domain can leave the Access applications (it only redirects), and Web Analytics may need the new domain added as a site
    (its token is set up per site).
 
+## Readers: settings and roles
+
+The site can know who is reading, by the login of the Access application in front of the whole site (Google, for example), and then:
+- every reader keeps a **default front page** (lens and window), **lenses of their own** and **topics they follow**, at `/me` (More → Your settings),
+  on any device they sign in on;
+- a **role** can give extra features: **Ask Claude**, a question box on topic pages answered by a language model from the topic's own data, with a
+  number of questions a day.
+
+To switch it on:
+1. In Zero Trust → Access → Applications, open the application that covers the whole site (not the one for `/admin` or `/mcp`), and copy its
+   **Application Audience (AUD) Tag**.
+2. `npx wrangler secret put SITE_POLICY_AUD --env=""` and paste it.
+3. Deploy (the first deploy with readers adds the `UsersDO` Durable Object, migration `v6`).
+4. In the admin, **Readers**: give the role Analyst (or one of your own) to whoever should have Ask Claude.
+
+Without the secret nothing changes for readers, and **Your settings** is not offered. Pages stay in the shared page cache for everyone who keeps
+nothing of their own; a page for a reader with own lenses, followed topics or Ask Claude is made for them each time and never cached. Ask Claude
+uses the stronger model (`defaultTiers`, Claude Haiku 5.5 when it is offered), costs about a tenth of a cent a question (the topic's data is about 6,000 tokens), and shows in Costs as
+"Ask Claude (readers)" and per reader on the Readers tab. A question that gets no answer does not count. Answers keep only links found in the topic's
+data, since the model reads posts by strangers.
+

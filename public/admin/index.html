@@ -499,6 +499,7 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <button data-tab="lists"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/></svg><span>Lists and templates</span></button>
     <button data-tab="views"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11" rx="2"/><path d="m10.5 8.5 4 2-4 2z"/><path d="M7 19.5h10"/></svg><span>Feed pages</span></button>
     <button data-tab="budgets"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="6" width="17" height="12" rx="2"/><path d="M3.5 10h17M15 14.5h2.5"/></svg><span>Budgets</span></button>
+    <button data-tab="readers"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.2"/><path d="M3 19.5c.7-3.3 3-5 6-5s5.3 1.7 6 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16.5 14.6c2.3.2 3.9 1.7 4.5 4.4"/></svg><span>Readers</span></button>
     <button data-tab="account" data-feature="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5 19 4M15.5 7.5l2.5 2.5"/></svg><span>Post as X</span></button>
     <button data-tab="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h10a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h10"/></svg><span>Guide</span></button>
   </nav>
@@ -864,6 +865,17 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
     <div class="card" data-feature="publish" hidden><h3>Briefings: X data per run</h3>
       <div class="note" style="margin-bottom:8px">A run stops fetching when its budget is spent and writes from what it has. 0 means no limit. Language models are not capped here.</div>
       <div id="budTopics"><div class="note">Loading…</div></div></div>
+  </section>
+  <section id="readers" hidden>
+    <header class="page"><h1>Readers</h1><p>Everyone the site’s login has let in, by their Google address. Every reader can keep a default front page, lenses of their own and topics they follow. A <b>role</b> gives extra features, such as Ask Claude with a number of questions a day. Who may sign in at all is decided in Cloudflare Access, not here.</p></header>
+    <div class="note" id="rdState" style="margin-bottom:12px"></div>
+    <div class="card" style="margin-bottom:14px"><h3>Roles</h3>
+      <div class="note" style="margin-bottom:8px">Reader is everyone’s role and has no extra features. A role that is removed sends its readers back to Reader.</div>
+      <div id="rdRoles"><div class="note">Loading…</div></div>
+      <div class="optrow" style="margin-top:8px"><button class="go ghost" id="rdRoleAdd" type="button">Add a role</button><button class="go" id="rdRolesSave" type="button">Save roles</button></div></div>
+    <div class="card"><h3>Readers</h3>
+      <div class="optrow" style="margin-bottom:10px"><label>Give a role before the first visit <input type="email" id="rdNewEmail" placeholder="name@gmail.com" style="width:220px"></label><select id="rdNewRole"></select><button class="go ghost" id="rdNewSave" type="button">Save</button></div>
+      <div id="rdUsers"><div class="note">Loading…</div></div></div>
   </section>
 
   <section id="history" hidden>
@@ -1548,7 +1560,7 @@ $('#xAddForm').addEventListener('submit', async (e) => {
 });
 
 // ---------- Costs: the ledger of what everything has spent ----------
-const KIND = { embedding: 'Embeddings', storage: 'Cloudflare storage', analysis: 'History analysis (AI)', image: 'Pictures', audio: 'Audio versions', explore: 'Explorer (Search, Users, Lists, Trends)', history: 'History collection', monitor: 'Monitor', summarize: 'Summarize tab', publish: 'Scheduled briefings', signal: 'Signal topics (AI)', collect: 'Data collection' };
+const KIND = { ask: 'Ask Claude (readers)', embedding: 'Embeddings', storage: 'Cloudflare storage', analysis: 'History analysis (AI)', image: 'Pictures', audio: 'Audio versions', explore: 'Explorer (Search, Users, Lists, Trends)', history: 'History collection', monitor: 'Monitor', summarize: 'Summarize tab', publish: 'Scheduled briefings', signal: 'Signal topics (AI)', collect: 'Data collection' };
 const dollars = (n) => '$' + (n < 0.1 ? n.toFixed(4) : n.toFixed(2));
 const ctable = (head, rows, empty) => rows.length ? `<table class="guide"><thead><tr>${head.map((h) => `<th${h.endsWith('$') ? ' style="text-align:right"' : ''}>${esc(h.replace(/\$$/, ''))}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>` : `<div class="empty" style="padding:18px 0">${empty}</div>`;
 const money$ = (n) => `<td style="text-align:right;white-space:nowrap">${dollars(n)}</td>`;
@@ -3295,6 +3307,57 @@ $('#views').addEventListener('click', async (e) => {
 });
 
 // Budgets: the caps that live elsewhere in the app, each with what has been spent.
+// ---------- Readers: roles and extra features for the people the site's login lets in (src/users/*) ----------
+let rd = null;
+function renderReaders() {
+  if (!rd) return;
+  const feat = (list, name, keyAttr) => rd.features.map((f) => `<label class="chk" title="${esc(f.description)}"><input type="checkbox" ${keyAttr}="${esc(f.key)}" data-name="${esc(name)}"${list.includes(f.key) ? ' checked' : ''}> ${esc(f.name)}</label>`).join(' ');
+  $('#rdState').innerHTML = rd.enabled ? `${fmt(rd.users.length)} reader${rd.users.length === 1 ? '' : 's'} so far.`
+    : '<span class="err">Readers are off:</span> the site does not know who is signed in until the secret <code>SITE_POLICY_AUD</code> holds the audience tag of the Access application in front of the whole site. Roles can be set up now.';
+  $('#rdRoles').innerHTML = `<table><thead><tr><th>Name</th><th>Key</th><th>Features</th><th>Questions a day</th><th></th></tr></thead><tbody>${rd.roles.map((r, i) => {
+    const reader = r.key === 'reader';
+    return `<tr data-role="${i}"><td><input data-f="name" value="${esc(r.name)}" style="width:130px"></td><td>${reader ? '<code>reader</code>' : `<input data-f="key" value="${esc(r.key)}" style="width:110px">`}</td>
+      <td>${reader ? '<span class="note">none</span>' : feat(r.features, 'r' + i, 'data-rfeat')}</td><td>${reader ? '' : `<input type="number" data-f="askPerDay" min="1" max="200" value="${r.askPerDay || 20}" style="width:70px">`}</td>
+      <td>${reader ? '' : '<button class="go ghost" type="button" data-rdel>Remove</button>'}</td></tr>`; }).join('')}</tbody></table>`;
+  const roleOpts = (cur) => rd.roles.map((r) => `<option value="${esc(r.key)}"${r.key === cur ? ' selected' : ''}>${esc(r.name)}</option>`).join('');
+  $('#rdNewRole').innerHTML = roleOpts('reader');
+  $('#rdUsers').innerHTML = rd.users.length ? `<table><thead><tr><th>Reader</th><th>Role</th><th>Extra features</th><th>Last seen</th><th>Questions today · 7 days</th><th>Cost 7 days</th><th>Lenses · follows</th><th></th></tr></thead><tbody>${rd.users.map((u) => `<tr data-email="${esc(u.email)}">
+      <td>${esc(u.email)}${u.firstSeen ? '' : ' <span class="note">(not visited yet)</span>'}</td><td><select data-urole>${roleOpts(u.role)}</select></td><td>${feat(u.extra, u.email, 'data-ufeat')}</td>
+      <td>${u.lastSeen ? ago(u.lastSeen) : 'never'}</td><td>${fmt(u.asksToday)} · ${fmt(u.asks7)}</td><td>${money(u.cost7)}</td><td>${fmt(u.lenses)} · ${fmt(u.follows)}</td>
+      <td><button class="go ghost" type="button" data-usave>Save</button> <button class="go ghost" type="button" data-uremove>Forget</button></td></tr>`).join('')}</tbody></table>`
+    : '<div class="note">No one yet. Readers appear here after their first visit (once readers are on), or when you give an address a role above.</div>';
+}
+async function loadReaders() {
+  try { rd = await fetch('/users/list').then((r) => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))); renderReaders(); }
+  catch (e) { $('#rdUsers').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+function rolesFromForm() {
+  return [...document.querySelectorAll('#rdRoles tr[data-role]')].map((tr) => {
+    const r = rd.roles[+tr.dataset.role], v = (f) => tr.querySelector(`[data-f="${f}"]`)?.value;
+    return { key: v('key') ?? r.key, name: v('name') ?? r.name, askPerDay: +(v('askPerDay') ?? 0), features: [...tr.querySelectorAll('[data-rfeat]:checked')].map((x) => x.dataset.rfeat) };
+  });
+}
+$('#readers').addEventListener('click', async (e) => {
+  try {
+    if (e.target.closest('#rdRoleAdd')) { rd.roles = [...rolesFromForm(), { key: 'role' + rd.roles.length, name: 'New role', features: ['ask'], askPerDay: 20 }]; renderReaders(); }
+    else if (e.target.closest('[data-rdel]')) { const i = +e.target.closest('tr').dataset.role; rd.roles = rolesFromForm().filter((_, k) => k !== i); renderReaders(); toast('Removed here: Save roles to keep it'); }
+    else if (e.target.closest('#rdRolesSave')) { rd = await post('/users/roles', { roles: rolesFromForm() }); renderReaders(); toast('Roles saved'); }
+    else if (e.target.closest('[data-usave]')) {
+      const tr = e.target.closest('tr');
+      rd = await post('/users/set', { email: tr.dataset.email, role: tr.querySelector('[data-urole]').value, extra: [...tr.querySelectorAll('[data-ufeat]:checked')].map((x) => x.dataset.ufeat) }); renderReaders(); toast('Saved');
+    }
+    else if (e.target.closest('[data-uremove]')) {
+      const email = e.target.closest('tr').dataset.email;
+      if (!confirm(`Forget ${email}? Their role, settings, lenses, followed topics and questions are deleted. If they visit again they start as a Reader.`)) return;
+      rd = await post('/users/remove', { email }); renderReaders(); toast('Forgotten');
+    }
+    else if (e.target.closest('#rdNewSave')) {
+      const email = $('#rdNewEmail').value.trim(); if (!email) return toast('Type an address');
+      rd = await post('/users/set', { email, role: $('#rdNewRole').value, extra: [] }); $('#rdNewEmail').value = ''; renderReaders(); toast('Saved');
+    }
+  } catch (err) { toast(err.message); }
+});
+
 async function loadBudgets() {
   const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const [mon, ai, topics] = await Promise.all([get('/mon/state'), features.signal ? get('/mon/signal-ai') : null, features.publish ? get('/pub/topics') : null]);
@@ -3582,6 +3645,7 @@ function show(tab) {
   if (tab === 'signal' || tab === 'signalsetup') { loadSignal(); loadPulse(); }
   if (tab === 'sources') { renderWatches(); loadReach(); }
   if (tab === 'budgets') loadBudgets();
+  if (tab === 'readers') loadReaders();
   if (tab === 'collection') loadCollection();
   if (tab === 'views') loadViews();
   // Issues and Settings share one topic list: it moves to the tab that is open, which says whether issues or settings show.

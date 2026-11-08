@@ -6,7 +6,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { llmCost } from '../summarize/pricing';
 import { storageDayCost, storageMonth, type StoreKind } from '../lib/storagePrices';
 
-export type CostKind = 'explore' | 'history' | 'monitor' | 'summarize' | 'publish' | 'audio' | 'image' | 'analysis' | 'signal' | 'collect' | 'embedding' | 'storage';
+export type CostKind = 'explore' | 'history' | 'monitor' | 'summarize' | 'publish' | 'audio' | 'image' | 'analysis' | 'signal' | 'collect' | 'embedding' | 'storage' | 'ask';
 export interface CostEntry {
   kind: CostKind; ref?: string; label?: string;
   twitter?: number; llm?: number; tweets?: number; calls?: number; tokensIn?: number; tokensOut?: number; model?: string;
@@ -100,7 +100,7 @@ export class CostDO extends DurableObject<Env> {
     const e = this.env, found: Array<{ store: string; kind: StoreKind; bytes: number; objects: number }> = [];
     const stores: Array<[string, () => Promise<number> | number]> = [
       ['Monitor', () => e.MONITOR.getByName('main').storageBytes()], ['History', () => e.HISTORY.getByName('main').storageBytes()], ['Lists', () => e.LISTS.getByName('main').storageBytes()],
-      ['Publish', () => e.PUBLISH.getByName('main').storageBytes()], ['Collect', () => e.COLLECT.getByName('main').storageBytes()], ['Costs', () => sql.databaseSize],
+      ['Publish', () => e.PUBLISH.getByName('main').storageBytes()], ['Collect', () => e.COLLECT.getByName('main').storageBytes()], ['Readers', () => e.USERS.getByName('main').storageBytes()], ['Costs', () => sql.databaseSize],
     ];
     for (const [store, read] of stores) {
       try { found.push({ store, kind: 'do', bytes: Number(await read()) || 0, objects: 0 }); }

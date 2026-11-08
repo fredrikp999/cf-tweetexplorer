@@ -16,6 +16,7 @@ Everything you can set: secrets, variables, and the options in the app. Step-by-
 | `AI_GATEWAY_TOKEN` | A Cloudflare API token with the permission **AI Gateway → Run**, so OpenRouter calls may pass through the gateway named in `AI_GATEWAY` (whose authentication is on). Without it, or if the gateway refuses it, OpenRouter is called directly. Optional. |
 | `ANTHROPIC_API_KEY` | Only if `SUMMARY_PROVIDER` is `anthropic`. |
 | `YOUTUBE_API_KEY` | A YouTube Data API key. When a channel's public feed fails (YouTube sometimes answers 404 for all of them for days), its videos are read through the API instead: 1 quota unit a check, 10,000 free a day. Optional. How to get one: [deployment.md](deployment.md#youtube-through-the-api-when-youtubes-feeds-fail). |
+| `SITE_POLICY_AUD` | The audience (AUD) tag of the Access application in front of the whole site (the Google login). With it the site knows who is reading: readers keep settings, and roles can give them Ask Claude. Without it the site is the same for everyone. Optional. See [deployment.md](deployment.md#readers-settings-and-roles). |
 | `MOVED_HOSTS` | Domains the site moved away from, as `old.example.com=new.example.com` (several separated by commas). A request to an old domain is redirected (308) to the same path on the new one. Optional. See [deployment.md](deployment.md#moving-to-another-domain). |
 | `CF_ANALYTICS_TOKEN` | The token of a Cloudflare Web Analytics site. The public pages then load its beacon (page views, no cookies). Without it they load no script, apart from the two picture pages. Optional. Where to find it: [deployment.md](deployment.md#visitor-statistics-cloudflare-web-analytics). |
 
@@ -118,6 +119,11 @@ run, each next to what has been spent.
 **Retrying and re-running**: see [deployment.md](deployment.md#retrying-and-re-running).
 
 ---
+
+**Readers** (`/admin` → Readers): everyone the site's login has let in, with when they were last seen, their questions today and in 7 days, what
+those cost, and how many lenses and followed topics they keep. Give each a **role**, and extra features on top. **Roles**: Reader is everyone's and
+gives nothing; the others are yours to name, each with features (now: Ask Claude) and a number of questions a day (1 to 200). An address can be given
+a role before its first visit. **Forget** deletes everything kept about a reader. Who may sign in at all is set in Cloudflare Access, not here.
 
 **Lenses** (`/admin` → Signal → setup → Lenses)
 

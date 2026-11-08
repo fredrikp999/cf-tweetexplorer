@@ -298,3 +298,23 @@ The site has two areas with the same structure (`src/signal/area.ts`, pure and t
 3. **Briefings** (Publish `/pub/search`): the published issues of listed topics in the window (40 per topic at most); a theme heading that has the words scores 3, the headline (TL;DR) 2, any theme text or the whole issue 1; newest first within a score. The link goes to the theme's anchor.
 4. **The page.** With several kinds each group shows `PREVIEW` (5) results and "See all N"; with one kind it shows `PAGE_SIZE` (20) and a pager up to `MAX_PAGE` (5), and the other kinds are counted with one extra cheap call so the kind links show their counts. `lens` only reorders and tags. `/topics?q=` is unchanged (a name filter of the A to Z list); the top bar and the topics page search box go to `/search`.
 5. **The tool.** `searchOut` (`src/site/agentText.ts`) writes the sections in the order topics, items, papers, briefings with links to the originals and topic pages, the counts, and a `Next:` line naming `get_topic`, `get_paper`, `get_briefing`, `get_topic_items`; the thank-you sentence for arXiv is added when papers are shown. The answer is cached two minutes like the other tools, and the per-address limit applies.
+
+## Readers
+
+Who is reading comes from the token the site's Access application puts on every request (`Cf-Access-Jwt-Assertion`), checked against
+`SITE_POLICY_AUD` (`viewerOf` in `src/site/me.ts`). Nothing about readers is ever in the shared page cache:
+
+1. **Every request** (not files, sound or pictures) asks `UsersDO.me(email)`: the reader's role, features, settings, own lenses and follows. A reader
+   seen for the first time is added as a Reader. Any failure means "nobody", and the page is the one everyone gets.
+2. **The front page** (`/`, no query): a reader arriving from outside (no Referer from this site) with a default lens or window is sent to
+   `/?lens=…&window=…`. From a page of this site, a bare `/` is a choice ("All") and stays.
+3. **A personal page**: a reader with own lenses, followed topics or a feature gets every page made for them (`render(env, url, viewer)`),
+   `private, no-store`. Own lenses (`?lens=my-…`) join the area's lenses, so the lens chooser, the lists, the cards and the landscape treat them like
+   the site's (`loadOverview(…, own)`). "Your topics" on the front page lists what they follow with its state in the window. Everyone else gets the
+   cached page; its Follow button is a plain form, so it works without knowing who is reading.
+4. **Changes** are HTML forms posted to `/me/<what>` (`mePost`): refused unless the `Origin` is this site, then a 303 back with a line saying
+   what happened.
+5. **Ask Claude** (`answerAsk`): the question takes one of the reader's questions for the day first (`startAsk`, so two quick ones cannot both
+   pass the limit), then the stronger model answers from the topic's data as agents get it (`topicOut`, full). The answer keeps only links found in
+   that data (`keepLinks`), and is stored with its model and cost; a question without an answer is given back (`dropAsk`).
+

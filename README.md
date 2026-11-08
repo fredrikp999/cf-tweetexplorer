@@ -23,6 +23,10 @@ Always-present topics are left out unless they spike; engagement bait is not cou
 be merged and renamed, and names that mean the same are suggested for merging. Several Signals can be
 published, each with its own page, a page per topic, and optionally the items behind each topic.
 
+**Readers.** With the site behind a login (Google through Cloudflare Access), each reader keeps a default front page, lenses of their own and
+topics they follow, on any device. Roles, set in the admin, give extra features: Ask Claude answers questions on a topic's page from its data,
+with a number of questions a day.
+
 **Feed pages.** Public pages that show items from what is watched, defined in the admin: for example the latest video of each channel in a
 list, with the newest one playing, or the most reacted articles of the week. Their newest items also appear on Today.
 
@@ -98,7 +102,8 @@ with its own data on workers.dev.
 ```
 src/            The Cloudflare Worker
   index.ts        Routing: public site, /admin (Access), /mcp
-  durable-objects/  Monitor (watches, live feed, Signal), Collect (fetching and storing sources), Publish (briefings), History (archives), Lists, Cost (ledger)
+  durable-objects/  Monitor (watches, live feed, Signal), Collect (fetching and storing sources), Publish (briefings), History (archives), Lists, Cost (ledger), Users (readers)
+  users/          Readers: roles, features, settings, own lenses, followed topics
   signal/         Signal: terms, scoring, topics, AI topic names, filters, lenses, landscape, meaning (embeddings)
   site/           The public site (server-rendered HTML), Markdown, briefing structure
   summarize/      The writing agent, model providers, screening, pricing

@@ -1,4 +1,5 @@
 import { movedResponse, parseMovedHosts } from './lib/hosts';
+import { handleUsersAdmin } from './users/admin';
 import { verifyAccess } from './access';
 import { json } from './lib/twitterapi';
 import { handleSummarize, summarizerFeatures } from './summarize/worker';
@@ -17,6 +18,7 @@ export { ListsDO } from './durable-objects/lists';
 export { PublishDO } from './durable-objects/publish';
 export { CostDO } from './durable-objects/cost';
 export { CollectDO } from './durable-objects/collect';
+export { UsersDO } from './durable-objects/users';
 
 const UPSTREAM = 'https://api.twitterapi.io';
 
@@ -131,6 +133,7 @@ export default {
       if (rest.startsWith('/mon/')) return await env.MONITOR.getByName('main').fetch(inner);
       if (rest.startsWith('/collect/')) return await env.COLLECT.getByName('main').fetch(inner);
       if (rest.startsWith('/lists/')) return await env.LISTS.getByName('main').fetch(inner);
+      if (rest.startsWith('/users/')) return await handleUsersAdmin(request, env, rest);   // the Readers tab: roles and extra features
       if (rest.startsWith('/hist/')) return await env.HISTORY.getByName('main').fetch(inner);
       if (rest.startsWith('/act/') || rest.startsWith('/agent/')) return json({ error: 'not available on this deployment' }, 404);
       return await env.ASSETS.fetch(request);

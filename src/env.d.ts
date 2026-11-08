@@ -4,6 +4,8 @@ interface Env {
   /** From the Cloudflare Access application: `<team>.cloudflareaccess.com` and the application's audience tag. Secrets. */
   TEAM_DOMAIN: string;
   POLICY_AUD: string;
+  /** The audience tag of the Access application in front of the whole site (the Google login). With it, the pages know the signed-in reader (src/site/me.ts); without it, readers have no settings. Optional secret. */
+  SITE_POLICY_AUD: string;
   /** The audience tag of the separate Access application for /mcp (service tokens only). Secret. */
   MCP_POLICY_AUD: string;
   TWITTERAPI_IO_KEY: string;

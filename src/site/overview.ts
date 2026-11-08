@@ -31,13 +31,14 @@ export const loadBoards = (env: Env): Promise<PubBoard[]> => monitor(env, 'signa
  * The overview of an area (AI unless asked) for a lens and a window (1, 3 or 7 days). `boards` and `briefs` are passed by a caller that has them already (the page reads them for its menu); either may hold both areas, the area picks.
  * Papers, feed pages and what was read most are not tagged with an area: they belong to AI, so a politics overview has none of them.
  */
-export async function loadOverview(env: Env, o: { window: LandingWindow; lens?: string | null; boards?: PubBoard[]; briefs?: BriefIn[]; area?: Area }): Promise<OverviewData> {
+export async function loadOverview(env: Env, o: { window: LandingWindow; lens?: string | null; boards?: PubBoard[]; briefs?: BriefIn[]; area?: Area; /** A signed-in reader's own lenses of the area (src/site/me.ts): chosen like the site's. */ own?: Lens[] }): Promise<OverviewData> {
   const win = o.window, area = o.area ?? 'ai';
   const [lenses, boards, briefs] = await Promise.all([
     loadLenses(env, area),
     o.boards ? Promise.resolve(o.boards) : loadBoards(env),
     o.briefs ? Promise.resolve(o.briefs) : env.PUBLISH.getByName('main').fetch(new Request('https://internal/pub/topics')).then((r) => (r.ok ? (r.json() as Promise<PubTopic[]>) : [])).then((ts) => briefsOf(topicsOfArea(ts, area))).catch(() => [] as BriefIn[]),
   ]);
+  lenses.push(...(o.own ?? []));
   const lens = chosenLens(lenses, o.lens), board = pickBoard(boards, area);
   const signal = (days: number) => (board ? monitor(env, `signal-public?slug=${board.slug}&days=${days}`).then((r) => (r.ok ? (r.json() as Promise<PubSignal>) : null)).then((d) => (d?.top ? d : null)).catch(() => null) : Promise.resolve(null));
   const [sig, sig7, landscape] = await Promise.all([signal(win), win === 7 ? null : signal(7),

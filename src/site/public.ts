@@ -24,7 +24,10 @@ import { loadOverview } from './overview';
 import { overviewOut } from './agentText';
 import type { Layout } from '../signal/landscape';
 import { AREA_BRIEFINGS, AREA_HOME, AREA_LABEL, areaHint, areaOfRequest, areaOf, boardsOfArea, parseArea, publishedAreas, topicHref, topicsOfArea, type Area } from '../signal/area';
-import { LENS_JS, applyLens, lensMatch, chosenLens, lensColorCss, lensesOfTopic, type Lens } from '../signal/lens';
+import { LENS_COLORS, LENS_JS, applyLens, lensMatch, chosenLens, lensColorCss, lensesOfTopic, type Lens } from '../signal/lens';
+import { isOwnLens, isPersonal, mePost, ownLenses, viewerOf, type Viewer } from './me';
+import type { AskRow, Me } from '../durable-objects/users';
+import { FEATURES, MAX_FOLLOWS, MAX_OWN_LENSES, homeFor } from '../users/model';
 import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
 import { HOST_JS, VIZ_CSS, VIZ_VIEWS, vizFrame, viewCsp } from './viz';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
@@ -51,7 +54,7 @@ export interface PubView { slug: string; title: string; description: string; lis
 interface PubViewPage { slug: string; title: string; description: string; layout: 'player' | 'cards' | 'list'; show: 'latest' | 'top'; days: number; perSource: boolean; items: ViewItem[] }
 /** Every topic of one published Signal in the last two weeks. */
 interface PubTerms { slug: string; title: string; days: number; baselineOk: boolean; terms: Array<{ term: string; signal: number; docs: number; isNew: boolean; change: number | null; evergreen: boolean; kind: string; breadth: number }> }
-interface Ctx { /** The area this page belongs to: its topics, boards and menu are the area's own (render() builds one Ctx per area). */ area: Area; /** The areas with something published: the area chooser shows only when there is more than AI. */ areas: Area[]; topics: PubTopic[]; /** Published feed pages. */ views: PubView[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[]; /** The lenses of the area, for the lens chooser of the top bar (none: the chooser is left out). */ lenses?: Lens[] }
+interface Ctx { /** The area this page belongs to: its topics, boards and menu are the area's own (render() builds one Ctx per area). */ area: Area; /** The areas with something published: the area chooser shows only when there is more than AI. */ areas: Area[]; topics: PubTopic[]; /** Published feed pages. */ views: PubView[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[]; /** The lenses of the area, for the lens chooser of the top bar (none: the chooser is left out); a reader's own lenses come last. */ lenses?: Lens[]; /** Readers are on (the site knows who is signed in): pages offer Follow and the settings page. */ users?: boolean; /** The signed-in reader, only on a page made for them (never on a page in the shared cache). */ me?: Me | null; /** A line to show once, after a change (?msg=), on a page made for the reader. */ msg?: string }
 export interface PubBoard { slug: string; title: string; description: string; groups: string[]; proof?: boolean; /** The area it belongs to (none: AI). */ area?: Area; /** Addresses it had before: they redirect here. */ aliases?: string[] }
 interface PubProof { slug: string; title: string; days: number; term: string; label: string; terms: string[]; from: string; to: string; total: number; groups: Array<{ name: string; n: number }>; sources: Array<{ label: string; group: string; n: number }>; items: Array<{ title: string; url: string; discussionUrl: string; source: string; by: string; group: string; ts: number }> }
 // Signal, as the Monitor gives it for the public page: group names and counts, and terms. `parts` is each group's share of a term's score, in the order of `groups`.
@@ -159,6 +162,14 @@ figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-templa
 .act.stack>div i{min-height:0}
 .sgitems{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}.sgitems li{border-left:3px solid var(--line);padding-left:12px}.sgitems .by{font-size:13px;color:var(--muted)}.sgitems a{color:var(--text)}.sgitems a:hover{color:var(--accent)}.sgrow .t a{color:inherit;text-decoration:none}.sgrow .t a:hover{color:var(--accent);text-decoration:underline}.sglist a{color:inherit;text-decoration:none}.sglist a:hover{text-decoration:underline}
 form.report{display:grid;gap:12px;max-width:640px}form.report textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text)}form.report button{justify-self:start;padding:8px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;cursor:pointer}.hp{position:absolute;left:-9999px}.cites .rep{color:var(--muted)}
+.meacts{margin:10px 0 0}.meform.inline{display:inline}.followbtn{font:inherit;font-size:14px;font-weight:600;padding:5px 14px;border-radius:999px;border:1px solid var(--accent);background:var(--card);color:var(--accent);cursor:pointer}.followbtn[aria-pressed=true]{background:var(--accent);color:var(--card)}
+.memsg{margin:10px 0 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--card);border-radius:6px;font-size:14px}
+.askbox{display:grid;gap:8px;margin:14px 0 0;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);max-width:720px}.askbox label{font-weight:600}.askbox textarea,.lensform textarea,.lensform input,.meform select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg,var(--card));color:var(--text);max-width:100%}
+.askrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.askrow small{color:var(--muted)}.meform button{font:inherit;padding:7px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}.meform button[type=submit]:not(.ghost):not(.followbtn){border-color:var(--accent)}.meform button:disabled{opacity:.5;cursor:default}
+.mepage{display:grid;gap:16px;max-width:760px}.mepage .card{display:block;padding:16px 18px;border:1px solid var(--line);border-radius:14px;background:var(--card)}.mepage h3{margin:0 0 6px}.mepage label{display:inline-flex;gap:6px;align-items:center;margin:4px 10px 4px 0}
+.lensform{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end;margin:8px 0}.lensform label.wide{display:flex;flex-direction:column;align-items:stretch;width:100%}.mylens{border-top:1px solid var(--line);padding:8px 0}.mylens summary{cursor:pointer}
+.mefollows,.measks,.yours ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}.mefollows li,.measks li,.yours li{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.measks small,.yours small{color:var(--muted)}
+.yours{margin:18px 0;padding:14px 18px;border:1px solid var(--line);border-radius:14px;background:var(--card)}.yours .sect{margin-top:0}.askanswer{max-width:720px}
 .vlead{margin:0 0 24px}.vplayer{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#000}.vplayer iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.vlead h2{font-size:20px;margin:12px 0 4px}.vlead h2 a{color:var(--text);text-decoration:none}.vlead small.out{margin-left:8px;color:var(--accent,#c9265f)}
 .vcards{list-style:none;padding:0;margin:0 0 18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}.vcards li{display:flex;flex-direction:column;gap:4px}.vcards a{color:var(--text);text-decoration:none}.vcards img{width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;border-radius:10px;display:block;margin-bottom:6px;background:var(--card)}.vcards b{font-weight:600;line-height:1.3}.vcards small,.vlead small,.vlist small{color:var(--muted);font-size:13px}.vcards small a{color:var(--muted)}
 .vlist{list-style:none;padding:0;margin:0;display:grid;gap:12px}.vlist li{display:flex;flex-direction:column;border-bottom:1px solid var(--line);padding-bottom:10px}.vlist a{color:var(--text);font-weight:600}
@@ -335,7 +346,7 @@ const THEME_INIT = '<script src="/viz/theme.js"></script>';
 const THEME_BTN = '<button type="button" class="themebtn" id="themebtn" aria-label="Colour theme">Theme</button>';
 
 /** Where a page sits in the More menu: the page kind, the feed page or Signal it is, or the briefing topic it shows. */
-type Here = { page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map' | 'briefings' | 'agent' | 'method'; board?: string; slug?: string };
+type Here = { page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map' | 'briefings' | 'agent' | 'method' | 'me'; board?: string; slug?: string };
 
 /** The top bar for every page that is not the landing page or the search: no lens or window of its own, so a lens link goes to the landing page of the area unless the page says otherwise (`o.href`). */
 function bar(ctx: Ctx, active?: Active, page?: Here['page'], board?: string, o: { lens?: Lens; href?: (p: { lens?: string; window?: number }) => string } = {}): string {
@@ -407,7 +418,7 @@ export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: Land
     + grp('Briefings', topics.map((t) => a(`/${esc(t.slug)}`, esc(t.title), h.slug === t.slug)).join(''))
     + grp('Watch and read', ctx.views.map((v) => a(`/feeds/${esc(v.slug)}`, esc(v.title), h.page === 'feeds' && h.board === v.slug)).join(''))
     + grp('More', (ctx.reports.length ? a('/history', `Reports <small>${ctx.reports.length}</small>`, h.page === 'history') + a(`/history/${esc(ctx.reports[0].slug)}/galaxy`, 'Tweet Galaxy', h.page === 'galaxy') : '') + (lists ? a('/lists', `Lists <small>${lists}</small>`, h.page === 'lists') : '')
-      + a('/signal/method', 'How it works', h.page === 'method') + a('/agent', 'For agents (MCP)', h.page === 'agent'))
+      + a('/signal/method', 'How it works', h.page === 'method') + a('/agent', 'For agents (MCP)', h.page === 'agent') + (ctx.users ? a('/me', 'Your settings', h.page === 'me') : ''))
     + grp('Feeds (RSS)', topics.map((t) => a(`/${esc(t.slug)}/feed.xml`, esc(t.title))).join(''))
     + `<p class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.${lists ? ` <a href="/lists">The ${lists} lists behind them</a>.` : ''}</p>`;
   const win = o.window ? `<nav class="sgwin" aria-label="Time window">${WINDOWS.map((w) => `<a data-win="${w}" href="${o.href({ lens: o.lens?.key, window: w })}"${o.window === w ? ' aria-current="page"' : ''}>${WINDOW_LABEL[w]}</a>`).join('')}</nav>` : '';
@@ -536,7 +547,7 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
   const mast = `<section class="mast${bubbles ? '' : ' nobub'}${lens ? ` lensmast lc-${lens.color}` : ''}" aria-labelledby="h-mast">${MAST_WAVE}<div class="mastin"><div class="masttext">
 <div class="masteye">${lens ? `<span class="lsw" aria-hidden="true"></span>Lens &middot; ${esc(AREA_LABEL[area])}` : `${date(Date.now())} &middot; ${esc(AREA_LABEL[area])}`}</div>
 <h1 id="h-mast"${!lens && headline.replace(/<[^>]+>/g, '').length > 60 ? ' class="long"' : ''}>${lens ? esc(lens.name) : headline || (ai ? 'What is going on in AI' : 'Politics')}</h1><p class="mastlede">${lede}</p>${since}${mini}</div>${graphic}</div></section>`;
-  const body = `${mast}<div class="lgrid"><div>${brief}${today}</div><div>${landscape}</div></div>${rising}${cards}${research}${watch}
+  const body = `${mast}${yoursHtml(ctx, topics, pop, area, sig ? sigPct : null)}<div class="lgrid"><div>${brief}${today}</div><div>${landscape}</div></div>${rising}${cards}${research}${watch}
 <p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals. <a href="/signal/method">How the numbers are worked out</a>.</p>`;
   return shell(ai ? 'Undercurrent · What’s rising in AI, before it’s news' : 'Politics · Undercurrent', topBar(ctx, { lenses, lens, window: win, href: (p) => landingHref(p, area), here: {} }), body, { wide: true, home: true, canonical: origin ? origin + AREA_HOME[area] : undefined,
     description: ai ? 'What’s rising in AI, before it’s news: short briefings, the topics being talked about across news, blogs, X, YouTube and Hacker News, and the research behind them.'
@@ -783,7 +794,7 @@ export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', len
   const areaLink = d.area === 'politics' || ctx.areas.length > 1 ? `<a href="${AREA_HOME[d.area]}">${AREA_LABEL[d.area]}</a> &middot; ` : '';
   const summary = sm?.text ?? d.fallback;
   return shell(`${d.label} · Topic · Undercurrent`, bar(ctx, undefined, 'topics'), `<header class="pagehead"><div class="eyebrow">${areaLink}Topic &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a></div><h1>${esc(d.label)} ${pill}</h1>
-<p class="lede">${esc(summary)}</p>${written}${lensLine}</header>
+<p class="lede">${esc(summary)}</p>${written}${lensLine}${topicActions(ctx, d)}</header>
 <section class="tophead"><div class="spark">${topicSpark(d.series)}<div class="axis"><span>${esc(d.series.days[0])}</span><span>${esc(d.series.days[d.series.days.length - 1])}</span></div></div>
 <p class="meta">Items per day, the last 14 days; the dashed line is the usual level. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p></section>
 ${evidenceHtml(d)}
@@ -792,6 +803,66 @@ ${timelineHtml(d)}
 <section id="angle">${topicPanel(d, angle)}</section>
 ${d.related.length ? `<h2 class="sect">Goes with</h2><p class="meta">${d.related.map((r) => `<a href="${esc(topicHref(r.slug, d.area))}">${esc(r.label)}</a>`).join(' &middot; ')}</p>` : ''}`,
   { description: summary, canonical: origin ? origin + topicHref(d.slug, d.area) : undefined });
+}
+
+// ---- The signed-in reader (src/site/me.ts): their topics on the front page, Follow and Ask Claude on a topic page, and /me. Only on pages made for them.
+/** "Your topics" on the front page: what the reader follows in this area, with how each stands in the window. */
+function yoursHtml(ctx: Ctx, topics: SigTopic[], state: (t: SigTopic) => string, area: Area, pct: ((x: number) => string) | null): string {
+  const mine = (ctx.me?.follows ?? []).filter((f) => f.area === area);
+  if (!mine.length) return '';
+  const by = new Map(topics.map((t) => [topicSlug(t.term), t] as const));
+  const row = (f: (typeof mine)[number]) => {
+    const t = by.get(f.slug), st = (t ? state(t) : '') as 'new' | 'rising' | 'falling' | '';
+    const how = !t ? '<small>quiet in this window</small>' : `${st ? `<span class="pstate ${st}">${STATE_MARK[st]} ${STATE_LABEL[st]}</span> ` : ''}${pct ? `<small>${pct(t.signal)} of items</small>` : ''}`;
+    return `<li><a href="${esc(topicHref(f.slug, area))}">${esc(t?.label ?? f.label)}</a> ${how}</li>`;
+  };
+  return `<section class="yours" aria-labelledby="h-yours"><h2 class="sect" id="h-yours">Your topics</h2><ul>${mine.map(row).join('')}</ul><p class="meta"><a href="/me#follows">What you follow</a></p></section>`;
+}
+const hidden = (fields: Record<string, string>) => Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join('');
+const msgLine = (ctx: Ctx) => (ctx.msg ? `<p class="memsg" role="status">${esc(ctx.msg)}</p>` : '');
+/** Follow on every topic page (a plain form, so it works on a page from the shared cache too) and, for a reader whose role has it, Ask Claude. */
+function topicActions(ctx: Ctx, d: TopicData): string {
+  if (!ctx.users) return '';
+  const here = topicHref(d.slug, d.area), on = !!ctx.me?.follows.some((f) => f.slug === d.slug && f.area === d.area);
+  const follow = `<form method="post" action="/me/${on ? 'unfollow' : 'follow'}" class="meform inline">${hidden({ slug: d.slug, area: d.area, label: d.label, back: here })}<button type="submit" class="followbtn" aria-pressed="${on}">${on ? '✓ Following' : '+ Follow'}</button></form>`;
+  const me = ctx.me, ask = me?.access.features.includes('ask') ? `<form method="post" action="/me/ask" class="meform askbox">${hidden({ slug: d.slug, area: d.area, back: here })}
+<label for="askq">Ask Claude about ${esc(d.label)}</label><textarea id="askq" name="question" rows="2" maxlength="500" required placeholder="What changed this week? Who is behind it?"></textarea>
+<div class="askrow"><button type="submit"${me.askLeft ? '' : ' disabled'}>Ask</button><small>${me.askLeft} of ${me.access.askPerDay} questions left today. Answered from this page’s data by a language model, which can get things wrong. <a href="/me#asks">Your questions</a></small></div></form>` : '';
+  return `<div class="meacts">${follow}</div>${msgLine(ctx)}${ask}`;
+}
+const WIN_NAME: Record<number, string> = { 1: 'Today', 3: '3 days', 7: '7 days' };
+/** /me: what the reader keeps (front page, own lenses, followed topics) and their questions, each changed by a plain form. */
+export function meHtml(ctx: Ctx, me: Me, siteLenses: Lens[], asks: AskRow[]): string {
+  const opt = (v: string, label: string, cur: string) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
+  const lensOpts = opt('', 'All topics', me.prefs.lens) + siteLenses.map((l) => opt(l.key, l.name, me.prefs.lens)).join('') + me.lenses.map((l) => opt(l.key, `${l.name} (yours)`, me.prefs.lens)).join('');
+  const prefs = `<form method="post" action="/me/prefs" class="meform card">${hidden({ back: '/me' })}<h3>Your front page</h3><p class="meta">The front page opens on these when you go to it without choosing. You can still pick another lens or window there.</p>
+<label>Lens <select name="lens">${lensOpts}</select></label> <label>Window <select name="window">${[1, 3, 7].map((w) => opt(String(w), WIN_NAME[w], String(me.prefs.window))).join('')}</select></label> <button type="submit">Save</button></form>`;
+  const colours = (cur: string) => LENS_COLORS.map((c) => opt(c, c, cur)).join('');
+  const lensForm = (l?: Lens) => `<form method="post" action="/me/lens" class="meform lensform">${hidden({ back: '/me#lenses', ...(l ? { key: l.key } : {}) })}
+<label>Name <input name="name" maxlength="30" required value="${esc(l?.name ?? '')}"></label> <label>Colour <select name="color">${colours(l?.color ?? '')}</select></label>
+<label class="wide">Topics and words, one per line or separated by commas <textarea name="terms" rows="3" required>${esc((l?.terms ?? []).join('\n'))}</textarea></label>
+<label class="wide">What it is for (optional) <input name="description" maxlength="120" value="${esc(l?.description ?? '')}"></label><button type="submit">${l ? 'Save' : 'Add the lens'}</button></form>`;
+  const lenses = `<section class="card" id="lenses"><h3>Your lenses</h3><p class="meta">A lens puts the topics that use its words first and marks them, like the site’s lenses. Yours are only shown to you, in the lens chooser and on the front page (?lens=my-…). Up to ${MAX_OWN_LENSES}.</p>
+${me.lenses.map((l) => `<details class="mylens"><summary><span class="lenstag lc-${esc(l.color)}">${esc(l.name)}</span> <small>${l.terms.length} term${l.terms.length === 1 ? '' : 's'}</small> <a href="/?lens=${esc(l.key)}">Open</a></summary>${lensForm(l)}
+<form method="post" action="/me/lens-delete" class="meform inline">${hidden({ key: l.key, back: '/me#lenses' })}<button type="submit" class="ghost">Remove this lens</button></form></details>`).join('')}
+${me.lenses.length < MAX_OWN_LENSES ? `<details class="mylens"${me.lenses.length ? '' : ' open'}><summary>New lens</summary>${lensForm()}</details>` : ''}</section>`;
+  const follows = `<section class="card" id="follows"><h3>Topics you follow</h3>${me.follows.length ? `<ul class="mefollows">${me.follows.map((f) => `<li><a href="${esc(topicHref(f.slug, f.area))}">${esc(f.label)}</a>${f.area === 'politics' ? ' <small>Politics</small>' : ''} <form method="post" action="/me/unfollow" class="meform inline">${hidden({ slug: f.slug, area: f.area, back: '/me#follows' })}<button type="submit" class="ghost">Unfollow</button></form></li>`).join('')}</ul>`
+    : '<p class="meta">None yet. Use <b>+ Follow</b> on a topic’s page: the topics you follow are shown first on the front page, with how each stands.</p>'}<p class="meta">Up to ${MAX_FOLLOWS}.</p></section>`;
+  const canAsk = me.access.features.includes('ask');
+  const asked = `<section class="card" id="asks"><h3>Ask Claude</h3>${canAsk ? `<p class="meta">On a topic’s page, ask a question about it. ${me.askLeft} of ${me.access.askPerDay} questions left today (the day turns at 00:00 UTC).</p>`
+    : `<p class="meta">Not included for your account. ${esc(FEATURES.find((x) => x.key === 'ask')!.description)}</p>`}
+${asks.length ? `<ul class="measks">${asks.map((a) => `<li><a href="/me/ask/${a.id}">${esc(a.question)}</a> <small>${esc(a.label)} &middot; ${date(a.at)}</small></li>`).join('')}</ul>` : ''}</section>`;
+  return shell('Your settings · Undercurrent', bar(ctx, undefined, 'me'), `<header class="pagehead"><div class="eyebrow">Your settings</div><h1>Your Undercurrent</h1>
+<p class="lede">Signed in as <b>${esc(me.email)}</b>${me.access.role.key === 'reader' ? '' : ` &middot; ${esc(me.access.role.name)}`}. What you keep here follows you to any device you sign in on, and is only shown to you.</p>${msgLine(ctx)}</header>
+<div class="mepage">${prefs}${lenses}${follows}${asked}</div>`, {});
+}
+/** /me/ask/<id>: one of the reader's questions and its answer. */
+export function askHtml(ctx: Ctx, a: AskRow, me: Me): string {
+  const topic = topicHref(a.slug, a.area);
+  const again = me.access.features.includes('ask') ? `<p class="meta">${me.askLeft} of ${me.access.askPerDay} questions left today. <a href="${esc(topic)}#askq">Ask another</a></p>` : '';
+  return shell(`${a.question.slice(0, 60)} · Ask Claude · Undercurrent`, bar(ctx, undefined, 'me'), `<header class="pagehead"><div class="eyebrow"><a href="/me#asks">Your questions</a> &middot; <a href="${esc(topic)}">${esc(a.label)}</a></div><h1>${esc(a.question)}</h1></header>
+<article class="prose askanswer">${markdown(a.answer)}</article>
+<p class="meta">Answered on ${date(a.at)} by ${esc(a.model)} from the data of <a href="${esc(topic)}">${esc(a.label)}</a> at that time. A language model can get things wrong: follow the links to check.</p>${again}`, {});
 }
 
 /** What the numbers mean and how they are made, in plain words. */
@@ -1315,7 +1386,7 @@ async function signalStrip(env: Env, ctx: Ctx, n: number, text?: string): Promis
 }
 
 /** The files and JSON behind the picture pages: no menu to draw, so none of the page's reads. Undefined when the address is something else. */
-async function vizData(env: Env, parts: string[], url: URL): Promise<Response | undefined> {
+async function vizData(env: Env, parts: string[], url: URL, me: Me | null = null): Promise<Response | undefined> {
   const jsonOf = async (r: Response) => { if (!r.ok) { await r.body?.cancel(); return NOT_FOUND_JSON(); } return new Response(r.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } }); };
   if (parts[0] === 'viz' && parts.length === 2) {
     if (parts[1] === 'theme.js') return new Response(THEME_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
@@ -1329,7 +1400,7 @@ async function vizData(env: Env, parts: string[], url: URL): Promise<Response | 
   if (parts[0] === 'overview.json' && parts.length === 1) {   // /overview.json?window=&lens=&area=: what get_overview answers, for the landscape frame on the landing page
     const w = url.searchParams.get('window') ?? '1', lens = url.searchParams.get('lens');
     if (!/^[137]$/.test(w) || (lens !== null && !/^[a-z][a-z0-9-]{1,19}$/.test(lens))) return NOT_FOUND_JSON();
-    const d = await loadOverview(env, { window: windowOf(w), lens, area: parseArea(url.searchParams.get('area')) });
+    const area = parseArea(url.searchParams.get('area')), d = await loadOverview(env, { window: windowOf(w), lens, area, own: ownLenses(me, area) });
     return new Response(JSON.stringify(overviewOut(d, url.origin, 'brief').data), { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } });
   }
   if (parts[0] === 'lenses.json' && parts.length === 1) return jsonOf(await env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/lenses-public?area=' + parseArea(url.searchParams.get('area')))));   // /lenses.json?area=: the lenses of an area (AI unless asked): key, name, one line, colour and terms
@@ -1364,13 +1435,13 @@ async function vizData(env: Env, parts: string[], url: URL): Promise<Response | 
 
 /** The landing page: every read is on its own (loadOverview, shared with the MCP tool get_overview), so any one source failing leaves that block out and the rest as it was. */
 async function landingPage(env: Env, ctx: Ctx, url: URL): Promise<string> {
-  const d = await loadOverview(env, { window: windowOf(url.searchParams.get('window')), lens: url.searchParams.get('lens'), boards: ctx.boards, area: ctx.area });
+  const d = await loadOverview(env, { window: windowOf(url.searchParams.get('window')), lens: url.searchParams.get('lens'), boards: ctx.boards, area: ctx.area, own: ownLenses(ctx.me, ctx.area) });
   return landingHtml(ctx, d, url.origin);
 }
 
-async function render(env: Env, url: URL): Promise<Response> {
+async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me: null }): Promise<Response> {
   const parts = url.pathname.split('/').filter(Boolean);
-  const data = await vizData(env, parts, url);
+  const data = await vizData(env, parts, url, viewer.me);
   if (data) return data;
   const html = (body: string, status = 200) => new Response(body, { status, headers: { ...PUBLIC_HEADERS, ...(status === 200 ? { 'cache-control': 'public, max-age=60' } : NO_STORE) } });
   // The rail on every page needs the topics and the public lists.
@@ -1385,13 +1456,21 @@ async function render(env: Env, url: URL): Promise<Response> {
   // One Ctx per area: AI pages see only AI briefings and Signals, politics pages only politics ones. The lists, reports and feed pages are not tagged with an area: they belong to AI.
   const areas = publishedAreas(boards, topics);
   const lensBy: Partial<Record<Area, Lens[]>> = {};   // the lenses of each area, read once per request: the top bar offers them on every page
-  const ctxFor = (area: Area): Ctx => ({ area, areas, lenses: lensBy[area], topics: topicsOfArea(topics, area), boards: boardsOfArea(boards, area), ...(area === 'ai' ? { lists, alists, flists, reports, views } : { lists: [], alists: [], flists: [], reports: [], views: [] }) });
+  const ctxFor = (area: Area): Ctx => ({ area, areas, lenses: lensBy[area], users: viewer.enabled, me: viewer.me, msg: viewer.me ? (url.searchParams.get('msg') ?? '').slice(0, 200) : '', topics: topicsOfArea(topics, area), boards: boardsOfArea(boards, area), ...(area === 'ai' ? { lists, alists, flists, reports, views } : { lists: [], alists: [], flists: [], reports: [], views: [] }) });
   const area = areaOfRequest(parts, url.searchParams, boards, topics);
-  lensBy[area] = await lensesOf(env, area);
+  lensBy[area] = [...await lensesOf(env, area), ...ownLenses(viewer.me, area)];
   const ctx = ctxFor(area);
   const missing = () => html(notFoundHtml(ctx), 404);
   const vizPage = (body: string) => new Response(body, { headers: { ...PUBLIC_HEADERS_FOR(!!analyticsToken, true), 'cache-control': 'public, max-age=60' } });
 
+  if (parts[0] === 'me') {   // /me and /me/ask/<id>: the signed-in reader's own page, never cached (handlePublic)
+    const me = viewer.me;
+    if (!viewer.enabled) return missing();
+    if (!me) return html(shell('Your settings · Undercurrent', bar(ctx, undefined, 'me'), '<header class="pagehead"><h1>Your settings</h1><p class="lede">This page needs the site’s sign-in, which did not come through. Reload the page, or sign in again.</p></header>', {}), 403);
+    if (parts.length === 1) return html(meHtml(ctx, me, (lensBy[area] ?? []).filter((l) => !isOwnLens(l.key)), await env.USERS.getByName('main').asks(me.email)));
+    if (parts.length === 3 && parts[1] === 'ask' && /^\d{1,10}$/.test(parts[2])) { const a = await env.USERS.getByName('main').ask(me.email, Number(parts[2])); return a && a.answer ? html(askHtml(ctx, a, me)) : missing(); }
+    return missing();
+  }
   if (parts.length === 0) return vizPage(await landingPage(env, ctx, url));   // the viz policy: the landscape frame (after the text) is the one script it adds
   if (parts[0] === 'politics') {   // /politics and /politics/briefings: the politics area, when something of it is published
     if (!areas.includes('politics')) return missing();
@@ -1424,7 +1503,7 @@ async function render(env: Env, url: URL): Promise<Response> {
     if (!r) return missing();
     if ('redirect' in r) { const rest = new URLSearchParams(url.search); rest.delete('area'); const tail = rest.toString(); return new Response(null, { status: 301, headers: { location: r.redirect + (tail ? (r.redirect.includes('?') ? '&' : '?') + tail : ''), 'cache-control': 'public, max-age=3600' } }); }
     // A topic belongs to the area of its Signal, whatever the address said: a politics topic opened without a hint still gets the politics menu and leads back to /politics.
-    lensBy[r.data.area] ??= await lensesOf(env, r.data.area);
+    lensBy[r.data.area] ??= [...await lensesOf(env, r.data.area), ...ownLenses(viewer.me, r.data.area)];
     const tctx = r.data.area === ctx.area ? ctx : ctxFor(r.data.area);
     return html(topicHtml(r.data, tctx, topicAngle(url.searchParams.get('angle')), url.origin, lensBy[r.data.area]));
   }
@@ -1533,6 +1612,10 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   analyticsToken = /^[\w-]{8,64}$/.test(env.CF_ANALYTICS_TOKEN ?? '') ? env.CF_ANALYTICS_TOKEN : '';
   PUBLIC_HEADERS = PUBLIC_HEADERS_FOR(!!analyticsToken);
   if (url.pathname === '/report' && request.method === 'POST') return reportPost(request, env);
+  // Who is reading (src/site/me.ts): not for files, sound and pictures, which are the same for everyone.
+  const isMe = url.pathname === '/me' || url.pathname.startsWith('/me/');
+  const viewer: Viewer = /^\/(viz|audio|image)\//.test(url.pathname) || url.pathname === '/robots.txt' ? { enabled: false, me: null } : await viewerOf(request, env);
+  if (isMe && request.method === 'POST') return mePost(request, env, url, viewer);
   if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD', ...NO_STORE } });
   if (url.pathname === '/robots.txt') {
     return new Response(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /custom\n`, { headers: { 'content-type': 'text/plain', 'cache-control': 'public, max-age=3600' } });
@@ -1563,11 +1646,22 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   // The deployed version is part of the key, so a deploy never serves pages (with an old menu) rendered by the version before.
   const ver = (env as { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? '';
   const key = new Request(url.origin + url.pathname + '?' + new URLSearchParams([...(q ? new URLSearchParams(q) : []), ['v', ver]]).toString(), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/');
+  // A reader's front page opens on their lens and window when they come to it from outside (the address typed, a bookmark, another site). From a
+  // page of this site it was chosen ("All" in the lens chooser is a bare /), so it stays.
+  const fromHere = (() => { try { return new URL(request.headers.get('Referer') ?? '').host === url.host; } catch { return false; } })();
+  const home = viewer.me && url.pathname === '/' && !url.search && !fromHere ? homeFor(viewer.me.prefs, () => true) : null;
+  if (home) return new Response(null, { status: 302, headers: { location: '/?' + new URLSearchParams([...(home.lens ? [['lens', home.lens]] : []), ...(home.window !== 1 ? [['window', String(home.window)]] : [])]).toString(), 'cache-control': 'private, no-store' } });
+  // A page that shows what is the reader's own is made for them each time and never kept: the shared copy is the same for everyone.
+  if (isMe || isPersonal(viewer.me)) {
+    const res = await render(env, url, viewer), out = new Response(request.method === 'HEAD' ? null : res.body, res);
+    out.headers.set('cache-control', 'private, no-store');
+    return out;
+  }
   const hit = cacheable ? await cache?.match(key).catch(() => undefined) : undefined;
   // The site keeps a page for a minute; a browser always asks again (no-cache), so it never shows a page older than the site's copy.
   const forBrowser = (r: Response) => { const out = new Response(request.method === 'HEAD' ? null : r.body, r); if (out.headers.get('cache-control')?.startsWith('public')) out.headers.set('cache-control', 'no-cache'); return out; };
   if (hit) return forBrowser(hit);
-  const res = await render(env, url);
+  const res = await render(env, url, { enabled: viewer.enabled, me: null });
   if (res.status === 200 && cacheable) await cache?.put(key, res.clone()).catch(() => undefined);
   return forBrowser(res);
 }

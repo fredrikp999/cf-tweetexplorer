@@ -20,7 +20,8 @@
       { "name": "LISTS", "class_name": "ListsDO" },
       { "name": "PUBLISH", "class_name": "PublishDO" },
       { "name": "COST", "class_name": "CostDO" },
-      { "name": "COLLECT", "class_name": "CollectDO" }
+      { "name": "COLLECT", "class_name": "CollectDO" },
+      { "name": "USERS", "class_name": "UsersDO" }
     ]
   },
   "migrations": [
@@ -28,7 +29,9 @@
     { "tag": "v2", "new_sqlite_classes": ["ListsDO"] },
     { "tag": "v3", "new_sqlite_classes": ["PublishDO"] },
     { "tag": "v4", "new_sqlite_classes": ["CostDO"] },
-    { "tag": "v5", "new_sqlite_classes": ["CollectDO"] }
+    { "tag": "v5", "new_sqlite_classes": ["CollectDO"] },
+    // Readers: settings, own lenses, followed topics, roles and Ask Claude (src/durable-objects/users.ts).
+    { "tag": "v6", "new_sqlite_classes": ["UsersDO"] }
   ],
 
   // Audio versions of briefings (text to speech with Gemini on Replicate): the MP3 files. Create once: `npx wrangler r2 bucket create tweet-explorer-audio`.
@@ -73,7 +76,8 @@
           { "name": "LISTS", "class_name": "ListsDO" },
           { "name": "PUBLISH", "class_name": "PublishDO" },
           { "name": "COST", "class_name": "CostDO" },
-          { "name": "COLLECT", "class_name": "CollectDO" }
+          { "name": "COLLECT", "class_name": "CollectDO" },
+          { "name": "USERS", "class_name": "UsersDO" }
         ]
       },
       "r2_buckets": [{ "binding": "AUDIO", "bucket_name": "tweet-explorer-audio-staging" }],
