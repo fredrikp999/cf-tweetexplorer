@@ -1375,10 +1375,10 @@ export class MonitorDO extends DurableObject<Env> {
 
   // ---- The topic page /t/<slug> (src/signal/topicpage.ts): one topic of the published Signals, the one data set behind the page, /t/<slug>.json and later the MCP tool
   /** A published Signal over its last 7 days, kept for two minutes: the lookup of an address, the page and the summaries all start here. */
-  private async boardView(board: Board): Promise<BoardView> {
-    const k = `bv|${board.slug}`, hit = this.pubCache.get(k);
+  private async boardView(board: Board, days: 1 | 3 | 7 = 7): Promise<BoardView> {
+    const k = `bv|${board.slug}${days === 7 ? '' : '|' + days}`, hit = this.pubCache.get(k);
     if (hit && Date.now() - hit.at < 120_000) return hit.v as BoardView;
-    const c = await this.compute(7, new Set(board.groups));
+    const c = await this.compute(days, new Set(board.groups));
     const shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0), bySlug = new Map<string, ScoredTerm>();
     for (const t of c.terms) { const sl = topicSlug(t.term); if (!bySlug.has(sl)) bySlug.set(sl, t); }   // strongest first: when two names share an address, the stronger holds it
     const v: BoardView = { board, c, shown, bySlug };
@@ -1390,9 +1390,13 @@ export class MonitorDO extends DurableObject<Env> {
   /** `hint`: the area a link came from. The same address can exist on boards in both areas: the hinted area wins, else AI, and the other one is listed in `alsoIn`. */
   private async findTopic(slug: string, hint: Area | null = null) {
     const found: Array<{ v: BoardView; raw: ScoredTerm }> = [];
-    for (const b of this.boards().filter((x) => x.public)) {
-      const v = await this.boardView(b), raw = v.shown.length ? v.bySlug.get(slug) : undefined;
-      if (raw) found.push({ v, raw });
+    // The week first; a topic of the front page's shorter windows (today, 3 days) that the week does not have is looked for there, so its link never ends on "not found".
+    for (const days of [7, 3, 1] as const) {
+      for (const b of this.boards().filter((x) => x.public)) {
+        const v = await this.boardView(b, days), raw = v.shown.length ? v.bySlug.get(slug) : undefined;
+        if (raw) found.push({ v, raw });
+      }
+      if (found.length) break;
     }
     const order = rankByArea(found.map((f) => ({ area: areaOf(f.v.board), signal: f.raw.signal })), hint), ranked = order.map((i) => found[i]);
     const best = ranked[0];

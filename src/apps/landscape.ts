@@ -34,6 +34,7 @@ details{margin-top:4px}summary{cursor:pointer;color:var(--mut);font-size:13px}
 ol{margin:6px 0 0;padding-left:0;list-style:none;display:grid;gap:2px}ol li button{display:flex;gap:8px;width:100%;text-align:left;border:0;background:none;padding:3px 4px;border-radius:5px}ol li button:hover{background:var(--btn)}
 ol li .n{flex:1}ol li .t{color:var(--ac);font-size:12.5px}ol li .p{color:var(--mut);font-variant-numeric:tabular-nums}
 body.full #app{min-height:100vh}
+body.hero #bar,body.hero #lbox,body.hero #note:empty{display:none!important}body.hero #app{padding:8px 10px 6px}body.hero svg{height:340px}body.hero #legend{text-align:center;margin:6px 2px 2px}
 </style></head><body><div id="s">Reading the landscape…</div><div id="app" class="hide">
 <div id="bar"><label>Lens <select id="lens" aria-label="Lens"></select></label><span id="wins" role="group" aria-label="Time window"></span><span class="sp"></span>
 <button id="pickb" class="hide" aria-pressed="false" title="Click bubbles to pick them, then ask Claude about them">Pick topics</button><button id="ask" class="hide"></button><button id="fs" class="hide">Fullscreen</button></div>
@@ -42,7 +43,9 @@ body.full #app{min-height:100vh}
 <details id="lbox"><summary>The topics as a list</summary><ol id="list"></ol></details></div>
 <script>
 var NS = 'http://www.w3.org/2000/svg', WINS = [[1, 'Today'], [3, '3 days'], [7, '7 days']];
-var pending = {}, nextId = 2, host = {}, D = null, L = null, busy = false, theme = '', win = 1, lens = '', area = 'ai', picking = false, sel = {}, ctxTimer = 0, scale = 1, tipFor = '';
+var pending = {}, nextId = 2, host = {}, D = null, L = null, busy = false, theme = '', win = 1, lens = '', area = 'ai', picking = false, sel = {}, ctxTimer = 0, scale = 1, tipFor = '', ox = 0, oy = 0;
+// Hero: the picture on the site's landing page (the host says so in hostContext.embed). The page has the lens, the window and the list already, so the view shows only the bubbles, zoomed to fit them.
+var hero = false;
 function el(id) { return document.getElementById(id); }
 function send(m) { m.jsonrpc = '2.0'; parent.postMessage(m, '*'); }
 function request(method, params, ms, done) {
@@ -85,16 +88,25 @@ function togetherWith(b) {
 
 // ---- drawing
 function draw() {
-  var svg = el('svg'), w = L.w, h = L.h, sc, fs;
+  var svg = el('svg'), w = L.w, h = L.h, vx = 0, vy = 0, sc, fs, rect;
   svg.textContent = '';
-  svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-  sc = (svg.getBoundingClientRect().width || 600) / w; scale = sc;
+  if (hero) {   // the box around the bubbles and groups, with room for names, instead of the whole layout
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    L.bubbles.forEach(function (b) { x0 = Math.min(x0, b.x - b.r); y0 = Math.min(y0, b.y - b.r); x1 = Math.max(x1, b.x + b.r); y1 = Math.max(y1, b.y + b.r); });
+    L.clusters.forEach(function (c) { x0 = Math.min(x0, c.x - c.r); y0 = Math.min(y0, c.y - c.r); x1 = Math.max(x1, c.x + c.r); y1 = Math.max(y1, c.y + c.r); });
+    var pad = Math.max(x1 - x0, y1 - y0) * 0.07 + 4;
+    vx = x0 - pad; vy = y0 - pad; w = x1 - x0 + 2 * pad; h = y1 - y0 + 2 * pad;
+  }
+  svg.setAttribute('viewBox', vx + ' ' + vy + ' ' + w + ' ' + h);
+  rect = svg.getBoundingClientRect();
+  sc = hero && rect.height ? Math.min((rect.width || 600) / w, rect.height / h) : (rect.width || 600) / w; scale = sc;
+  ox = hero ? ((rect.width || 600) - w * sc) / 2 - vx * sc : 0; oy = hero && rect.height ? (rect.height - h * sc) / 2 - vy * sc : 0;
   fs = function (px) { return Math.round(px / sc * 10) / 10; };
   svg.classList.toggle('pick', picking);
   L.clusters.forEach(function (c) {
     var g = sv('g', { 'class': 'cl' });
     g.appendChild(sv('circle', { cx: c.x, cy: c.y, r: c.r }));
-    g.appendChild(sv('text', { x: c.x, y: Math.max(fs(13), c.y - c.r - fs(5)), 'text-anchor': 'middle', 'font-size': fs(12.5) }, c.name));
+    g.appendChild(sv('text', { x: c.x, y: Math.max(vy + fs(13), c.y - c.r - fs(5)), 'text-anchor': 'middle', 'font-size': fs(12.5) }, c.name));
     svg.appendChild(g);
   });
   L.bubbles.slice().sort(function (a, b) { return b.r - a.r; }).forEach(function (b) {
@@ -133,25 +145,35 @@ function gradient(svg, color) {
   }
   return id;
 }
-// The name goes inside the bubble, broken over up to three lines, as large as fits; a bubble too small for that has its name beneath it.
-function label(g, b, px, sc, fs, name) {
-  var f = Math.max(11, Math.min(20, px * 0.27)), inner = px * 1.55, perLine = Math.max(4, Math.floor(inner / (f * 0.56))), words = name.split(/\\s+/), lines = [], cur = '', i;
+function wrap(words, perLine) {
+  var lines = [], cur = '', i;
   for (i = 0; i < words.length; i++) {
     if (cur && (cur + ' ' + words[i]).length > perLine) { lines.push(cur); cur = words[i]; } else cur = cur ? cur + ' ' + words[i] : words[i];
   }
   if (cur) lines.push(cur);
-  var fits = px >= 30 && lines.length <= 3 && lines.every(function (l) { return l.length <= perLine + 2; }) && lines.length * f * 1.15 <= px * 1.7;
+  return lines;
+}
+// The name goes inside the bubble, broken over up to three lines, as large as fits; a bubble too small for that has its name beneath it.
+function label(g, b, px, sc, fs, name) {
+  var f, inner = px * 1.55, perLine, words = name.split(/\\s+/), lines, fits = false;
+  // As large as fits, down to 11 px: a long word in a big bubble takes a smaller size instead of going outside.
+  for (f = Math.max(11, Math.min(20, px * 0.27)); f >= 11; f -= 1) {
+    perLine = Math.max(4, Math.floor(inner / (f * 0.56))); lines = wrap(words, perLine);
+    fits = px >= 30 && lines.length <= 3 && lines.every(function (l) { return l.length <= perLine + 2; }) && lines.length * f * 1.15 <= px * 1.7;
+    if (fits) break;
+  }
+  if (!fits) f = 11;
   if (fits) {
     var showPc = px >= 44 && lines.length <= 2, total = lines.length + (showPc ? 0.9 : 0);
     var top = b.y - fs(((total - 1) * f * 1.15) / 2) + fs(f * 0.35);
     lines.forEach(function (l, k) { g.appendChild(sv('text', { 'class': 'lb', x: b.x, y: top + fs(k * f * 1.15), 'font-size': fs(f) }, l)); });
     if (showPc) g.appendChild(sv('text', { 'class': 'pc', x: b.x, y: top + fs(lines.length * f * 1.15 + 1), 'font-size': fs(Math.max(10.5, f * 0.75)) }, pct(b.score)));
-  } else if (px >= 10) {
+  } else if (px >= 10 && !hero) {   // in the hero the hover and the page's ranked list give the name: names under small bubbles would pile up
     g.appendChild(sv('text', { 'class': 'lb out', x: b.x, y: b.y + b.r + fs(14), 'font-size': fs(12) }, name.length > 22 ? name.slice(0, 21) + '\u2026' : name));
   }
 }
 function showTip(b) {
-  var t = el('tip'), w = el('stage').getBoundingClientRect().width, x = b.x * scale, y = b.y * scale, r = b.r * scale, together = togetherWith(b), st = stateText(b);
+  var t = el('tip'), w = el('stage').getBoundingClientRect().width, x = ox + b.x * scale, y = oy + b.y * scale, r = b.r * scale, together = togetherWith(b), st = stateText(b);
   t.textContent = '';
   t.appendChild(mk('b', '', b.label));
   if (st) t.appendChild(mk('span', 'st', st.charAt(0).toUpperCase() + st.slice(1)));
@@ -189,6 +211,11 @@ function renderAsk() {
 function renderLegend() {
   var p = el('legend'), parts = [];
   p.textContent = '';
+  if (hero) {   // one short line: the page explains the rest
+    p.appendChild(document.createTextNode('Bigger bubble, bigger share \u00B7 \u2726 new \u00B7 \u25B2 rising \u00B7 \u25BC falling'));
+    if (!L.lens) (L.lenses || []).forEach(function (l) { var s = mk('span', 'sw'); s.style.borderColor = dark() ? l.dark : l.light; p.appendChild(s); p.appendChild(document.createTextNode(l.name)); });
+    return;
+  }
   p.appendChild(mk('b', '', 'How to read it. '));
   p.appendChild(document.createTextNode('A bigger bubble is a bigger share of the day\\u2019s items. A ring with \\u2726 is a new topic, a ring with \\u25B2 a rising one, \\u25BC one that is falling. A dashed circle holds topics that are talked about together.'));
   if (L.lens) {
@@ -287,11 +314,12 @@ window.addEventListener('message', function (e) {
     if (m.error) { el('s').textContent = 'initialize failed: ' + JSON.stringify(m.error); return; }
     var r = m.result || {}, hc = r.hostContext || {};
     host = r.hostCapabilities || {};
+    hero = hc.embed === 'hero'; document.body.classList.toggle('hero', hero);
     setTheme(hc.theme);
     send({ method: 'ui/notifications/initialized' });
     reportSize();
     new ResizeObserver(function () { var w = Math.round(el('stage').getBoundingClientRect().width); if (L && w && w !== lastW) { lastW = w; draw(); } else reportSize(); }).observe(document.body);
-    if ((hc.availableDisplayModes || []).indexOf('fullscreen') >= 0) el('fs').classList.remove('hide');
+    if (!hero && (hc.availableDisplayModes || []).indexOf('fullscreen') >= 0) el('fs').classList.remove('hide');
     if (hc.displayMode === 'fullscreen') setFull(true);
   } else if (m.id && pending[m.id]) {
     fn = pending[m.id]; delete pending[m.id]; fn(m);

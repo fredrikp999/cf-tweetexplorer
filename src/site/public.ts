@@ -263,7 +263,7 @@ h1{font-weight:800;font-variation-settings:"opsz" 72}
 .mastin{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:24px 36px;align-items:center}.mast.nobub .mastin{grid-template-columns:minmax(0,1fr)}.mast.nobub .masttext{max-width:46rem}
 .masteye{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#9fc3c8;margin:0 0 12px}.masteye .lsw{width:10px;height:10px;border-radius:3px;background:var(--lc)}
 .mast h1{font-size:clamp(32px,4.4vw,54px);line-height:1.06;letter-spacing:-.022em;margin:0 0 14px;font-variation-settings:"opsz" 60;text-wrap:balance}
-.mast h1 a{text-decoration:none;background:linear-gradient(90deg,#ff8fb8,#ffc56b);-webkit-background-clip:text;background-clip:text;color:transparent}.mast h1 a:hover{text-decoration:underline;text-decoration-color:#ff8fb8}
+.mast h1.long{font-size:clamp(28px,3.4vw,42px)}.mast h1 a{text-decoration:none;background:linear-gradient(90deg,#ff8fb8,#ffc56b);-webkit-background-clip:text;background-clip:text;color:transparent}.mast h1 a:hover{text-decoration:underline;text-decoration-color:#ff8fb8}
 .mastlede{margin:0 0 20px;color:#b7cfd2;font-size:16.5px;max-width:34rem}
 .lensmast{border-top:4px solid var(--lc)}
 .since{display:flex;flex-wrap:wrap;gap:10px;margin:0;font-size:14px}.since .sincelbl{flex-basis:100%;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:#9fc3c8;font-weight:600}
@@ -525,7 +525,7 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
     : sig ? 'Short briefings and the topics being talked about across news, blogs, X, YouTube and Hacker News.' : 'Nothing is published here yet.';
   const mast = `<section class="mast${bubbles ? '' : ' nobub'}${lens ? ` lensmast lc-${lens.color}` : ''}" aria-labelledby="h-mast">${MAST_WAVE}<div class="mastin"><div class="masttext">
 <div class="masteye">${lens ? `<span class="lsw" aria-hidden="true"></span>Lens &middot; ${esc(AREA_LABEL[area])}` : `${date(Date.now())} &middot; ${esc(AREA_LABEL[area])}`}</div>
-<h1 id="h-mast">${lens ? esc(lens.name) : headline || (ai ? 'What is going on in AI' : 'Politics')}</h1><p class="mastlede">${lede}</p>${since}${mini}</div>${graphic}</div></section>`;
+<h1 id="h-mast"${!lens && headline.replace(/<[^>]+>/g, '').length > 60 ? ' class="long"' : ''}>${lens ? esc(lens.name) : headline || (ai ? 'What is going on in AI' : 'Politics')}</h1><p class="mastlede">${lede}</p>${since}${mini}</div>${graphic}</div></section>`;
   const body = `${mast}<div class="lgrid"><div>${brief}${today}</div><div>${landscape}</div></div>${rising}${cards}${research}${watch}
 <p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals. <a href="/signal/method">How the numbers are worked out</a>.</p>`;
   return shell(ai ? 'Agent Cortex' : 'Politics · Agent Cortex', topBar(ctx, { lenses, lens, window: win, href: (p) => landingHref(p, area), here: {} }), body, { wide: true, home: true, canonical: origin ? origin + AREA_HOME[area] : undefined,
