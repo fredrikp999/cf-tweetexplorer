@@ -42,19 +42,22 @@ ol li .n{flex:1}ol li .t{color:var(--ac);font-size:12.5px}ol li .p{color:var(--m
 #rdots{display:inline-flex;gap:4px}#rdots i{width:7px;height:7px;border-radius:50%;background:var(--line)}#rdots i.on{background:var(--ac)}
 #rday{position:absolute;left:8px;top:6px;z-index:4;font-weight:800;font-size:15px;color:var(--fg);background:var(--halo);padding:2px 12px;border-radius:999px;pointer-events:none;backdrop-filter:blur(3px)}
 .rb text.lb{pointer-events:none}
+.glow{fill:none;stroke:var(--ac);stroke-width:3;stroke-opacity:.55;stroke-dasharray:none;animation:glow 2.2s ease-out 3}@keyframes glow{0%{stroke-opacity:1;stroke-width:5}100%{stroke-opacity:.35;stroke-width:2}}
+@media (prefers-reduced-motion:reduce){.glow{animation:none}}
+#since{position:absolute;right:8px;top:6px;z-index:4;font-size:12.5px;font-weight:700;color:var(--fg);background:var(--halo);border:1px solid var(--ac);padding:2px 10px;border-radius:999px;pointer-events:none;backdrop-filter:blur(3px)}
 body.full #app{min-height:100vh}
 body.hero #bar,body.hero #lbox,body.hero #note:empty{display:none!important}body.hero #app{padding:8px 10px 6px}body.hero svg{height:340px}body.hero #legend{text-align:center;margin:6px 2px 2px}
 </style></head><body><div id="s">Reading the landscape…</div><div id="app" class="hide">
 <div id="bar"><label>Lens <select id="lens" aria-label="Lens"></select></label><span id="wins" role="group" aria-label="Time window"></span><span class="sp"></span>
 <button id="pickb" class="hide" aria-pressed="false" title="Click bubbles to pick them, then ask Claude about them">Pick topics</button><button id="ask" class="hide"></button><button id="fs" class="hide">Fullscreen</button></div>
-<div id="stage"><svg id="svg" role="group" aria-label="The landscape of topics"></svg><div id="tip" class="hide" role="status"></div><div id="rday" class="hide" aria-live="polite"></div><div id="rp" class="hide"><button id="play" type="button"></button><span id="rdots" aria-hidden="true"></span></div></div>
+<div id="stage"><svg id="svg" role="group" aria-label="The landscape of topics"></svg><div id="tip" class="hide" role="status"></div><div id="rday" class="hide" aria-live="polite"></div><div id="since" class="hide"></div><div id="rp" class="hide"><button id="play" type="button"></button><span id="rdots" aria-hidden="true"></span></div></div>
 <p id="legend"></p><p id="note" aria-live="polite"></p>
 <details id="lbox"><summary>The topics as a list</summary><ol id="list"></ol></details></div>
 <script>
 var NS = 'http://www.w3.org/2000/svg', WINS = [[1, 'Today'], [3, '3 days'], [7, '7 days']];
 var pending = {}, nextId = 2, host = {}, D = null, L = null, busy = false, theme = '', win = 1, lens = '', area = 'ai', picking = false, sel = {}, ctxTimer = 0, scale = 1, tipFor = '', ox = 0, oy = 0;
 // Hero: the picture on the site's landing page (the host says so in hostContext.embed). The page has the lens, the window and the list already, so the view shows only the bubbles, zoomed to fit them.
-var hero = false;
+var hero = false, lastVisit = 0, fresh = {};
 function el(id) { return document.getElementById(id); }
 function send(m) { m.jsonrpc = '2.0'; parent.postMessage(m, '*'); }
 function request(method, params, ms, done) {
@@ -123,8 +126,9 @@ function draw() {
   L.bubbles.slice().sort(function (a, b) { return b.r - a.r; }).forEach(function (b) {
     var col = colorOf(b), g = sv('g', { 'class': 'b' + (sel[b.slug] ? ' sel' : '') + (L.lens && !b.inLens ? ' dim' : ''), tabindex: 0, role: picking ? 'checkbox' : 'link', 'data-k': b.slug }), px = b.r * sc, chars = Math.floor(px * 1.7 / 6.3), name = b.label;
     if (picking) g.setAttribute('aria-checked', sel[b.slug] ? 'true' : 'false');
-    g.setAttribute('aria-label', b.label + (stateText(b) ? ', ' + stateText(b) : '') + ', ' + pct(b.score) + ' of items' + (picking ? '. Press Enter to pick or drop it.' : '. Press Enter to open it.'));
+    g.setAttribute('aria-label', b.label + (fresh[b.slug] ? ', new since your last visit' : '') + (stateText(b) ? ', ' + stateText(b) : '') + ', ' + pct(b.score) + ' of items' + (picking ? '. Press Enter to pick or drop it.' : '. Press Enter to open it.'));
     g.appendChild(sv('circle', { 'class': 'focus', cx: b.x, cy: b.y, r: b.r + fs(6) }));
+    if (fresh[b.slug] && !picking) g.appendChild(sv('circle', { 'class': 'glow', cx: b.x, cy: b.y, r: b.r + fs(5) }));
     var gid = gradient(svg, col || (dark() ? '#8fa4a7' : '#7d8d90'));
     g.appendChild(sv('circle', { 'class': 'dot', cx: b.x, cy: b.y, r: b.r, fill: 'url(#' + gid + ')', stroke: col || 'var(--grey)' }));
     label(g, b, px, sc, fs, name, chars);
@@ -247,7 +251,7 @@ function startReplay() {
   if (!RF) return;
   if (rT >= RF.length - 1) rT = 0;
   playing = true; hideTip(); rLast = 0;
-  el('rday').classList.remove('hide');
+  el('rday').classList.remove('hide'); el('since').classList.add('hide');
   renderPlay(); drawReplay(rT);
   if (reduced()) rTimer = setInterval(function () { rT = Math.floor(rT) + 1; if (rT >= RF.length - 1) endReplay(); else { drawReplay(rT); renderPlay(); } }, 1100);
   else rRaf = requestAnimationFrame(tick);
@@ -257,7 +261,7 @@ function endReplay() {
   stopReplay(); rT = RF.length - 1;
   el('rday').textContent = dayText(RF[RF.length - 1].day) + ' · today';
   setTimeout(function () { if (!playing) el('rday').classList.add('hide'); }, 1600);
-  draw(); renderPlay();
+  draw(); renderPlay(); sinceLast();
 }
 function tick(ts) {
   if (!playing) return;
@@ -309,6 +313,23 @@ function drawReplay(t) {
   el('rday').textContent = dayText(d.day) + (d.today ? ' · today' : '');
 }
 el('play').onclick = function () { if (playing) { stopReplay(); renderPlay(); } else startReplay(); };
+
+// ---- since the last visit: the site's host passes when the reader was last here (hostContext.lastVisit, kept by the page in the browser). With the kept layouts of D.replay,
+// a topic that is in today's picture but not in the layout of that day gets a ring, and a tag says how many. Nothing is stored or sent: it is worked out here.
+function sinceLast() {
+  fresh = {};
+  var tag = el('since'), frames = D && D.replay && D.replay.frames ? D.replay.frames : [], n = 0;
+  tag.classList.add('hide');
+  if (!lastVisit || !L || L.lens || !frames.length) return;
+  var day = new Date(lastVisit).toISOString().slice(0, 10), then = null;
+  frames.forEach(function (f) { if (f.day <= day) then = f; });
+  if (!then) return;
+  var had = {}; then.bubbles.forEach(function (b) { had[b.k] = 1; });
+  L.bubbles.forEach(function (b) { if (!had[b.slug]) { fresh[b.slug] = true; n++; } });
+  if (!n) return;
+  tag.textContent = 'Since ' + dayText(then.day) + ': ' + n + ' new ' + (n === 1 ? 'topic' : 'topics') + ' (ringed)';
+  tag.classList.remove('hide');
+}
 // ---- the page around it
 function renderBar() {
   var s = el('lens'), ls = L.lenses || [];
@@ -380,7 +401,7 @@ function show(data) {
   }
   var keep = {}; L.bubbles.forEach(function (b) { if (sel[b.slug]) keep[b.slug] = true; }); sel = keep;
   el('s').classList.add('hide'); el('app').classList.remove('hide');
-  stopReplay(); rT = 0;
+  stopReplay(); rT = 0; sinceLast();
   renderBar(); renderLegend(); renderList(); draw(); setupReplay();
   el('note').textContent = '';
 }
@@ -447,6 +468,7 @@ window.addEventListener('message', function (e) {
     var r = m.result || {}, hc = r.hostContext || {};
     host = r.hostCapabilities || {};
     hero = hc.embed === 'hero'; document.body.classList.toggle('hero', hero);
+    lastVisit = Number(hc.lastVisit) || 0;
     setTheme(hc.theme);
     send({ method: 'ui/notifications/initialized' });
     reportSize();
@@ -464,6 +486,6 @@ window.addEventListener('message', function (e) {
     send({ id: m.id, result: {} });
   }
 });
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { hideTip(); if (playing) { stopReplay(); rT = 0; el('rday').classList.add('hide'); draw(); renderPlay(); } } });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { hideTip(); if (playing) { stopReplay(); rT = 0; el('rday').classList.add('hide'); draw(); renderPlay(); sinceLast(); } } });
 send({ id: 1, method: 'ui/initialize', params: { appInfo: { name: 'undercurrent-landscape', version: '0.1.0' }, appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' } });
 </script></body></html>`;

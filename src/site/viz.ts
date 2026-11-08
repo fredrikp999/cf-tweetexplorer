@@ -43,7 +43,7 @@ export const HOST_JS = `(function () {
   window.addEventListener('message', function (e) {
     if (e.source !== f.contentWindow || !e.data) return;
     var m = e.data, p = m.params || {}, ok = function (r) { to({ id: m.id, result: r }); }, no = function (text) { to({ id: m.id, error: { code: -32601, message: text } }); };
-    if (m.method === 'ui/initialize') { var theme = ''; try { theme = themeNow(); } catch (x) {} var inMast = !!(f.closest && f.closest('.mast')); ok({ hostContext: { availableDisplayModes: inMast ? ['inline'] : ['inline', 'fullscreen'], displayMode: 'inline', theme: theme || undefined, embed: inMast ? 'hero' : undefined }, hostCapabilities: { openLinks: {} } }); }
+    if (m.method === 'ui/initialize') { var theme = ''; try { theme = themeNow(); } catch (x) {} var inMast = !!(f.closest && f.closest('.mast')), last = 0; if (kind === 'landscape') { try { last = Number(sessionStorage.getItem('visitPrev')) || 0; } catch (x) {} } ok({ hostContext: { availableDisplayModes: inMast ? ['inline'] : ['inline', 'fullscreen'], displayMode: 'inline', theme: theme || undefined, embed: inMast ? 'hero' : undefined, lastVisit: last || undefined }, hostCapabilities: { openLinks: {} } }); }
     else if (m.method === 'ui/notifications/initialized') read(first(), function (r) { to({ method: 'ui/notifications/tool-result', params: r }); });
     else if (m.method === 'ui/notifications/size-changed') { if (!f.classList.contains('full') && p.height > 0) f.style.height = Math.ceil(p.height) + 'px'; }
     else if (m.method === 'tools/call') { var path = pathOf(p.name, p.arguments); if (path) read(path, ok); else no('not available here'); }
