@@ -2,6 +2,7 @@
 // about 1,500 tokens by default and four times that with `detail: "full"`. Every claim carries the link to the original and to the topic page on the site; evidence is given
 // in the units of section 7, never added into one number; stable ids and a closing "Next:" line let an agent chain calls without guessing.
 // Pure functions (no Worker APIs), so Node can test them. src/agentMcp.ts reads the data and calls these; the same data is `structuredContent`.
+import { PHASE_LABEL, lifecycle } from '../signal/lifecycle.ts';
 import { ARXIV_THANKS } from '../sources/arxiv.ts';
 import { anchorOf } from './brief.ts';
 import { inBrief, cardLine, firstLine, landscapeOf, mixText, pickReads, plainLine, rankList, researchStrip, risingStrip, sinceCounts, type BriefIn, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing.ts';
@@ -160,11 +161,13 @@ export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief',
   const url = origin + topicPath(t.slug, t.area), sep = url.includes('?') ? '&' : '?', full = detail === 'full', st = t.state ? STATE_LABEL[t.state].toLowerCase() : null;
   const recent = t.series.counts.slice(-Math.max(1, Math.min(14, windowDays))).reduce((a, b) => a + b, 0), wd = Math.max(1, Math.min(14, windowDays));
   const talkKinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).filter((k) => t.talk.some((i) => i.kind === k));
+  const life = lifecycle(t.series.counts, t.series.days);
   const data = {
     slug: t.slug, label: t.label, area: t.area ?? 'ai', url, state: t.state, change: t.change, signal: { score: t.signal, kind: t.kind, groups: t.breadth, signalTitle: t.board.title, url: `${origin}/signal/${t.board.slug}` },
     window: { days: wd, mentions: recent }, period: { from: t.from, to: t.to, days: t.days },
     summary: t.summary ? { text: t.summary.text, day: t.summary.day, writtenBy: 'AI', itemCount: t.summary.itemCount, items: t.summary.items } : null, fallback: t.fallback,
     evidence: t.evidence.map((e) => ({ kind: e.kind, label: e.label, count: e.count, lines: e.lines, ...(e.names ? { names: e.names } : {}) })), series: t.series,
+    lifecycle: life ? { phase: life.phase, label: PHASE_LABEL[life.phase], words: life.words, peakDay: t.series.days[life.peak] ?? null, level: life.level } : null,
     talk: t.talk.map((i) => ({ ...i, reactionsText: reactionText(i) })), papers: { matched: t.papers.matched, mentioned: t.papers.mentioned, thanks: ARXIV_THANKS, list: t.papers.list.map((p) => ({ id: p.id, title: p.title, published: p.published, url: p.absUrl, uptake: { discussed: !!(p.attention.hf || p.attention.hn || p.attention.accounts), accounts: p.attention.accounts, hf: p.attention.hf ?? null, hn: p.attention.hn ?? null } })) },
     briefings: (t.briefings ?? []).map((b) => ({ ...b, url: `${origin}/${b.slug}/${b.id}${b.anchor ? '#' + b.anchor : ''}` })), related: t.related.map((r) => ({ ...r, url: origin + topicPath(r.slug, t.area) })), alsoIn: t.alsoIn,
     sourcesShown: t.board.proof,
@@ -172,7 +175,7 @@ export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief',
   };
   const lead = [`**${t.label}**${st ? ` is ${st}` : ''} (${link('topic page', url)}${(t.area ?? 'ai') === 'ai' ? '' : `, area: ${AREA_LABEL[t.area]}`}). ${t.summary ? t.summary.text : t.fallback}`,
     t.summary ? `_Summary written by an AI on ${t.summary.day} from ${plural(t.summary.itemCount, 'item')}; follow the links below to read the originals._` : '_No written summary yet; the line above is built from the numbers._',
-    `${plural(recent, 'mention')} in the last ${wd} days${t.change !== null && t.change !== undefined && t.state ? `; against the period before: ×${t.change.toFixed(1)}` : ''}${t.isNew ? ' (not seen before)' : ''}.`];
+    `${plural(recent, 'mention')} in the last ${wd} days${t.change !== null && t.change !== undefined && t.state ? `; against the period before: ×${t.change.toFixed(1)}` : ''}${t.isNew ? ' (not seen before)' : ''}.${life ? ' ' + life.words : ''}`];
   const secEv = t.evidence.length ? `## Evidence, per kind of source (never added together)\n${t.evidence.map((e) => `- **${e.label}**: ${e.lines.join('; ')}${e.names?.length ? ` (${e.names.join(', ')})` : ''}`).join('\n')}\nSignal score: ${pct(t.signal)}, the share of items that mention it, averaged over the groups of sources and weighted; in ${plural(t.breadth, 'group')} (${t.kind}). ${link('How this is worked out', origin + '/signal/method')}.` : '';
   const per = full ? 8 : 2;
   const secTalk = talkKinds.length ? `## What is being said\n${talkKinds.map((k) => `**${KIND_LABEL[k]}**\n${t.talk.filter((i) => i.kind === k).slice(0, per).map((i) => '- ' + itemLine(i)).join('\n')}`).join('\n')}\n${THIRD_PARTY}` : t.board.proof ? '' : '## What is being said\nThis Signal does not show its sources, so the items behind the topic are not public.';

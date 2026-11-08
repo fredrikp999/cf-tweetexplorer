@@ -20,6 +20,7 @@ import { STATE_LABEL, STATE_MARK, topicSlug, TOPIC_SLUG, roughly, type EvKind, t
 import { TIE_MS } from '../signal/first';
 import { KIND_MARK, KIND_TITLE as KIND_NAME, firstCaveat, firstSentence, lagWords, stampUtc, timelineWords, type TimelineDot } from '../signal/topicview';
 import { loadTopic } from './topicData';
+import { PHASE_LABEL, PHASE_MARK, PHASE_TRACK, lifecycle, smooth, type Lifecycle } from '../signal/lifecycle';
 import { loadOverview } from './overview';
 import { overviewOut } from './agentText';
 import type { Layout } from '../signal/landscape';
@@ -204,6 +205,19 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .ev b{font-size:13px;letter-spacing:.02em}.ev small{color:var(--muted)}.ev.score{border-left-color:var(--accent)}.ev a{font-size:13px}
 .sumfrom{margin:8px 0 0;font-size:13.5px;color:var(--muted)}.sumfrom summary{cursor:pointer}.sumfrom ul{margin:6px 0 0;padding-left:1.2em}
 .angles a small{color:var(--muted)}
+.life{margin:6px 0 8px;padding:14px 16px 12px;border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:var(--sh1)}.lifehead{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}.lifehead .sect{margin:0}
+.lifeviz svg{display:block;width:100%;height:auto;overflow:visible}.lifeviz .axis{display:flex;justify-content:space-between;color:var(--muted);font-size:12.5px}
+.life .lbar{fill:var(--line)}.life .lbar:hover{fill:var(--muted)}.life .lcurve{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;vector-effect:non-scaling-stroke}.life .lus{stroke:var(--muted);stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+.life .lpk{fill:var(--accent);stroke:var(--card);stroke-width:2;vector-effect:non-scaling-stroke}.life .lnow{fill:var(--card);stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}.life .lpt{fill:var(--text);font-size:12px;font-weight:700;paint-order:stroke;stroke:var(--card);stroke-width:3px}
+.lifesay{margin:8px 0 6px;font-size:15px}
+.ltrack{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px;font-size:13px;color:var(--muted)}.ltrack li{display:flex;align-items:center;gap:5px;padding:3px 10px;border:1px dashed var(--line);border-radius:999px}
+.ltrack li.loop{margin-left:auto}.ltrack li.on{border:1px solid currentColor;font-weight:700}
+.phase{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:999px;font-weight:700;font-size:13.5px;white-space:nowrap;border:1px solid currentColor}.phase.sm{font-size:12px;padding:1px 8px;align-self:flex-start}
+.ph-emerging{--ph:#1f8a5b}.ph-peaking{--ph:var(--accent)}.ph-fading{--ph:var(--muted)}.ph-returning{--ph:#7c5cbf}.ph-steady{--ph:var(--bar)}
+.phase,.ltrack li.on{color:var(--ph)}.life .ltrack li.on{color:var(--ph)}.ltrack li:nth-child(1).on{--ph:#1f8a5b}.ltrack li:nth-child(2).on{--ph:var(--accent)}.ltrack li:nth-child(3).on{--ph:var(--muted)}.ltrack li.loop.on{--ph:#7c5cbf}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]) .ph-emerging,:root:not([data-theme=light]) .ltrack li:nth-child(1).on{--ph:#5fd39b}:root:not([data-theme=light]) .ph-returning,:root:not([data-theme=light]) .ltrack li.loop.on{--ph:#b8a1f0}}
+:root[data-theme=dark] .ph-emerging,:root[data-theme=dark] .ltrack li:nth-child(1).on{--ph:#5fd39b}:root[data-theme=dark] .ph-returning,:root[data-theme=dark] .ltrack li.loop.on{--ph:#b8a1f0}
+@media(max-width:560px){.ltrack li.loop{margin-left:0}}
 .tline{margin:0 0 6px}.tline svg{display:block;width:100%;height:auto;max-width:30rem}.tline text{fill:var(--muted);font-size:13px}.tline .base{stroke:var(--line);stroke-width:1}.tline .lane{stroke:var(--line);stroke-width:1;stroke-dasharray:2 4}.tline .dot{fill:var(--bar);stroke:var(--card);stroke-width:1.5}
 .tkey{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;color:var(--muted)}.tkey b{color:var(--bar);margin-right:4px}.twords{margin:0 0 20px;padding-left:1.2em;color:var(--muted);font-size:13.5px}
 .firstsay{font-size:17px;max-width:44rem;margin:0 0 12px}.firstlist{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:10px;max-width:44rem}.firstlist li{border-left:3px solid var(--bar);padding-left:12px}.firstlist .when{color:var(--muted);font-size:13.5px}.firstlist .fnum{display:inline-block;min-width:1.6em;font-weight:700;color:var(--bar)}
@@ -503,7 +517,7 @@ ${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in
     if (!list.length) return lens ? `<section aria-labelledby="h-cards"><h2 class="lh" id="h-cards">${head}</h2><p class="meta">No topic in ${esc(lens.name)} is big enough ${win === 1 ? 'today' : 'in this period'}.</p>${out}</section>` : '';
     return `<section aria-labelledby="h-cards"><h2 class="lh" id="h-cards">${head}</h2><ul class="lcards">${list.map(({ topic: t }) => {
       const sp = extras?.series[t.term.toLowerCase()];
-      return `<li class="lcard${lens ? ` lc-${lens.color}` : ''} st-${pop(t) || 'steady'}"><h3><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a> ${pill(t)}</h3><p>${esc(cardLine(t, extras?.lines[topicSlug(t.term)], groups))}</p>${sp && extras ? topicSpark({ days: extras.days, counts: sp, usual: 0 }) : ''}<small>${esc(mixText(t.parts, groups) || (t.kind === 'single' ? 'one group of sources' : ''))}</small></li>`;
+      return `<li class="lcard${lens ? ` lc-${lens.color}` : ''} st-${pop(t) || 'steady'}"><h3><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a> ${pill(t)}</h3><p>${esc(cardLine(t, extras?.lines[topicSlug(t.term)], groups))}</p>${sp && extras ? topicSpark({ days: extras.days, counts: sp, usual: 0 }) + phaseBadge(lifecycle(sp, extras.days), true) : ''}<small>${esc(mixText(t.parts, groups) || (t.kind === 'single' ? 'one group of sources' : ''))}</small></li>`;
     }).join('')}</ul>${out}</section>`;
   });
 
@@ -697,6 +711,37 @@ function topicSpark(s: TopicData['series']): string {
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(label)}">${s.usual ? `<line x1="0" x2="${W}" y1="${y(s.usual).toFixed(1)}" y2="${y(s.usual).toFixed(1)}" stroke="var(--muted)" stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>` : ''}<polygon fill="var(--accent)" fill-opacity=".13" points="0,${H} ${pts} ${W},${H}"/><polyline fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" points="${pts}"/></svg>`;
 }
 
+/** The phase as a badge: a mark and a word, never colour alone. */
+const phaseBadge = (lc: Lifecycle | null, small = false) => (lc ? `<span class="phase ph-${lc.phase}${small ? ' sm' : ''}" title="${esc(lc.words)}"><b aria-hidden="true">${PHASE_MARK[lc.phase]}</b> ${PHASE_LABEL[lc.phase]}</span>` : '');
+/**
+ * The life of a topic (src/signal/lifecycle.ts): the daily counts as faint bars, the smoothed curve over them, the peak (and the earlier peak of a topic that is back again) marked and named,
+ * and a track that lights the phase it is in. Inline SVG, no script; the sentence beside it says the same.
+ */
+function lifeHtml(s: TopicData['series']): string {
+  const c = s.counts, lc = lifecycle(c, s.days);
+  if (c.length < 2) return '';
+  const W = 560, H = 132, T = 22, B = 18, top = Math.max(1, ...c, s.usual) * 1.08, bw = W / c.length, x = (i: number) => (i + 0.5) * bw, y = (v: number) => H - B - (v / top) * (H - B - T);
+  const sm = smooth(c), pts = sm.map((v, i) => [x(i), y(v)] as const);
+  // a soft curve through the smoothed points (Catmull-Rom as cubic Béziers)
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+    d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)},${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)},${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  const area = `${d} L${pts[pts.length - 1][0].toFixed(1)},${H - B} L${pts[0][0].toFixed(1)},${H - B} Z`;
+  const bars = c.map((v, i) => `<rect class="lbar" x="${(i * bw + bw * 0.18).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw * 0.64).toFixed(1)}" height="${Math.max(0, H - B - y(v)).toFixed(1)}" rx="2"><title>${esc(shortDay(s.days[i]))}: ${c[i]} ${c[i] === 1 ? 'item' : 'items'}</title></rect>`).join('');
+  const mark = (i: number, text: string) => { const px = x(i), py = y(sm[i]), anchor = px < 40 ? 'start' : px > W - 40 ? 'end' : 'middle'; return `<circle class="lpk" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="5"/><text class="lpt" x="${px.toFixed(1)}" y="${Math.max(12, py - 10).toFixed(1)}" text-anchor="${anchor}">${esc(text)}</text>`; };
+  const marks = lc ? (lc.firstPeak !== undefined ? mark(lc.firstPeak, 'first peak') : '') + (lc.phase === 'steady' ? '' : mark(lc.peak, lc.peak >= c.length - 3 ? 'now' : 'peak')) : '';
+  const end = pts[pts.length - 1], now = lc && lc.peak !== c.length - 1 ? `<circle class="lnow" cx="${end[0].toFixed(1)}" cy="${end[1].toFixed(1)}" r="4"/>` : '';
+  const usual = s.usual ? `<line class="lus" x1="0" x2="${W}" y1="${y(s.usual).toFixed(1)}" y2="${y(s.usual).toFixed(1)}"/>` : '';
+  const label = `Items per day, ${s.days[0]} to ${s.days[s.days.length - 1]}: ${c.join(', ')}.${s.usual ? ` Usual level about ${+s.usual.toFixed(1)} a day.` : ''}${lc ? ' ' + lc.words : ''}`;
+  const track = lc ? `<ol class="ltrack" aria-label="Where the topic is in its life">${PHASE_TRACK.map((p) => `<li class="${lc.phase === p ? 'on' : ''}"${lc.phase === p ? ' aria-current="step"' : ''}><b aria-hidden="true">${PHASE_MARK[p]}</b>${PHASE_LABEL[p]}</li>`).join('')}<li class="loop${lc.phase === 'returning' ? ' on' : ''}"${lc.phase === 'returning' ? ' aria-current="step"' : ''}><b aria-hidden="true">${PHASE_MARK.returning}</b>${PHASE_LABEL.returning}</li></ol>` : '';
+  return `<section class="life${lc ? ' ph-' + lc.phase : ''}" aria-labelledby="h-life"><div class="lifehead"><h2 class="sect" id="h-life">Its life so far</h2>${phaseBadge(lc)}</div>
+<div class="lifeviz"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}"><defs><linearGradient id="lifefill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".28"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>${bars}${usual}<path class="larea" d="${area}" fill="url(#lifefill)"/><path class="lcurve" d="${d}"/>${marks}${now}</svg>
+<div class="axis"><span>${esc(shortDay(s.days[0]))}</span><span>${esc(shortDay(s.days[s.days.length - 1]))}</span></div></div>
+${lc ? `<p class="lifesay">${esc(lc.words)}</p>` : '<p class="meta">Too few mentions to tell where this topic is in its life.</p>'}${track}</section>`;
+}
+
 /** One segment per kind of source, each in its own unit, then the Signal score with the link to how it is worked out. Never one blended number. */
 function evidenceHtml(d: TopicData): string {
   const seg = d.evidence.map((e) => `<li class="ev"><b>${esc(e.label)}</b>${e.lines.map((l) => `<span>${esc(l)}</span>`).join('')}${e.names?.length ? `<small>${esc(e.names.join(', '))}</small>` : ''}</li>`).join('');
@@ -795,8 +840,8 @@ export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', len
   const summary = sm?.text ?? d.fallback;
   return shell(`${d.label} · Topic · Undercurrent`, bar(ctx, undefined, 'topics'), `<header class="pagehead"><div class="eyebrow">${areaLink}Topic &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a></div><h1>${esc(d.label)} ${pill}</h1>
 <p class="lede">${esc(summary)}</p>${written}${lensLine}${topicActions(ctx, d)}</header>
-<section class="tophead"><div class="spark">${topicSpark(d.series)}<div class="axis"><span>${esc(d.series.days[0])}</span><span>${esc(d.series.days[d.series.days.length - 1])}</span></div></div>
-<p class="meta">Items per day, the last 14 days; the dashed line is the usual level. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p></section>
+${lifeHtml(d.series)}
+<p class="meta">Items per day over the last 14 days: bars for each day, the curve their three-day average${d.series.usual ? ', the dashed line the usual level' : ''}. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p>
 ${evidenceHtml(d)}
 ${timelineHtml(d)}
 <h2 class="sect">The angles</h2>${tabs}
