@@ -20,6 +20,8 @@ import { STATE_LABEL, STATE_MARK, topicSlug, TOPIC_SLUG, roughly, type EvKind, t
 import { TIE_MS } from '../signal/first';
 import { KIND_MARK, KIND_TITLE as KIND_NAME, firstCaveat, firstSentence, lagWords, stampUtc, timelineWords, type TimelineDot } from '../signal/topicview';
 import { loadTopic } from './topicData';
+import { CARD_FONT, CARD_W, shareCardSvg } from './shareCard';
+import { svgToPng } from '../media/png';
 import { PHASE_LABEL, PHASE_MARK, PHASE_TRACK, lifecycle, smooth, type Lifecycle } from '../signal/lifecycle';
 import { loadOverview } from './overview';
 import { overviewOut } from './agentText';
@@ -847,7 +849,7 @@ ${timelineHtml(d)}
 <h2 class="sect">The angles</h2>${tabs}
 <section id="angle">${topicPanel(d, angle)}</section>
 ${d.related.length ? `<h2 class="sect">Goes with</h2><p class="meta">${d.related.map((r) => `<a href="${esc(topicHref(r.slug, d.area))}">${esc(r.label)}</a>`).join(' &middot; ')}</p>` : ''}`,
-  { description: summary, canonical: origin ? origin + topicHref(d.slug, d.area) : undefined });
+  { description: summary, canonical: origin ? origin + topicHref(d.slug, d.area) : undefined, image: origin ? origin + cardHref(d.slug, d.area) : undefined });
 }
 
 // ---- The signed-in reader (src/site/me.ts): their topics on the front page, Follow and Ask Claude on a topic page, and /me. Only on pages made for them.
@@ -1653,13 +1655,43 @@ async function reportPost(request: Request, env: Env): Promise<Response> {
   return back(r.ok ? 'ok' : 'error');
 }
 
+/** /t/<slug>/card.png: the picture a shared topic link shows (src/site/shareCard.ts). */
+const CARD_PATH = /^\/t\/[a-z0-9][a-z0-9-]{0,63}\/card\.png$/;
+const utcDay = (ms = Date.now()) => new Date(ms).toISOString().slice(0, 10);
+/** Where a topic's card is: the day is in the address, so a link shared tomorrow gets tomorrow's curve while one shared today keeps showing today's. */
+export const cardHref = (slug: string, area: Area, day = utcDay()) => `/t/${slug}/card.png?${area === 'politics' ? 'area=politics&' : ''}d=${day}`;
+/**
+ * The card as a PNG. Drawn once per topic, area and day and kept at the edge for six hours (drawing takes tens of milliseconds, but crawlers ask in bursts when a link spreads).
+ * A topic counted under a bigger one sends to that one's card, as its page does. Never starts a model call.
+ */
+async function topicCard(request: Request, env: Env, url: URL, slug: string): Promise<Response> {
+  const area = areaHint(url.searchParams.get('area')), day = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('d') ?? '') ? url.searchParams.get('d')! : utcDay();
+  const ver = (env as { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? '';
+  const cache = (globalThis as unknown as { caches?: { default?: Cache } }).caches?.default;
+  const key = new Request(`${url.origin}/t/${slug}/card.png?${area ? 'area=' + area + '&' : ''}d=${day}&v=${ver}`, { method: 'GET' });
+  const hit = await cache?.match(key).catch(() => undefined);
+  if (hit) return request.method === 'HEAD' ? new Response(null, hit) : hit;
+  const r = await loadTopic(env, slug, { quiet: true, area });
+  if (!r) return new Response('Not found', { status: 404, headers: NO_STORE });
+  if ('redirect' in r) { const to = /^\/t\/([^/?]+)/.exec(r.redirect)?.[1] ?? slug; return new Response(null, { status: 301, headers: { location: cardHref(to, r.redirect.includes('area=politics') ? 'politics' : 'ai', day), 'cache-control': 'public, max-age=3600' } }); }
+  const d = r.data, svg = shareCardSvg({ label: d.label, area: d.area, state: d.state, change: d.change, series: d.series, host: url.host });
+  let png: Uint8Array;
+  try { png = await svgToPng(svg, CARD_W, CARD_FONT); } catch (err) {
+    console.error('topic card', slug, err instanceof Error ? err.message : String(err));
+    return new Response('Could not draw the picture', { status: 500, headers: NO_STORE });
+  }
+  const res = new Response(png, { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=21600', 'x-content-type-options': 'nosniff' } });
+  await cache?.put(key, res.clone()).catch(() => undefined);
+  return request.method === 'HEAD' ? new Response(null, res) : res;
+}
+
 export async function handlePublic(request: Request, env: Env, url: URL): Promise<Response> {
   analyticsToken = /^[\w-]{8,64}$/.test(env.CF_ANALYTICS_TOKEN ?? '') ? env.CF_ANALYTICS_TOKEN : '';
   PUBLIC_HEADERS = PUBLIC_HEADERS_FOR(!!analyticsToken);
   if (url.pathname === '/report' && request.method === 'POST') return reportPost(request, env);
   // Who is reading (src/site/me.ts): not for files, sound and pictures, which are the same for everyone.
   const isMe = url.pathname === '/me' || url.pathname.startsWith('/me/');
-  const viewer: Viewer = /^\/(viz|audio|image)\//.test(url.pathname) || url.pathname === '/robots.txt' ? { enabled: false, me: null } : await viewerOf(request, env);
+  const viewer: Viewer = /^\/(viz|audio|image)\//.test(url.pathname) || CARD_PATH.test(url.pathname) || url.pathname === '/robots.txt' ? { enabled: false, me: null } : await viewerOf(request, env);
   if (isMe && request.method === 'POST') return mePost(request, env, url, viewer);
   if (url.pathname === '/me/avatar' && request.method === 'GET') return avatarResponse(request, env, url, viewer);
   if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method not allowed', { status: 405, headers: { allow: 'GET, HEAD', ...NO_STORE } });
@@ -1683,6 +1715,7 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
     if (!r.ok) { await r.body?.cancel(); return new Response('Not found', { status: 404, headers: NO_STORE }); }
     return serveImage(env, ((await r.json()) as { key: string }).key, request, 'public, max-age=3600');
   }
+  if (CARD_PATH.test(url.pathname)) return topicCard(request, env, url, seg[1]);
   // Edge cache: public traffic must not all land on the one Durable Object. A minute of staleness is fine.
   const cache = (globalThis as unknown as { caches?: { default?: Cache } }).caches?.default;
   // The key is the path plus the query parameters a page reads (Signal's sort and group, a topic's angle, the lens), so a sorted page is not served the default one.

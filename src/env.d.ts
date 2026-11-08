@@ -21,3 +21,9 @@ interface Env {
   /** Hosts the site moved away from, "old.example.com=new.example.com" (several separated by commas): redirected, path kept (src/lib/hosts.ts). Optional secret. */
   MOVED_HOSTS: string;
 }
+
+/** Fonts bundled as bytes (the `Data` rule for *.ttf in wrangler.jsonc), for the PNG renderer of src/media/png.ts. */
+declare module '*.ttf' {
+  const value: ArrayBuffer;
+  export default value;
+}
