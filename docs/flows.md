@@ -279,8 +279,9 @@ A lens (`src/signal/lens.ts`) is an area of interest: a key (`security`), a name
 4. **Two weeks of talk**: the topics of the page (the lens's, with one chosen; at most `STREAM_TOPICS`, 10) as a streamgraph (`topicStream`, layout in `src/signal/stream.ts`: inside-out order, half wiggle and half centred baseline). The daily counts are the same `landing-public` series the cards use, asked for the first ten topics instead of six. Each band links to its topic and the list under it names them all.
    Under it, the same topics' mentions summed per day over 30 days as a heat calendar (`heat` in `landing-public`).
 5. **Replay**: `/overview.json` (only) also carries the kept layouts of the days before today (`landscape-replay-public`, `replayFrames`), so the landscape frame can play the week back; layouts now store each bubble's name, and older ones fall back to the words of the address. No lens: lens pictures are made on the spot and not kept.
-6. **A chosen lens colours the page** (`LENS_ACCENT_CSS`): the top bar carries `haslens lc-<colour>`, `body:has(>.topbar.lc-…)` sets `--lc`, and the line under the bar, the heading marks, the ranked bars, the heat calendar and link hovers take it. The same on every page whose top bar has a lens (`/topics`, `/signal/…`, the Research map).
-7. **Research**: papers are listed a day or two late, so new papers are counted over at least three days. With a lens, papers whose title matches the lens terms.
+6. **The tiles** of "Today:" roll up from zero once on load (`/viz/visit.js`; not with reduced motion).
+7. **A chosen lens colours the page** (`LENS_ACCENT_CSS`): the top bar carries `haslens lc-<colour>`, `body:has(>.topbar.lc-…)` sets `--lc`, and the line under the bar, the heading marks, the ranked bars, the heat calendar and link hovers take it. The same on every page whose top bar has a lens (`/topics`, `/signal/…`, the Research map).
+8. **Research**: papers are listed a day or two late, so new papers are counted over at least three days. With a lens, papers whose title matches the lens terms.
 
 ## Areas: AI and Politics
 

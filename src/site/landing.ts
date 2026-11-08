@@ -143,6 +143,7 @@ export function pickReads(items: ReadItem[], n = 3): { articles: ReadItem[]; rea
 
 // ---- the small script (served at /viz/visit.js, never inline). The server always writes the counts for the window ("Today:"); a remembered last visit can only
 // rename that label when the window is exactly the time since then, and otherwise points to the window that covers it. Everything is in try/catch.
+// It also rolls the counts of the tiles up from zero once, on load (not with reduced motion; the page without script shows the numbers as they are).
 export const VISIT_JS = `(function(){var el=document.getElementById('since');if(!el)return;try{var D=864e5,now=Date.now(),prev=null;
 try{prev=sessionStorage.getItem('visitPrev')}catch(e){}
 if(prev===null){prev=localStorage.getItem('visit')||'';try{sessionStorage.setItem('visitPrev',prev)}catch(e){}localStorage.setItem('visit',String(now))}
@@ -151,7 +152,11 @@ var days=Math.max(1,Math.ceil((now-t)/D)),w=days<=1?1:days<=3?3:7,win=Number(el.
 label=days<=1?'yesterday':days<=7?new Date(t).toLocaleDateString(undefined,{weekday:'long'}):new Date(t).toLocaleDateString(undefined,{day:'numeric',month:'long'});
 if(days===win){var l=el.querySelector('.sincelbl');if(l)l.textContent='Since '+label+':'}
 else if(w!==win){var a=document.querySelector('a[data-win="'+w+'"]');if(a){var s=document.createElement('span');s.className='sincehint';s.appendChild(document.createTextNode(' You were last here '+label+'. '));var k=document.createElement('a');k.setAttribute('href',a.getAttribute('href'));k.textContent='See the last '+(w===1?'day':w+' days')+'.';s.appendChild(k);el.appendChild(s)}}
-}catch(e){}})();`;
+}catch(e){}})();
+(function(){try{var t=document.querySelectorAll('#since .tile b');if(!t.length||!window.requestAnimationFrame)return;if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+var v=[],t0=0,D=900,i;for(i=0;i<t.length;i++){v.push(Number(t[i].textContent.replace(/[^0-9]/g,''))||0);t[i].textContent='0'}
+function f(ts){if(!t0)t0=ts;var p=Math.min(1,(ts-t0)/D),e=1-Math.pow(1-p,3);for(var k=0;k<t.length;k++)t[k].textContent=Math.round(v[k]*e).toLocaleString('en-GB');if(p<1)requestAnimationFrame(f)}
+requestAnimationFrame(f)}catch(e){}})();`;
 
 // ---- the landscape graphic (the view in src/apps/landscape.ts draws exactly this)
 export interface LandscapeBubble { slug: string; label: string; url: string; x: number; y: number; r: number; cluster: string; state: TopicState | null; change: number | null; score: number;
