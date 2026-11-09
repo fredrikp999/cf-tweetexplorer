@@ -440,15 +440,18 @@ The site can know who is reading, by the login of the Access application in fron
 - every reader keeps a **default front page** (lens and window), **lenses of their own** and **topics they follow**, at `/me`, on any device they
   sign in on. Their picture at the top right of every page opens it: the Google picture when the login passes one on (Access's get-identity, read
   once a week and served from `/me/avatar`, so pages load nothing from elsewhere), else a circle with their initial;
+- every reader can keep **saved lists** of posts, videos and papers (☆ Save on a topic page), private to them;
 - a **role** can give extra features: **Ask Claude**, a question box on topic pages answered by a language model from the topic's own data, with a
-  number of questions a day.
+  number of questions a day; and **Publish lists**, which lets a reader open a saved list to the analysts (everyone with the feature) or to
+  everyone, on `/saved`.
 
 To switch it on:
 1. In Zero Trust → Access → Applications, open the application that covers the whole site (not the one for `/admin` or `/mcp`), and copy its
    **Application Audience (AUD) Tag**.
 2. `npx wrangler secret put SITE_POLICY_AUD --env=""` and paste it.
 3. Deploy (the first deploy with readers adds the `UsersDO` Durable Object, migration `v6`).
-4. In the admin, **Readers**: give the role Analyst (or one of your own) to whoever should have Ask Claude.
+4. In the admin, **Readers**: give the role Analyst (or one of your own) to whoever should have Ask Claude and Publish lists. If you have saved
+   the roles before, the stored Analyst role does not get Publish lists by itself: tick it there.
 
 Without the secret nothing changes for readers, and **Your settings** is not offered. Pages stay in the shared page cache for everyone who keeps
 nothing of their own; a page for a reader with own lenses, followed topics or Ask Claude is made for them each time and never cached. Ask Claude

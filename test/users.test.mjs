@@ -1,7 +1,7 @@
 // Readers: addresses, roles and what they give, settings, own lenses, followed topics, questions, and the links an answer may keep.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { DEFAULT_ROLES, EXTRA_ASK_PER_DAY, MAX_OWN_LENSES, NO_PREFS, accessOf, cleanEmail, cleanFollow, cleanOwnLens, cleanPrefs, cleanQuestion, cleanRoles, homeFor, keepLinks } from '../src/users/model.ts';
+import { DEFAULT_ROLES, EXTRA_ASK_PER_DAY, LIST_ID, MAX_OWN_LENSES, NO_PREFS, accessOf, canPublish, cleanEmail, cleanFollow, cleanListForm, cleanNote, cleanOwnLens, cleanPrefs, cleanQuestion, cleanRoles, findItem, homeFor, keepLinks, mayView, newListId, visibilityFor } from '../src/users/model.ts';
 
 describe('addresses', () => {
   test('lowercased and trimmed', () => assert.equal(cleanEmail('  Anna.B@Gmail.com '), 'anna.b@gmail.com'));
@@ -101,5 +101,50 @@ describe('the avatar', async () => {
     assert.match(initialSvg('anna b', 'anna@x.com'), />A<\/text>/);
     assert.equal(initialSvg('', 'bo@x.com'), initialSvg('', 'bo@x.com'));
     assert.match(initialSvg('<script>', 'a@x.com'), />\?<\/text>/);
+  });
+});
+
+describe('saved lists', () => {
+  const analyst = accessOf({ role: 'analyst', extra: [] }, DEFAULT_ROLES), reader = accessOf({ role: 'reader', extra: [] }, DEFAULT_ROLES);
+  test('analysts may publish, readers may not, and an extra feature gives it to a reader', () => {
+    assert.deepEqual([canPublish(analyst), canPublish(reader), canPublish(null)], [true, false, false]);
+    assert.ok(canPublish(accessOf({ role: 'reader', extra: ['publish'] }, DEFAULT_ROLES)));
+  });
+  test('a reader who may not publish keeps every list private', () => {
+    assert.equal(visibilityFor('public', reader), 'private');
+    assert.equal(visibilityFor('analysts', analyst), 'analysts');
+    assert.equal(visibilityFor('everyone', analyst), 'private');
+  });
+  test('the form: a name is needed, text is one line and cut', () => {
+    assert.throws(() => cleanListForm({ name: '  ' }, analyst), /name/);
+    assert.deepEqual(cleanListForm({ name: ' Agent\nsecurity ', description: 'x'.repeat(400), visibility: 'public' }, analyst), { name: 'Agent security', description: 'x'.repeat(280), visibility: 'public' });
+    assert.equal(cleanNote('a\n b'), 'a b');
+  });
+  test('who may open a list', () => {
+    const see = (visibility, o) => mayView({ visibility }, { owner: false, ownerAccess: analyst, viewerAccess: null, ...o });
+    assert.equal(see('private', { owner: true, ownerAccess: reader }), true);
+    assert.equal(see('private', { viewerAccess: analyst }), false);
+    assert.equal(see('public', {}), true, 'public: anyone, signed in or not');
+    assert.equal(see('analysts', { viewerAccess: reader }), false);
+    assert.equal(see('analysts', {}), false);
+    assert.equal(see('analysts', { viewerAccess: analyst }), true);
+    assert.equal(see('public', { ownerAccess: reader }), false, 'an owner who lost the feature has only private lists');
+  });
+  test('list addresses are random and well formed', () => { const a = newListId(); assert.match(a, LIST_ID); assert.notEqual(a, newListId()); });
+});
+
+describe('the item a Save takes from the topic', () => {
+  const d = { slug: 'mcp-auth', area: 'ai', label: 'MCP auth', board: { proof: true },
+    talk: [{ kind: 'hn', title: 'Bypass found', url: 'https://ex.com/a', discussionUrl: '', source: 'Hacker News', by: 'pg', ts: 5 }],
+    watch: [{ video: 'abcdefghijk', title: 'Talk', url: 'https://youtube.com/watch?v=abcdefghijk', source: 'Chan', by: 'Chan', ts: 6, via: 'Signal' }],
+    papers: { list: [{ absUrl: 'https://arxiv.org/abs/1', title: 'Paper', authors: ['A', 'B', 'C', 'D'], published: 7 }] } };
+  test('a post, a video and a paper, as the page showed them', () => {
+    assert.deepEqual(findItem(d, 'https://ex.com/a'), { url: 'https://ex.com/a', kind: 'hn', title: 'Bypass found', source: 'Hacker News', by: 'pg', ts: 5, slug: 'mcp-auth', area: 'ai', label: 'MCP auth' });
+    assert.equal(findItem(d, 'https://youtube.com/watch?v=abcdefghijk').kind, 'youtube');
+    assert.deepEqual([findItem(d, 'https://arxiv.org/abs/1').kind, findItem(d, 'https://arxiv.org/abs/1').by], ['arxiv', 'A, B, C et al.']);
+  });
+  test('an address not on the page, or posts of a Signal that hides its sources: nothing', () => {
+    assert.equal(findItem(d, 'https://evil.example/'), null);
+    assert.equal(findItem({ ...d, board: { proof: false } }, 'https://ex.com/a'), null);
   });
 });

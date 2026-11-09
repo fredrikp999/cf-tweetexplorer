@@ -1,11 +1,13 @@
-// Readers: who is signed in (by the Google login of Cloudflare Access), what each keeps (a default lens and window, lenses of their own, topics they
-// follow), and which extra features a role gives (Ask Claude, with a daily number of questions). Pure functions (no Worker APIs), so Node can test them.
+// Readers: who is signed in (by the Google login of Cloudflare Access), what each keeps (a default lens and window, lenses of their own, topics they follow, saved lists),
+// and which extra features a role gives (Ask Claude with a daily number of questions, Publish lists). Pure functions (no Worker APIs), so Node can test them.
 // The UsersDO (src/durable-objects/users.ts) stores it all; the public site reads it per request (src/site/me.ts); the admin manages roles (Readers tab).
 import { LENS_COLORS, cleanLens, type Lens, type LensArea } from '../signal/lens.ts';
+import type { TopicData } from '../signal/topicpage.ts';
 
 /** The features a role can give. One entry per feature: its key, its name and what it does, as the admin shows it. */
 export const FEATURES = [
   { key: 'ask', name: 'Ask Claude', description: 'Ask a question on a topic page; a language model answers from the topic’s items, briefings and summary. Each question costs a little and counts against the role’s daily number.' },
+  { key: 'publish', name: 'Publish lists', description: 'Make a saved list public on the site (/saved), or open it to the analysts only: everyone whose role or extras give this feature. Taking the feature away makes their lists private again.' },
 ] as const;
 export type Feature = (typeof FEATURES)[number]['key'];
 const FEATURE_KEYS = new Set<string>(FEATURES.map((f) => f.key));
@@ -16,7 +18,7 @@ export interface Role { key: string; name: string; features: Feature[]; /** Ask 
 export const READER = 'reader';
 export const DEFAULT_ROLES: Role[] = [
   { key: READER, name: 'Reader', features: [], askPerDay: 0 },
-  { key: 'analyst', name: 'Analyst', features: ['ask'], askPerDay: 20 },
+  { key: 'analyst', name: 'Analyst', features: ['ask', 'publish'], askPerDay: 20 },
 ];
 /** The questions a day a user gets for a feature given on its own (not by the role) when the role gives none. */
 export const EXTRA_ASK_PER_DAY = 10;
@@ -98,6 +100,56 @@ export function cleanFollow(raw: unknown): Omit<Follow, 'at'> | null {
   const b = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const slug = String(b.slug ?? '').toLowerCase();
   return TOPIC_SLUG.test(slug) ? { slug, area: b.area === 'politics' ? 'politics' : 'ai', label: oneLine(b.label, 80) || slug.replace(/-/g, ' ') } : null;
+}
+
+// ---- saved lists: posts, videos and papers a reader keeps, private unless a reader with Publish lists opens them to the analysts or to everyone
+export const VISIBILITIES = ['private', 'analysts', 'public'] as const;
+export type Visibility = (typeof VISIBILITIES)[number];
+export const VISIBILITY_LABEL: Record<Visibility, string> = { private: 'Only you', analysts: 'Analysts', public: 'Everyone' };
+export const MAX_SAVED_LISTS = 20, MAX_SAVED_ITEMS = 200;
+/** A list's address (/saved/<id>): random, so a list open to analysts cannot be found by counting. */
+export const LIST_ID = /^[a-z0-9]{10}$/;
+export function newListId(): string { const b = crypto.getRandomValues(new Uint8Array(10)); return [...b].map((x) => 'abcdefghijklmnopqrstuvwxyz0123456789'[x % 36]).join(''); }
+
+export interface SavedList { id: string; name: string; description: string; visibility: Visibility; count: number; created: number; updated: number }
+/** A saved item: a copy of what the topic page showed when it was saved (items leave the site after 90 days; the list keeps them). */
+export interface SavedItem { url: string; kind: 'x' | 'hn' | 'youtube' | 'rss' | 'arxiv'; title: string; source: string; by: string; ts: number; slug: string; area: 'ai' | 'politics'; label: string; note: string; at: number }
+
+export const canPublish = (a: Pick<Access, 'features'> | null | undefined): boolean => !!a?.features.includes('publish');
+/** The visibility asked for, or private when the reader may not publish. */
+export function visibilityFor(raw: unknown, a: Pick<Access, 'features'> | null | undefined): Visibility {
+  const v = VISIBILITIES.find((x) => x === raw) ?? 'private';
+  return canPublish(a) ? v : 'private';
+}
+/** The name, description and visibility of a list from the form. Throws a plain message when there is no name. */
+export function cleanListForm(raw: unknown, a: Pick<Access, 'features'> | null | undefined): { name: string; description: string; visibility: Visibility } {
+  const b = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const name = oneLine(b.name, 60);
+  if (!name) throw new Error('give the list a name');
+  return { name, description: oneLine(b.description, 280), visibility: visibilityFor(b.visibility, a) };
+}
+/** A note on a saved item: one line, at most 280 characters. */
+export const cleanNote = (raw: unknown): string => oneLine(raw, 280);
+/**
+ * Whether a viewer may open a list. The owner always; otherwise only while the owner may still publish (taking Publish lists away makes their
+ * lists private again), and then everyone for a public list, readers who may publish for an analysts' list.
+ */
+export function mayView(list: Pick<SavedList, 'visibility'>, o: { owner: boolean; ownerAccess: Pick<Access, 'features'>; viewerAccess: Pick<Access, 'features'> | null }): boolean {
+  if (o.owner) return true;
+  if (list.visibility === 'private' || !canPublish(o.ownerAccess)) return false;
+  return list.visibility === 'public' || canPublish(o.viewerAccess);
+}
+
+/** The item behind an address on a topic page (src/site/me.ts itemOnTopic): a post from Talk (only when its Signal shows sources), a video from Watch, or a paper. */
+export function findItem(d: TopicData, url: string): Omit<SavedItem, 'note' | 'at'> | null {
+  const at = { slug: d.slug, area: d.area, label: d.label };
+  const talk = d.board.proof ? d.talk.find((i) => i.url === url) : undefined;
+  if (talk && talk.kind !== 'arxiv') return { url, kind: talk.kind, title: talk.title || url, source: talk.source, by: talk.by, ts: talk.ts, ...at };
+  const v = (d.watch ?? []).find((w) => w.url === url);
+  if (v) return { url, kind: 'youtube', title: v.title, source: v.source, by: v.by, ts: v.ts, ...at };
+  const p = d.papers.list.find((x) => x.absUrl === url);
+  if (p) return { url, kind: 'arxiv', title: p.title, source: 'arXiv', by: p.authors.slice(0, 3).join(', ') + (p.authors.length > 3 ? ' et al.' : ''), ts: p.published, ...at };
+  return null;
 }
 
 /** A question to Ask Claude: one line or a few, at most 500 characters; null when empty. */

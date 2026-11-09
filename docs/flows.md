@@ -325,4 +325,11 @@ Who is reading comes from the token the site's Access application puts on every 
 5. **Ask Claude** (`answerAsk`): the question takes one of the reader's questions for the day first (`startAsk`, so two quick ones cannot both
    pass the limit), then the stronger model answers from the topic's data as agents get it (`topicOut`, full). The answer keeps only links found in
    that data (`keepLinks`), and is stored with its model and cost; a question without an answer is given back (`dropAsk`).
+6. **Saved lists**: **☆ Save** beside a post, video or paper on a topic page posts the topic and the item's address to `/me/save`. The item
+   is looked up in the topic's own data (`itemOnTopic`, `findItem`), never taken from the form, and a copy is kept (title, source, author, date,
+   topic), so a list keeps items after the site drops them and a public list can only hold what the site showed. Without a list named, it goes
+   to the reader's most recently changed list, or a new private "Saved". With several lists the button opens a choice, the lists holding the
+   item marked. Who may open a list is `mayView`: the owner always; others only while the owner still has **Publish lists**, then everyone for
+   a public list and readers with that feature for an analysts' list. A reader without the feature can only make private lists. `/saved` and
+   `/saved/<id>` are never in the page cache.
 

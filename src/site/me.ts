@@ -5,7 +5,7 @@ import { verifyAccess } from '../access';
 import { recordCost } from '../lib/costs';
 import { complete, defaultTiers } from '../llm/analysis';
 import type { Me } from '../durable-objects/users';
-import { cleanQuestion, initialSvg, keepLinks, OWN_PREFIX, profileOf, TOPIC_SLUG } from '../users/model';
+import { cleanQuestion, findItem, initialSvg, keepLinks, OWN_PREFIX, profileOf, TOPIC_SLUG, type SavedItem } from '../users/model';
 import { loadTopic } from './topicData';
 import { topicOut } from './agentText';
 import type { Lens } from '../signal/lens';
@@ -36,7 +36,7 @@ export async function viewerOf(request: Request, env: Env): Promise<Viewer> {
 }
 
 /** Whether a page for this reader differs from everyone's: then it is made for them and never kept in the shared page cache. */
-export const isPersonal = (me: Me | null): me is Me => !!me && (me.lenses.length > 0 || me.follows.length > 0 || me.access.features.length > 0);
+export const isPersonal = (me: Me | null): me is Me => !!me && (me.lenses.length > 0 || me.follows.length > 0 || me.lists.length > 0 || me.access.features.length > 0);
 /** The reader's own lenses of an area, for the lens chooser and the pages that apply a lens. */
 export const ownLenses = (me: Me | null | undefined, area: string): Lens[] => (me?.lenses ?? []).filter((l) => (l.area ?? 'ai') === area);
 export const isOwnLens = (key: string): boolean => key.startsWith(OWN_PREFIX);
@@ -44,7 +44,8 @@ export const isOwnLens = (key: string): boolean => key.startsWith(OWN_PREFIX);
 // ---- the forms
 const back = (raw: string | File | null, fallback = '/me'): string => { const p = String(raw ?? ''); return p.startsWith('/') && !p.startsWith('//') && !p.includes('\\') ? p.slice(0, 300) : fallback; };
 const see = (to: string) => new Response(null, { status: 303, headers: { location: to, 'cache-control': 'no-store' } });
-const withMsg = (to: string, msg: string) => to + (to.includes('?') ? '&' : '?') + 'msg=' + encodeURIComponent(msg.slice(0, 200));
+/** The address with ?msg= added, before any #fragment (after it, the browser would take it for part of the fragment and the line would never show). */
+const withMsg = (to: string, msg: string) => { const [path, frag] = [to.split('#')[0], to.includes('#') ? to.slice(to.indexOf('#')) : '']; return path + (path.includes('?') ? '&' : '?') + 'msg=' + encodeURIComponent(msg.slice(0, 200)) + frag; };
 const refuse = (status: number, text: string) => new Response(text, { status, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
 
 /** POST /me/<what>: one change by the signed-in reader, then back to where they were. */
@@ -64,6 +65,20 @@ export async function mePost(request: Request, env: Env, url: URL, viewer: Viewe
     if (what === 'lens-delete') { await users(env).deleteLens(email, String(f.get('key') ?? '')); return see(withMsg(to, 'Lens removed.')); }
     if (what === 'follow') { await users(env).follow(email, { slug: f.get('slug'), area: f.get('area'), label: f.get('label') }); return see(to); }
     if (what === 'unfollow') { await users(env).unfollow(email, String(f.get('slug') ?? ''), String(f.get('area') ?? 'ai')); return see(to); }
+    if (what === 'save') {
+      const slug = String(f.get('slug') ?? ''), area = f.get('area') === 'politics' ? 'politics' : 'ai', item = await itemOnTopic(env, slug, area, String(f.get('url') ?? ''));
+      if (!item) return see(withMsg(to, 'That item is no longer on the topic’s page, so it could not be saved.'));
+      const l = await users(env).saveItem(email, String(f.get('list') ?? ''), item);
+      return see(withMsg(to, `Saved to “${l.name}”.`));
+    }
+    if (what === 'unsave') { await users(env).unsaveItem(email, String(f.get('list') ?? ''), String(f.get('url') ?? '')); return see(withMsg(to, 'Removed from the list.')); }
+    if (what === 'note') { await users(env).setNote(email, String(f.get('list') ?? ''), String(f.get('url') ?? ''), f.get('note')); return see(to); }
+    if (what === 'list') {
+      const id = String(f.get('id') ?? '') || undefined;
+      const l = await users(env).saveList(email, { name: f.get('name'), description: f.get('description'), visibility: f.get('visibility') }, id);
+      return see(withMsg(id ? to : `/saved/${l.id}`, id ? 'Saved.' : `Made the list “${l.name}”. Use ☆ Save on a topic’s page to add to it.`));
+    }
+    if (what === 'list-delete') { await users(env).deleteList(email, String(f.get('id') ?? '')); return see(withMsg('/me#saved', 'List removed.')); }
     if (what === 'ask') {
       const r = await answerAsk(env, email, { slug: String(f.get('slug') ?? ''), area: f.get('area') === 'politics' ? 'politics' : 'ai', question: f.get('question') }, url.origin);
       return 'id' in r ? see(`/me/ask/${r.id}`) : see(withMsg(to, r.error));
@@ -74,6 +89,16 @@ export async function mePost(request: Request, env: Env, url: URL, viewer: Viewe
   }
 }
 
+// ---- saved lists
+/**
+ * The item to save, taken from the topic's own data, never from the form: a list can be made public, so its titles, sources and links must be
+ * what the site showed. A post or video from Talk or Watch, or a paper; null when the address is not on the topic's page (any more).
+ */
+export async function itemOnTopic(env: Env, slug: string, area: 'ai' | 'politics', url: string): Promise<Omit<SavedItem, 'note' | 'at'> | null> {
+  if (!TOPIC_SLUG.test(slug) || !/^https?:\/\//.test(url)) return null;
+  const t = await loadTopic(env, slug, { quiet: true, area });
+  return t && !('redirect' in t) ? findItem(t.data, url) : null;
+}
 // ---- Ask Claude
 const ASK_SYSTEM = `You answer a reader's question about one topic on Undercurrent, a site that tracks what is being talked about in AI (and politics) across X, Hacker News, YouTube, blogs and research papers.
 You get the topic's data: its summary, numbers, the items behind it with links, who had it first, papers and briefings. Answer from that data only.

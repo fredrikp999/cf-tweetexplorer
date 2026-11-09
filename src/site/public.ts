@@ -31,8 +31,8 @@ import type { Layout } from '../signal/landscape';
 import { AREA_BRIEFINGS, AREA_HOME, AREA_LABEL, areaHint, areaOfRequest, areaOf, boardsOfArea, parseArea, publishedAreas, topicHref, topicsOfArea, type Area } from '../signal/area';
 import { LENS_COLORS, LENS_JS, applyLens, lensMatch, chosenLens, lensColorCss, lensesOfTopic, type Lens } from '../signal/lens';
 import { avatarResponse, isOwnLens, isPersonal, mePost, ownLenses, viewerOf, type Viewer } from './me';
-import type { AskRow, Me } from '../durable-objects/users';
-import { FEATURES, MAX_FOLLOWS, MAX_OWN_LENSES, homeFor } from '../users/model';
+import type { AskRow, ListBrief, ListView, Me } from '../durable-objects/users';
+import { FEATURES, MAX_FOLLOWS, MAX_OWN_LENSES, MAX_SAVED_ITEMS, MAX_SAVED_LISTS, VISIBILITIES, VISIBILITY_LABEL, canPublish, homeFor, type SavedList, type Visibility } from '../users/model';
 import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, plainLine, topicFor, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
 import { HOST_JS, VIZ_CSS, VIZ_VIEWS, vizFrame, viewCsp } from './viz';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
@@ -59,7 +59,7 @@ export interface PubView { slug: string; title: string; description: string; lis
 interface PubViewPage { slug: string; title: string; description: string; layout: 'player' | 'cards' | 'list'; show: 'latest' | 'top'; days: number; perSource: boolean; items: ViewItem[] }
 /** Every topic of one published Signal in the last two weeks. */
 interface PubTerms { slug: string; title: string; days: number; baselineOk: boolean; terms: Array<{ term: string; signal: number; docs: number; isNew: boolean; change: number | null; evergreen: boolean; kind: string; breadth: number }> }
-interface Ctx { /** The area this page belongs to: its topics, boards and menu are the area's own (render() builds one Ctx per area). */ area: Area; /** The areas with something published: the area chooser shows only when there is more than AI. */ areas: Area[]; topics: PubTopic[]; /** Published feed pages. */ views: PubView[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[]; /** The lenses of the area, for the lens chooser of the top bar (none: the chooser is left out); a reader's own lenses come last. */ lenses?: Lens[]; /** Readers are on (the site knows who is signed in): pages offer Follow and the settings page. */ users?: boolean; /** The signed-in reader, only on a page made for them (never on a page in the shared cache). */ me?: Me | null; /** A line to show once, after a change (?msg=), on a page made for the reader. */ msg?: string }
+interface Ctx { /** The area this page belongs to: its topics, boards and menu are the area's own (render() builds one Ctx per area). */ area: Area; /** The areas with something published: the area chooser shows only when there is more than AI. */ areas: Area[]; topics: PubTopic[]; /** Published feed pages. */ views: PubView[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[]; /** The lenses of the area, for the lens chooser of the top bar (none: the chooser is left out); a reader's own lenses come last. */ lenses?: Lens[]; /** Readers are on (the site knows who is signed in): pages offer Follow and the settings page. */ users?: boolean; /** The signed-in reader, only on a page made for them (never on a page in the shared cache). */ me?: Me | null; /** A line to show once, after a change (?msg=), on a page made for the reader. */ msg?: string; /** On a topic page made for the reader: which of their lists hold each item's address. */ saved?: Record<string, string[]> }
 export interface PubBoard { slug: string; title: string; description: string; groups: string[]; proof?: boolean; /** The area it belongs to (none: AI). */ area?: Area; /** Addresses it had before: they redirect here. */ aliases?: string[] }
 interface PubProof { slug: string; title: string; days: number; term: string; label: string; terms: string[]; from: string; to: string; total: number; groups: Array<{ name: string; n: number }>; sources: Array<{ label: string; group: string; n: number }>; items: Array<{ title: string; url: string; discussionUrl: string; source: string; by: string; group: string; ts: number }> }
 // Signal, as the Monitor gives it for the public page: group names and counts, and terms. `parts` is each group's share of a term's score, in the order of `groups`.
@@ -179,7 +179,10 @@ form.report{display:grid;gap:12px;max-width:640px}form.report textarea{width:100
 .meacts{margin:10px 0 0}.meform.inline{display:inline}.followbtn{font:inherit;font-size:14px;font-weight:600;padding:5px 14px;border-radius:999px;border:1px solid var(--accent);background:var(--card);color:var(--accent);cursor:pointer}.followbtn[aria-pressed=true]{background:var(--accent);color:var(--card)}
 .memsg{margin:10px 0 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--card);border-radius:6px;font-size:14px}
 .askbox{display:grid;gap:8px;margin:14px 0 0;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);max-width:720px}.askbox label{font-weight:600}.askbox textarea,.lensform textarea,.lensform input,.meform select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg,var(--card));color:var(--text);max-width:100%}
-.askrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.askrow small{color:var(--muted)}.meform button{font:inherit;padding:7px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}.meform button[type=submit]:not(.ghost):not(.followbtn){border-color:var(--accent)}.meform button:disabled{opacity:.5;cursor:default}
+.askrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.askrow small{color:var(--muted)}.meform button{font:inherit;padding:7px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}.meform button[type=submit]:not(.ghost):not(.followbtn):not(.savebtn){border-color:var(--accent)}.meform button:disabled{opacity:.5;cursor:default}
+.savef,.savebox{display:inline-block;margin-left:6px;vertical-align:middle}.savebtn,.meform .savebtn{font:inherit;font-size:12.5px;padding:1px 9px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;list-style:none}.savebtn::-webkit-details-marker{display:none}.savebtn[aria-pressed=true],.savebox:has(button[aria-pressed=true])>.savebtn{color:var(--accent);border-color:var(--accent)}
+.savebox[open]>form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 2px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.savebox form button{font-size:13px;padding:3px 10px}.savebox form button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}.savebox form a{font-size:13px}
+.vistag{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}.vistag.vis-public{border-color:var(--accent);color:var(--accent)}.itemnote{margin:4px 0 0;padding-left:10px;border-left:3px solid var(--accent);font-style:italic}.saveact{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:flex-start;margin-top:4px}.mynote{font-size:13px}.mynote summary{cursor:pointer;color:var(--muted)}.mynote form{margin-top:4px}.mynote input{font:inherit;min-width:min(420px,70vw);padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text)}.mepage-one{margin-top:20px;max-width:760px;display:block;padding:16px 18px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
 .mepage{display:grid;gap:16px;max-width:760px}.mepage .card{display:block;padding:16px 18px;border:1px solid var(--line);border-radius:14px;background:var(--card)}.mepage h3{margin:0 0 6px}.mepage label{display:inline-flex;gap:6px;align-items:center;margin:4px 10px 4px 0}
 .lensform{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end;margin:8px 0}.lensform label.wide{display:flex;flex-direction:column;align-items:stretch;width:100%}.mylens{border-top:1px solid var(--line);padding:8px 0}.mylens summary{cursor:pointer}
 .mefollows,.measks,.yours ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}.mefollows li,.measks li,.yours li{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.measks small,.yours small{color:var(--muted)}
@@ -400,7 +403,7 @@ const THEME_INIT = '<script src="/viz/theme.js"></script>';
 const THEME_BTN = '<button type="button" class="themebtn" id="themebtn" aria-label="Colour theme">Theme</button>';
 
 /** Where a page sits in the More menu: the page kind, the feed page or Signal it is, or the briefing topic it shows. */
-type Here = { page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map' | 'briefings' | 'agent' | 'method' | 'me'; board?: string; slug?: string };
+type Here = { page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map' | 'briefings' | 'agent' | 'method' | 'me' | 'saved'; board?: string; slug?: string };
 
 /** The top bar for every page that is not the landing page or the search: no lens or window of its own, so a lens link goes to the landing page of the area unless the page says otherwise (`o.href`). */
 function bar(ctx: Ctx, active?: Active, page?: Here['page'], board?: string, o: { lens?: Lens; href?: (p: { lens?: string; window?: number }) => string } = {}): string {
@@ -472,7 +475,7 @@ export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: Land
     + grp('Briefings', topics.map((t) => a(`/${esc(t.slug)}`, esc(t.title), h.slug === t.slug)).join(''))
     + grp('Watch and read', ctx.views.map((v) => a(`/feeds/${esc(v.slug)}`, esc(v.title), h.page === 'feeds' && h.board === v.slug)).join(''))
     + grp('More', (ctx.reports.length ? a('/history', `Reports <small>${ctx.reports.length}</small>`, h.page === 'history') + a(`/history/${esc(ctx.reports[0].slug)}/galaxy`, 'Tweet Galaxy', h.page === 'galaxy') : '') + (lists ? a('/lists', `Lists <small>${lists}</small>`, h.page === 'lists') : '')
-      + a('/signal/method', 'How it works', h.page === 'method') + a('/agent', 'For agents (MCP)', h.page === 'agent') + (ctx.users ? a('/me', 'Your settings', h.page === 'me') : ''))
+      + a('/signal/method', 'How it works', h.page === 'method') + a('/agent', 'For agents (MCP)', h.page === 'agent') + (ctx.users ? a('/saved', 'Saved lists', h.page === 'saved') + a('/me', 'Your settings', h.page === 'me') : ''))
     + grp('Feeds (RSS)', topics.map((t) => a(`/${esc(t.slug)}/feed.xml`, esc(t.title))).join(''))
     + `<p class="railfoot">Briefings written by AI from public posts and articles. Every one shows its sources.${lists ? ` <a href="/lists">The ${lists} lists behind them</a>.` : ''}</p>`;
   const win = o.window ? `<nav class="sgwin" aria-label="Time window">${WINDOWS.map((w) => `<a data-win="${w}" href="${o.href({ lens: o.lens?.key, window: w })}"${o.window === w ? ' aria-current="page"' : ''}>${WINDOW_LABEL[w]}</a>`).join('')}</nav>` : '';
@@ -684,13 +687,13 @@ interface PubPaper { id: string; published: number; title: string; authors: stri
 export interface PubResearchPage { /** The constellation (first page only, with eight papers or more that have a meaning vector). */ sky?: { stars: Array<{ id: string; title: string; x: number; y: number; score: number; talked: boolean }>; lines: Array<[number, number]> } | null; topic: PubPulseTopic; others: Array<{ slug: string; title: string }>; attention: PubPaper[]; papers: PubPaper[]; total: number; page: number; pages: number; keepDays: number; topDays: number; updated: number }
 const httpsOnly = (u: string) => (/^https:\/\//.test(u) ? u : '');
 const ext = (u: string, text: string) => (httpsOnly(u) ? `<a href="${esc(u)}" rel="noopener noreferrer nofollow" target="_blank">${text}</a>` : text);
-function paperHtml(p: PubPaper): string {
+function paperHtml(p: PubPaper, after = ''): string {
   const a = p.attention, shown = p.authors.slice(0, 6).join(', ') + (p.authors.length > 6 ? ` and ${p.authors.length - 6} more` : '');
   const signals = [a.hf && `<span>${ext(a.hf.url, `${n(a.hf.upvotes)} upvote${a.hf.upvotes === 1 ? '' : 's'} on Hugging Face`)}</span>`, a.hn && `<span>${ext(a.hn.url, `${n(a.hn.points)} point${a.hn.points === 1 ? '' : 's'} on Hacker News`)}</span>`,
     a.accounts ? `<span>Mentioned by ${a.mentions.slice(0, 3).map((m) => ext(m.url, `@${esc(m.by)}`)).join(', ')}${a.accounts > 3 ? ` and ${a.accounts - 3} more` : ''}</span>` : ''].filter(Boolean).join('');
   return `<li><h3>${ext(p.absUrl, esc(p.title))}</h3><p class="pby">${esc(shown)} · ${esc(new Date(p.published).toISOString().slice(0, 10))} · ${esc(p.categories.slice(0, 3).join(' '))}</p>
 ${signals ? `<p class="psig">${signals}</p>` : ''}<details><summary>Abstract</summary><p>${esc(p.abstract)}</p></details>
-<p class="plinks">${ext(p.absUrl, 'On arXiv')} · ${ext(p.pdfUrl, 'PDF')}${p.also.length ? ` · Also in ${p.also.map((t) => `<a href="/research/${esc(t.slug)}">${esc(t.title)}</a>`).join(', ')}` : ''}</p></li>`;
+<p class="plinks">${ext(p.absUrl, 'On arXiv')} · ${ext(p.pdfUrl, 'PDF')}${p.also.length ? ` · Also in ${p.also.map((t) => `<a href="/research/${esc(t.slug)}">${esc(t.title)}</a>`).join(', ')}` : ''}${after}</p></li>`;
 }
 /**
  * The constellation of a research topic (src/signal/constellation.ts): every new paper of the last 30 days a star, placed by what it is about, brighter and bigger the more attention
@@ -726,9 +729,9 @@ export function researchTopicHtml(d: PubResearchPage, ctx: Ctx): string {
   return shell(`${t.title} · Research pulse · Undercurrent`, bar(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h1>
 ${t.blurb ? `<p class="lede">${esc(t.blurb)}</p>` : ''}<p class="meta">${facts}${d.others.length ? ` Other topics: ${d.others.map((x) => `<a href="/research/${esc(x.slug)}">${esc(x.title)}</a>`).join(', ')}.` : ''}</p></header>
 ${skyHtml(d.sky)}
-${d.attention.length ? `<h2>Getting attention</h2><p class="meta">From the last ${d.topDays} days: upvotes on Hugging Face, points on Hacker News, and posts collected on this site that link to a paper. Attention is not quality, and most new papers have not had time to get any.</p><ol class="papers">${d.attention.map(paperHtml).join('')}</ol>` : ''}
+${d.attention.length ? `<h2>Getting attention</h2><p class="meta">From the last ${d.topDays} days: upvotes on Hugging Face, points on Hacker News, and posts collected on this site that link to a paper. Attention is not quality, and most new papers have not had time to get any.</p><ol class="papers">${d.attention.map((p) => paperHtml(p)).join('')}</ol>` : ''}
 <h2>New papers</h2><p class="meta">${d.total ? `${n(d.total)} papers from the last ${d.keepDays} days at most, newest first.` : 'Reading the papers. This fills in by itself.'}</p>
-<ol class="papers">${d.papers.map(paperHtml).join('')}</ol>${pager}
+<ol class="papers">${d.papers.map((p) => paperHtml(p)).join('')}</ol>${pager}
 <p class="meta">Papers and abstracts from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>, where each paper is hosted. This site is not affiliated with or endorsed by arXiv. Upvotes from <a href="https://huggingface.co/papers" rel="noopener noreferrer">Hugging Face Daily Papers</a>; points from Hacker News.</p>`, { description: `New research papers on ${t.title}, and which of them are getting attention.` });
 }
 function researchMapHtml(ctx: Ctx, lens?: Lens): string {
@@ -972,17 +975,17 @@ function firstPanel(d: TopicData): string {
 <p class="meta">Which kinds of source tend to be early across all topics, as a picture: <a href="${link}">Who said it first</a>.</p>`;
 }
 
-function watchPanel(d: TopicData): string {
+function watchPanel(d: TopicData, ctx: Ctx): string {
   const w = d.watch ?? [];
   if (!w.length) return `<p class="meta">No video on this subject in the last two weeks${d.board.proof ? '' : ' (this Signal does not show the items it counts, so only videos on public feed pages are looked for)'}. Videos come from the YouTube channels followed here and from the feed pages of this site.</p>`;
   return `<ul class="vcards watchcards">${w.map((v) => `<li><a class="play" href="${esc(v.url)}" rel="noopener noreferrer nofollow" target="_blank"><img src="https://i.ytimg.com/vi/${esc(v.video)}/mqdefault.jpg" alt="" loading="lazy" width="320" height="180"></a>
-<a href="${esc(v.url)}" rel="noopener noreferrer nofollow" target="_blank"><b>${esc(v.title)}</b></a><small>${esc(v.source)}${v.by && v.by !== v.source ? ' &middot; ' + esc(v.by) : ''} &middot; ${date(v.ts)}${v.views ? ` &middot; ${esc(roughly(v.views))} views` : ''}</small></li>`).join('')}</ul>
+<a href="${esc(v.url)}" rel="noopener noreferrer nofollow" target="_blank"><b>${esc(v.title)}</b></a><small>${esc(v.source)}${v.by && v.by !== v.source ? ' &middot; ' + esc(v.by) : ''} &middot; ${date(v.ts)}${v.views ? ` &middot; ${esc(roughly(v.views))} views` : ''}</small>${saveCtl(ctx, d, 'watch', v.url)}</li>`).join('')}</ul>
 <p class="note">Videos from chosen YouTube channels and from feed pages, matched by the topic's names in their titles. Nothing plays here: each link opens the video on YouTube. Titles and pictures belong to their publishers.</p>`;
 }
 
-function topicPanel(d: TopicData, angle: Angle): string {
+function topicPanel(d: TopicData, angle: Angle, ctx: Ctx): string {
   if (angle === 'first') return firstPanel(d);
-  if (angle === 'watch') return watchPanel(d);
+  if (angle === 'watch') return watchPanel(d, ctx);
   if (angle === 'briefings') {
     const b = d.briefings ?? [];
     return b.length ? `<ul class="sgitems">${b.map((m) => `<li><div class="by">${esc(m.title)} &middot; ${date(m.publishedAt)}</div><a href="/${esc(m.slug)}/${esc(m.id)}${m.anchor ? '#' + esc(m.anchor) : ''}">${m.theme ? esc(m.theme) : esc(m.title)}</a>${m.tldr ? `<p class="meta">${esc(m.tldr.length > 220 ? m.tldr.slice(0, 219) + '…' : m.tldr)}</p>` : ''}</li>`).join('')}</ul>`
@@ -991,14 +994,14 @@ function topicPanel(d: TopicData, angle: Angle): string {
   if (angle === 'papers') {
     const p = d.papers;
     return p.list.length ? `<p class="meta">${n(p.matched)} paper${p.matched === 1 ? '' : 's'} from the last 30 days ${p.matched === 1 ? 'names' : 'name'} this subject${p.mentioned ? `; ${n(p.mentioned)} ${p.mentioned === 1 ? 'is' : 'are'} named in posts or on Hacker News` : '; none is discussed in posts yet, which says nothing against them'}. They are found by the topic's names in titles and abstracts, so some may only be close. <a href="/research/map">See them on the Research map</a>.</p>
-<ol class="papers">${p.list.map(paperHtml).join('')}</ol><p class="meta">Papers and abstracts from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>, where each paper is hosted. Upvotes from <a href="https://huggingface.co/papers" rel="noopener noreferrer">Hugging Face Daily Papers</a>; points from Hacker News.</p>`
+<ol class="papers">${p.list.map((x) => paperHtml(x, saveCtl(ctx, d, 'papers', x.absUrl))).join('')}</ol><p class="meta">Papers and abstracts from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>, where each paper is hosted. Upvotes from <a href="https://huggingface.co/papers" rel="noopener noreferrer">Hugging Face Daily Papers</a>; points from Hacker News.</p>`
       : '<p class="meta">No new paper of the last 30 days names this subject.</p>';
   }
   if (!d.board.proof) return '<p class="note">This Signal shows scores only, not the items behind them.</p>';
   const kinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).map((k) => [k, d.talk.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
   return kinds.length ? kinds.map(([k, list]) => `<h3 class="azh">${KIND_TITLE[k]} <small>${n(d.counts[k] ?? list.length)} in the last week${(d.counts[k] ?? 0) > list.length ? `, the ${list.length} most reacted to` : ''}</small></h3>
 <ul class="sgitems">${list.map((i) => `<li><div class="by"><b>${esc(i.source)}</b>${i.by && i.by !== i.source ? ' &middot; ' + esc(i.by) : ''} &middot; ${i.ts ? date(i.ts) : ''}${metricOf(i) ? ` &middot; <span class="chip react">${esc(metricOf(i))}</span>` : ''}</div>
-${i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${esc(i.title || i.url)}</a>` : esc(i.title)}${i.discussionUrl ? ` <a class="dim" href="${esc(i.discussionUrl)}" rel="noopener noreferrer nofollow" target="_blank">discussion</a>` : ''}</li>`).join('')}</ul>`).join('')
+${i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${esc(i.title || i.url)}</a>` : esc(i.title)}${i.discussionUrl ? ` <a class="dim" href="${esc(i.discussionUrl)}" rel="noopener noreferrer nofollow" target="_blank">discussion</a>` : ''}${saveCtl(ctx, d, 'talk', i.url)}</li>`).join('')}</ul>`).join('')
     + '<p class="note">Titles and links are those of the original publishers. Follow the links to read the originals.</p>' : '<p class="meta">Nothing is logged for the last week.</p>';
 }
 
@@ -1026,7 +1029,7 @@ ${spreadHtml(d)}
 ${timelineHtml(d)}
 ${d.heat?.counts.some((v) => v > 0) ? `<h2 class="sect">The last ${d.heat.days.length} days</h2>${heatHtml(d.heat, `Mentions of ${d.label}`)}<p class="meta">Mentions per day as Signal counts them (the topic&rsquo;s names in the items of its sources), over all the days the counts are kept.</p>` : ''}
 <h2 class="sect">The angles</h2>${tabs}
-<section id="angle">${topicPanel(d, angle)}</section>
+<section id="angle">${topicPanel(d, angle, ctx)}</section>
 ${d.related.length ? `<h2 class="sect">Goes with</h2><p class="meta">${d.related.map((r) => `<a href="${esc(topicHref(r.slug, d.area))}">${esc(r.label)}</a>`).join(' &middot; ')}</p>` : ''}`,
   { description: summary, canonical: origin ? origin + topicHref(d.slug, d.area) : undefined, image: origin ? origin + cardHref(d.slug, d.area) : undefined });
 }
@@ -1056,6 +1059,70 @@ function topicActions(ctx: Ctx, d: TopicData): string {
 <div class="askrow"><button type="submit"${me.askLeft ? '' : ' disabled'}>Ask</button><small>${me.askLeft} of ${me.access.askPerDay} questions left today. Answered from this page’s data by a language model, which can get things wrong. <a href="/me#asks">Your questions</a></small></div></form>` : '';
   return `<div class="meacts">${follow}</div>${msgLine(ctx)}${ask}`;
 }
+/**
+ * ☆ Save beside an item on a topic page. On a page from the shared cache (who reads is not known) and for a reader with one list or none, one
+ * button: it saves to their list (a new private "Saved" the first time). With several lists, a choice of list, and the lists that hold it marked;
+ * choosing one of those takes it out again. Plain forms, no script.
+ */
+function saveCtl(ctx: Ctx, d: TopicData, angle: Angle, url: string): string {
+  if (!ctx.users || !/^https?:\/\//.test(url)) return '';
+  const base = hidden({ slug: d.slug, area: d.area, url, back: topicHref(d.slug, d.area, angle === 'talk' ? undefined : angle) + '#angle' });
+  const lists = ctx.me?.lists ?? [], holding = ctx.saved?.[url] ?? [];
+  if (lists.length <= 1) {
+    const on = holding.length > 0, l = lists[0];
+    return ` <form method="post" action="/me/${on ? 'unsave' : 'save'}" class="meform inline savef">${base}${l ? hidden({ list: l.id }) : ''}<button type="submit" class="savebtn" aria-pressed="${on}" title="${on ? `In your list “${esc(l!.name)}”. Choose to take it out` : 'Keep it in a list of yours'}">${on ? '★ Saved' : '☆ Save'}</button></form>`;
+  }
+  return ` <details class="savebox"><summary class="savebtn" aria-label="${holding.length ? `Saved in ${holding.length} of your lists` : 'Save to a list'}">${holding.length ? '★ Saved' : '☆ Save'}</summary><form method="post" action="/me/save" class="meform">${base}${lists.map((l) => {
+    const on = holding.includes(l.id);
+    return `<button type="submit" name="list" value="${esc(l.id)}"${on ? ' formaction="/me/unsave" aria-pressed="true" title="In this list. Choose to take it out"' : ''}>${on ? '✓ ' : ''}${esc(l.name)}</button>`;
+  }).join('')}<a href="/me#saved">New list</a></form></details>`;
+}
+const visTag = (v: Visibility) => `<span class="vistag vis-${v}">${esc(VISIBILITY_LABEL[v])}</span>`;
+/** The visibility choice of a list form: only a reader who may publish gets more than "Only you". */
+function visField(me: Me, cur: Visibility = 'private'): string {
+  if (!canPublish(me.access)) return '';
+  const say: Record<Visibility, string> = { private: 'Only you', analysts: 'Analysts (everyone who can publish lists)', public: 'Everyone, on the site’s Saved lists page' };
+  return `<label>Who can see it <select name="visibility">${VISIBILITIES.map((v) => `<option value="${v}"${v === cur ? ' selected' : ''}>${esc(say[v])}</option>`).join('')}</select></label>`;
+}
+const listForm = (me: Me, l?: SavedList, back = '/me#saved') => `<form method="post" action="/me/list" class="meform lensform">${hidden({ back, ...(l ? { id: l.id } : {}) })}
+<label>Name <input name="name" maxlength="60" required value="${esc(l?.name ?? '')}"></label> ${visField(me, l?.visibility)}
+<label class="wide">What it is about (optional) <input name="description" maxlength="280" value="${esc(l?.description ?? '')}"></label><button type="submit">${l ? 'Save' : 'Make the list'}</button></form>`;
+/** "Your saved lists" on /me. */
+function savedSection(me: Me): string {
+  const rows = me.lists.map((l) => `<li><a href="/saved/${esc(l.id)}">${esc(l.name)}</a> ${visTag(l.visibility)} <small>${n(l.count)} item${l.count === 1 ? '' : 's'}</small></li>`).join('');
+  const pub = canPublish(me.access) ? ' You can open a list to the analysts or to everyone: it is then on the <a href="/saved">Saved lists</a> page.' : '';
+  return `<section class="card" id="saved"><h3>Your saved lists</h3><p class="meta">Use <b>☆ Save</b> beside a post, video or paper on a topic’s page. A list keeps its own copy, so items stay after they leave the site. Lists are only shown to you.${pub} Up to ${MAX_SAVED_LISTS} lists of ${MAX_SAVED_ITEMS} items.</p>
+${rows ? `<ul class="mefollows">${rows}</ul>` : ''}${me.lists.length < MAX_SAVED_LISTS ? `<details class="mylens"${me.lists.length ? '' : ' open'}><summary>New list</summary>${listForm(me)}</details>` : ''}</section>`;
+}
+/** /saved: the lists open to this reader. Everyone sees the public ones; a reader who may publish also sees the analysts' ones, with who made them. */
+export function savedIndexHtml(ctx: Ctx, lists: ListBrief[], me: Me | null): string {
+  const row = (l: ListBrief) => `<li><a class="card" href="/saved/${esc(l.id)}"><b>${esc(l.name)}</b>${l.description ? `<span>${esc(l.description)}</span>` : ''}<small>${n(l.count)} item${l.count === 1 ? '' : 's'}${l.owner ? ` &middot; by ${esc(l.owner)}` : ''} &middot; updated ${date(l.updated)}</small></a></li>`;
+  const pub = lists.filter((l) => l.visibility === 'public'), team = lists.filter((l) => l.visibility === 'analysts');
+  const yours = me?.lists.length ? `<p class="meta">Your own lists are on <a href="/me#saved">your settings page</a>.</p>` : '';
+  return shell('Saved lists · Undercurrent', bar(ctx, undefined, 'saved'), `<header class="pagehead"><div class="eyebrow">Picked by people</div><h1>Saved lists</h1>
+<p class="lede">Posts, videos and papers our analysts saved from the topics and chose to share, each with a link to the original.</p>${yours}</header>
+${team.length ? `<h2 class="sect">For analysts</h2><p class="meta">Shared with the analysts only, not with other readers.</p><ul class="topics">${team.map(row).join('')}</ul>` : ''}
+${pub.length ? `${team.length ? '<h2 class="sect">For everyone</h2>' : ''}<ul class="topics">${pub.map(row).join('')}</ul>` : '<p class="meta">No list has been shared yet.</p>'}`, { description: 'Posts, videos and papers saved and shared by the analysts of Undercurrent.' });
+}
+/** /saved/<id>: one list. Its owner can rename it, choose who sees it, write a note on each item, take items out and remove it. */
+export function savedListHtml(ctx: Ctx, v: ListView, me: Me | null): string {
+  const { list: l, items, mine } = v, here = `/saved/${l.id}`;
+  const item = (i: (typeof items)[number]) => {
+    const key = hidden({ list: l.id, url: i.url, back: here });
+    const edit = mine ? `<div class="saveact"><details class="mynote"><summary>${i.note ? 'Edit the note' : 'Add a note'}</summary><form method="post" action="/me/note" class="meform">${key}<input name="note" maxlength="280" value="${esc(i.note)}" aria-label="Note"> <button type="submit">Save</button></form></details>
+<form method="post" action="/me/unsave" class="meform inline">${key}<button type="submit" class="savebtn">Take out</button></form></div>` : '';
+    const kind = KIND_NAME[i.kind];
+    return `<li><div class="by"><b>${esc(kind)}</b>${i.source && i.source !== kind && !(i.kind === 'x' && i.source === 'X') ? ' &middot; ' + esc(i.source) : ''}${i.by && i.by !== i.source ? ' &middot; ' + esc(i.by) : ''}${i.ts ? ' &middot; ' + date(i.ts) : ''} &middot; <a href="${esc(topicHref(i.slug, i.area))}">${esc(i.label)}</a></div>
+<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${esc(i.title)}</a>${i.note ? `<p class="itemnote">${esc(i.note)}</p>` : ''}${edit}</li>`;
+  };
+  const owner = mine ? `<section class="card mepage-one"><h3>Your list</h3>${listForm(me!, l, here)}<form method="post" action="/me/list-delete" class="meform inline">${hidden({ id: l.id, back: here })}<button type="submit" class="ghost">Remove this list</button></form></section>` : '';
+  const who = mine ? `Your list &middot; ${visTag(l.visibility)}` : l.visibility === 'analysts' ? `For analysts${v.owner ? ` &middot; by ${esc(v.owner)}` : ''}` : 'Saved list';
+  return shell(`${l.name} · Saved lists · Undercurrent`, bar(ctx, undefined, 'saved'), `<header class="pagehead"><div class="eyebrow"><a href="${mine ? '/me#saved' : '/saved'}">${mine ? 'Your saved lists' : 'Saved lists'}</a> &middot; ${who}</div><h1>${esc(l.name)}</h1>
+${l.description ? `<p class="lede">${esc(l.description)}</p>` : ''}<p class="meta">${n(items.length)} item${items.length === 1 ? '' : 's'} &middot; updated ${date(l.updated)}</p>${mine ? msgLine(ctx) : ''}</header>
+${items.length ? `<ul class="sgitems saveditems">${items.map(item).join('')}</ul><p class="note">Titles and links are those of the original publishers, as they were when saved. Follow the links to read the originals.</p>`
+    : `<p class="meta">Nothing in it yet.${mine ? ' Use <b>☆ Save</b> beside a post, video or paper on a topic’s page.' : ''}</p>`}
+${owner}`, { description: l.description || `A saved list on Undercurrent: ${l.name}.` });
+}
 const WIN_NAME: Record<number, string> = { 1: 'Today', 3: '3 days', 7: '7 days' };
 /** /me: what the reader keeps (front page, own lenses, followed topics) and their questions, each changed by a plain form. */
 export function meHtml(ctx: Ctx, me: Me, siteLenses: Lens[], asks: AskRow[]): string {
@@ -1080,7 +1147,7 @@ ${me.lenses.length < MAX_OWN_LENSES ? `<details class="mylens"${me.lenses.length
 ${asks.length ? `<ul class="measks">${asks.map((a) => `<li><a href="/me/ask/${a.id}">${esc(a.question)}</a> <small>${esc(a.label)} &middot; ${date(a.at)}</small></li>`).join('')}</ul>` : ''}</section>`;
   return shell('Your settings · Undercurrent', bar(ctx, undefined, 'me'), `<header class="pagehead"><div class="eyebrow">Your settings</div><h1>Your Undercurrent</h1>
 <p class="lede">Signed in as <b>${esc(me.email)}</b>${me.access.role.key === 'reader' ? '' : ` &middot; ${esc(me.access.role.name)}`}. What you keep here follows you to any device you sign in on, and is only shown to you.</p>${msgLine(ctx)}</header>
-<div class="mepage">${prefs}${lenses}${follows}${asked}</div>`, {});
+<div class="mepage">${prefs}${lenses}${follows}${savedSection(me)}${asked}</div>`, {});
 }
 /** /me/ask/<id>: one of the reader's questions and its answer. */
 export function askHtml(ctx: Ctx, a: AskRow, me: Me): string {
@@ -1697,6 +1764,13 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
     if (parts.length === 3 && parts[1] === 'ask' && /^\d{1,10}$/.test(parts[2])) { const a = await env.USERS.getByName('main').ask(me.email, Number(parts[2])); return a && a.answer ? html(askHtml(ctx, a, me)) : missing(); }
     return missing();
   }
+  if (parts[0] === 'saved' && parts.length <= 2) {   // /saved and /saved/<id>: lists readers saved and opened to others (or their own); never kept in the page cache (handlePublic)
+    if (!viewer.enabled) return missing();
+    const U = env.USERS.getByName('main'), who = viewer.me?.email ?? null;
+    if (parts.length === 1) return html(savedIndexHtml(ctx, await U.openLists(who), viewer.me));
+    const v = await U.listView(parts[1], who);
+    return v ? html(savedListHtml(ctx, v, viewer.me)) : missing();
+  }
   if (parts.length === 0) return vizPage(await landingPage(env, ctx, url));   // the viz policy: the landscape frame (after the text) is the one script it adds
   if (parts[0] === 'politics') {   // /politics and /politics/briefings: the politics area, when something of it is published
     if (!areas.includes('politics')) return missing();
@@ -1731,6 +1805,10 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
     // A topic belongs to the area of its Signal, whatever the address said: a politics topic opened without a hint still gets the politics menu and leads back to /politics.
     lensBy[r.data.area] ??= [...await lensesOf(env, r.data.area), ...ownLenses(viewer.me, r.data.area)];
     const tctx = r.data.area === ctx.area ? ctx : ctxFor(r.data.area);
+    if (viewer.me?.lists.length) {   // which of the reader's lists hold the items shown, for the Save buttons
+      const urls = [...r.data.talk.map((i) => i.url), ...(r.data.watch ?? []).map((w) => w.url), ...r.data.papers.list.map((p) => p.absUrl)].filter(Boolean);
+      tctx.saved = await env.USERS.getByName('main').savedAmong(viewer.me.email, urls).catch(() => ({}));
+    }
     return html(topicHtml(r.data, tctx, topicAngle(url.searchParams.get('angle')), url.origin, lensBy[r.data.area]));
   }
   if (parts[0] === 'search' && parts.length === 1) {   // /search?q=&kinds=&lens=&window=&page=: everything, topics first
@@ -1903,7 +1981,7 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   const q = new URLSearchParams([...['sort', 'group', 'q', 'kinds', 'page', 'angle', 'lens', 'window', 'area'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, k === 'q' ? 80 : k === 'kinds' ? 40 : 20)]] : []))] as [string, string][]).toString();
   // The deployed version is part of the key, so a deploy never serves pages (with an old menu) rendered by the version before.
   const ver = (env as { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? '';
-  const key = new Request(url.origin + url.pathname + '?' + new URLSearchParams([...(q ? new URLSearchParams(q) : []), ['v', ver]]).toString(), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/');
+  const key = new Request(url.origin + url.pathname + '?' + new URLSearchParams([...(q ? new URLSearchParams(q) : []), ['v', ver]]).toString(), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/') && !/^\/saved(\/|$)/.test(url.pathname);   // a list made private must be gone at once
   // A reader's front page opens on their lens and window when they come to it from outside (the address typed, a bookmark, another site). From a
   // page of this site it was chosen ("All" in the lens chooser is a bare /), so it stays.
   const fromHere = (() => { try { return new URL(request.headers.get('Referer') ?? '').host === url.host; } catch { return false; } })();

@@ -1,14 +1,18 @@
 // Readers (src/users/model.ts): everyone the site's Access login lets in, by their e-mail address. What each keeps (a default lens and window, own
 // lenses, followed topics), their role and extra features, and their questions to Ask Claude with what each cost. Called over RPC: the public site
-// for the signed-in reader (src/site/me.ts), the admin's Readers tab (/admin/users/*) for everyone. Nothing here is ever shown to another reader.
+// for the signed-in reader (src/site/me.ts), the admin's Readers tab (/admin/users/*) for everyone. Nothing here is ever shown to another reader,
+// except a saved list its owner opened to the analysts or to everyone (mayView in src/users/model.ts), with the owner's name for analysts only.
 import { DurableObject } from 'cloudflare:workers';
 import type { Lens, LensArea } from '../signal/lens';
-import { DEFAULT_ROLES, MAX_FOLLOWS, NO_PREFS, READER, accessOf, cleanEmail, cleanFollow, cleanOwnLens, cleanPrefs, cleanRoles, isFeature, type Access, type Feature, type Follow, type Prefs, type Role, type UserRow } from '../users/model';
+import { DEFAULT_ROLES, LIST_ID, MAX_FOLLOWS, MAX_SAVED_ITEMS, MAX_SAVED_LISTS, NO_PREFS, READER, accessOf, cleanEmail, cleanFollow, cleanListForm, cleanNote, cleanOwnLens, cleanPrefs, cleanRoles, isFeature, mayView, newListId, type Access, type Feature, type Follow, type Prefs, type Role, type SavedItem, type SavedList, type UserRow } from '../users/model';
 
 const TOUCH_MS = 5 * 60_000, ASK_KEEP_DAYS = 90, DAY = 86_400_000;
 const today = () => new Date().toISOString().slice(0, 10);
 
-export interface Me { email: string; access: Access; prefs: Prefs; lenses: Lens[]; follows: Follow[]; asksToday: number; askLeft: number }
+export interface Me { email: string; access: Access; prefs: Prefs; lenses: Lens[]; follows: Follow[]; asksToday: number; askLeft: number; /** Their saved lists, most recently changed first. */ lists: SavedList[] }
+/** A list as another reader may see it: the owner's name only for an analysts' list, never their address. */
+export interface ListView { list: SavedList; items: SavedItem[]; mine: boolean; owner: string }
+export interface ListBrief extends SavedList { owner: string }
 export type AskRow = { id: number; at: number; slug: string; area: 'ai' | 'politics'; label: string; question: string; answer: string; model: string; cost: number };
 export interface ReaderRow extends UserRow { asksToday: number; asks7: number; cost7: number; lenses: number; follows: number }
 
@@ -28,6 +32,10 @@ export class UsersDO extends DurableObject<Env> {
     sql.exec("CREATE TABLE IF NOT EXISTS asks (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, day TEXT NOT NULL, at INTEGER NOT NULL, slug TEXT NOT NULL, area TEXT NOT NULL, label TEXT NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', cost REAL NOT NULL DEFAULT 0)");
     sql.exec('CREATE INDEX IF NOT EXISTS asks_email_day ON asks (email, day)');
     sql.exec('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
+    // Saved lists and what is in them: a copy of each item as the topic page showed it, so a list outlives the 90 days items are kept.
+    sql.exec("CREATE TABLE IF NOT EXISTS saved_lists (id TEXT PRIMARY KEY, email TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', visibility TEXT NOT NULL DEFAULT 'private', created INTEGER NOT NULL, updated INTEGER NOT NULL)");
+    sql.exec('CREATE INDEX IF NOT EXISTS saved_lists_email ON saved_lists (email)');
+    sql.exec("CREATE TABLE IF NOT EXISTS saved_items (list_id TEXT NOT NULL, url TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, source TEXT NOT NULL, by_name TEXT NOT NULL, ts INTEGER NOT NULL, slug TEXT NOT NULL, area TEXT NOT NULL, label TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, PRIMARY KEY (list_id, url)) WITHOUT ROWID");
   }
 
   private getMeta<T>(k: string, d: T): T { const r = this.ctx.storage.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', k).toArray()[0]; return r ? (JSON.parse(r.v) as T) : d; }
@@ -55,6 +63,7 @@ export class UsersDO extends DurableObject<Env> {
       lenses: sql.exec<{ json: string }>('SELECT json FROM lenses WHERE email = ? ORDER BY key', email).toArray().map((r) => JSON.parse(r.json) as Lens),
       follows: sql.exec<{ slug: string; area: string; label: string; at: number }>('SELECT slug, area, label, at FROM follows WHERE email = ? ORDER BY at DESC', email).toArray()
         .map((r) => ({ slug: r.slug, area: r.area === 'politics' ? 'politics' : 'ai', label: r.label, at: r.at })),
+      lists: this.listsOf(email),
     };
   }
   private getPrefs(email: string): Prefs { const r = this.ctx.storage.sql.exec<{ json: string }>('SELECT json FROM prefs WHERE email = ?', email).toArray()[0]; return r ? cleanPrefs(JSON.parse(r.json)) : NO_PREFS; }
@@ -111,6 +120,94 @@ export class UsersDO extends DurableObject<Env> {
     return this.ctx.storage.sql.exec<AskRow>("SELECT id, at, slug, area, label, question, answer, model, cost FROM asks WHERE email = ? AND answer != '' ORDER BY at DESC LIMIT ?", this.must(emailIn), Math.min(100, limit)).toArray();
   }
 
+  // ---- saved lists
+  private static LIST_COLS = 'l.id, l.name, l.description, l.visibility, l.created, l.updated, (SELECT COUNT(*) FROM saved_items i WHERE i.list_id = l.id) AS count';
+  private listsOf(email: string): SavedList[] {
+    return this.ctx.storage.sql.exec<SavedList & Record<string, SqlStorageValue>>(`SELECT ${UsersDO.LIST_COLS} FROM saved_lists l WHERE l.email = ? ORDER BY l.updated DESC`, email).toArray().map((r) => ({ ...r }));
+  }
+  private ownList(email: string, id: string): { email: string; visibility: string } {
+    const r = this.ctx.storage.sql.exec<{ email: string; visibility: string }>('SELECT email, visibility FROM saved_lists WHERE id = ?', String(id)).toArray()[0];
+    if (!r || r.email !== email) throw new Error('not one of your lists');
+    return r;
+  }
+  private touchList(id: string): void { this.ctx.storage.sql.exec('UPDATE saved_lists SET updated = ? WHERE id = ?', Date.now(), id); }
+  private accessFor(email: string): Access { return accessOf(this.row(email), this.roles()); }
+
+  /** A new list, or a change to one of the reader's own (name, description, who may see it; only a reader who may publish can open it to others). */
+  saveList(emailIn: string, raw: unknown, id?: string): SavedList {
+    const email = this.must(emailIn), sql = this.ctx.storage.sql, f = cleanListForm(raw, this.accessFor(email)), now = Date.now();
+    if (id) { this.ownList(email, id); sql.exec('UPDATE saved_lists SET name = ?, description = ?, visibility = ?, updated = ? WHERE id = ?', f.name, f.description, f.visibility, now, id); }
+    else {
+      if (sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM saved_lists WHERE email = ?', email).one().n >= MAX_SAVED_LISTS) throw new Error(`at most ${MAX_SAVED_LISTS} lists`);
+      id = newListId();
+      sql.exec('INSERT INTO saved_lists (id, email, name, description, visibility, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?)', id, email, f.name, f.description, f.visibility, now, now);
+    }
+    return this.listsOf(email).find((l) => l.id === id)!;
+  }
+  deleteList(emailIn: string, id: string): void {
+    const email = this.must(emailIn);
+    this.ownList(email, id);
+    this.ctx.storage.transactionSync(() => { this.ctx.storage.sql.exec('DELETE FROM saved_items WHERE list_id = ?', id); this.ctx.storage.sql.exec('DELETE FROM saved_lists WHERE id = ?', id); });
+  }
+  /** Keeps an item in a list of the reader's: the one named, else the one they changed last, else a new private list "Saved". Saving it again keeps its note. */
+  saveItem(emailIn: string, listId: string, item: Omit<SavedItem, 'note' | 'at'>): SavedList {
+    const email = this.must(emailIn), sql = this.ctx.storage.sql;
+    const id = listId ? (this.ownList(email, listId), listId) : this.listsOf(email)[0]?.id ?? this.saveList(email, { name: 'Saved' }).id;
+    const has = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM saved_items WHERE list_id = ? AND url = ?', id, item.url).one().n > 0;
+    if (!has && sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM saved_items WHERE list_id = ?', id).one().n >= MAX_SAVED_ITEMS) throw new Error(`a list holds at most ${MAX_SAVED_ITEMS} items`);
+    sql.exec(`INSERT INTO saved_items (list_id, url, kind, title, source, by_name, ts, slug, area, label, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (list_id, url) DO UPDATE SET title = excluded.title, source = excluded.source, by_name = excluded.by_name`,
+      id, item.url, item.kind, item.title.slice(0, 300), item.source.slice(0, 80), item.by.slice(0, 80), item.ts, item.slug, item.area, item.label.slice(0, 80), Date.now());
+    this.touchList(id);
+    return this.listsOf(email).find((l) => l.id === id)!;
+  }
+  unsaveItem(emailIn: string, listId: string, url: string): void {
+    const email = this.must(emailIn);
+    this.ownList(email, listId);
+    this.ctx.storage.sql.exec('DELETE FROM saved_items WHERE list_id = ? AND url = ?', listId, String(url));
+    this.touchList(listId);
+  }
+  setNote(emailIn: string, listId: string, url: string, note: unknown): void {
+    const email = this.must(emailIn);
+    this.ownList(email, listId);
+    this.ctx.storage.sql.exec('UPDATE saved_items SET note = ? WHERE list_id = ? AND url = ?', cleanNote(note), listId, String(url));
+    this.touchList(listId);
+  }
+  /** Which of the reader's lists hold each of these addresses (for the Save buttons on a topic page). */
+  savedAmong(emailIn: string, urls: string[]): Record<string, string[]> {
+    const email = this.must(emailIn), out: Record<string, string[]> = {}, want = new Set(urls.slice(0, 500));
+    for (const r of this.ctx.storage.sql.exec<{ url: string; list_id: string }>('SELECT i.url, i.list_id FROM saved_items i JOIN saved_lists l ON l.id = i.list_id WHERE l.email = ?', email)) {
+      if (want.has(r.url)) (out[r.url] ??= []).push(r.list_id);
+    }
+    return out;
+  }
+  /** One list with its items, newest saved first, if the viewer (an address, or null for someone not signed in) may see it. */
+  listView(id: string, viewerIn: string | null): ListView | null {
+    if (!LIST_ID.test(String(id))) return null;
+    const sql = this.ctx.storage.sql;
+    const r = sql.exec<SavedList & { email: string } & Record<string, SqlStorageValue>>(`SELECT l.email, ${UsersDO.LIST_COLS} FROM saved_lists l WHERE l.id = ?`, id).toArray()[0];
+    if (!r) return null;
+    const viewer = viewerIn ? cleanEmail(viewerIn) : null, mine = viewer === r.email, viewerAccess = viewer ? this.accessFor(viewer) : null;
+    const { email, ...list } = r;
+    if (!mayView(list, { owner: mine, ownerAccess: this.accessFor(email), viewerAccess })) return null;
+    const items = sql.exec<{ url: string; kind: SavedItem['kind']; title: string; source: string; by_name: string; ts: number; slug: string; area: string; label: string; note: string; at: number }>(
+      'SELECT url, kind, title, source, by_name, ts, slug, area, label, note, at FROM saved_items WHERE list_id = ? ORDER BY at DESC', id).toArray()
+      .map(({ by_name, area, ...i }) => ({ ...i, by: by_name, area: area === 'politics' ? 'politics' as const : 'ai' as const }));
+    return { list: { ...list }, items, mine, owner: !mine && list.visibility === 'analysts' ? this.ownerName(email) : '' };
+  }
+  /** The lists open to this viewer, besides their own: public ones for everyone, analysts' ones for a reader who may publish. Empty lists are left out. */
+  openLists(viewerIn: string | null): ListBrief[] {
+    const viewer = viewerIn ? cleanEmail(viewerIn) : null, viewerAccess = viewer ? this.accessFor(viewer) : null, owners = new Map<string, Access>();
+    return this.ctx.storage.sql.exec<SavedList & { email: string } & Record<string, SqlStorageValue>>(`SELECT l.email, ${UsersDO.LIST_COLS} FROM saved_lists l WHERE l.visibility != 'private' AND l.email != ? ORDER BY l.updated DESC LIMIT 500`, viewer ?? '').toArray()
+      .filter((r) => {
+        if (!owners.has(r.email)) owners.set(r.email, this.accessFor(r.email));
+        return r.count > 0 && mayView(r, { owner: false, ownerAccess: owners.get(r.email)!, viewerAccess });
+      })
+      .map(({ email, ...l }) => ({ ...l, owner: l.visibility === 'analysts' ? this.ownerName(email) : '' }));
+  }
+  /** How a list's owner is named to the analysts: their name from the login, else the part of the address before the @. */
+  private ownerName(email: string): string { return this.profile(email).name || email.split('@')[0]; }
+
   /** The name and picture kept from the login, and when they were read (0: never). */
   profile(emailIn: string): { name: string; picture: string; at: number } {
     const r = this.ctx.storage.sql.exec<{ name: string; picture: string; profile_at: number }>('SELECT name, picture, profile_at FROM users WHERE email = ?', this.must(emailIn)).toArray()[0];
@@ -143,6 +240,7 @@ export class UsersDO extends DurableObject<Env> {
   /** Everything kept about a reader. They are added again, as a Reader, if they visit again. */
   removeUser(emailIn: string): void {
     const email = this.must(emailIn), sql = this.ctx.storage.sql;
-    this.ctx.storage.transactionSync(() => { for (const t of ['users', 'prefs', 'lenses', 'follows', 'asks']) sql.exec(`DELETE FROM ${t} WHERE email = ?`, email); });
+    this.ctx.storage.transactionSync(() => { for (const t of ['users', 'prefs', 'lenses', 'follows', 'asks']) sql.exec(`DELETE FROM ${t} WHERE email = ?`, email);
+      sql.exec('DELETE FROM saved_items WHERE list_id IN (SELECT id FROM saved_lists WHERE email = ?)', email); sql.exec('DELETE FROM saved_lists WHERE email = ?', email); });
   }
 }
