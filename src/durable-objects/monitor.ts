@@ -21,7 +21,9 @@ import { QUIET_MS, findWaves, foldTerm, publicFirst, rankWaves, watchStartMs, sc
 import { cleanTitle, isBait } from '../signal/clean';
 import { cleanLayout, coCounts, layoutKeys, layoutLandscape, replayFrames, type Layout, type ReplayFrame } from '../signal/landscape';
 import { DEPTH_DAYS, DEPTH_TOPICS, DEPTH_WINDOW, depthLayout, reachSeries, type DepthLayout } from '../signal/depth';
+import { LADDER_DAYS, LADDER_POOL, LADDER_WINDOW, dayScores, ladderOf, type Ladder } from '../signal/ladder';
 import { firstByKind, pickWatch, timelineDots, type TopicWatch } from '../signal/topicview';
+import { ITEM_ID, buildCard, inTimeOrder, itemId, type CardTopic, type SourceCard } from '../signal/sourcecard';
 import { evidenceSegments, fallbackSummary, topicSlug, topicState, usualLevel, type EvItem, type EvKind, type TopicData, type TopicPaper } from '../signal/topicpage';
 import { areaHint, areaOf, parseArea, rankByArea, type Area } from '../signal/area';
 import { LENS_AREAS, LENS_PALETTE, MAX_LENSES, SUGGEST_TOPICS, cleanLens, lensMatch, lensesOfTopic, paperLensMask, parseSuggestions, seedLenses, suggestSystem, suggestUser, type Lens, type LensArea } from '../signal/lens';
@@ -162,6 +164,7 @@ export class MonitorDO extends DurableObject<Env> {
     // A copy is read as "no topics" and not counted, so a post copied by many accounts counts once. Kept as long as the item log.
     sql.exec("CREATE TABLE IF NOT EXISTS item_vec (watch TEXT NOT NULL, item TEXT NOT NULL, day TEXT NOT NULL, v BLOB NOT NULL, copy TEXT NOT NULL DEFAULT '', PRIMARY KEY (watch, item)) WITHOUT ROWID");
     sql.exec('CREATE INDEX IF NOT EXISTS item_vec_day ON item_vec (day)');
+    sql.exec('CREATE INDEX IF NOT EXISTS item_vec_copy ON item_vec (copy)');   // the source card counts the copies folded into a post
     // A vector per topic name in use, for the names shown to the topic model and the names suggested to the admin as one. `at`: when it was last wanted.
     sql.exec('CREATE TABLE IF NOT EXISTS name_vec (term TEXT PRIMARY KEY, v BLOB NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID');
     // The landscape of the landing page: one layout per Signal, window and day, so tomorrow's starts from today's and the picture stays steady.
@@ -1253,6 +1256,36 @@ export class MonitorDO extends DurableObject<Env> {
       kinds, { kinds: kinds.length, groups: new Set([...info.values()].map((x) => x.group)).size, sources: info.size });
     return { ...layout, days: all.slice(DEPTH_WINDOW - 1), baselineOk: c.baselineOk, meta: own.map((t) => ({ key: topicSlug(t.term), term: t.term, members: t.members, isNew: t.isNew, change: t.change })) };
   }
+  /**
+   * The Ladder of a published Signal (src/signal/ladder.ts): the rank of its biggest topics on each of the last 14 days, by the score Signal gives (the share of each group's items that mention
+   * the topic, groups weighted), worked out per day over three days. Counts only. No model is involved.
+   */
+  private async ladderPublic(slug: string): Promise<(Ladder & { days: string[]; baselineOk: boolean; meta: Array<{ key: string; term: string; members: string[]; isNew: boolean; change: number | null }> }) | null> {
+    const board = this.boards().find((b) => b.public && b.slug === slug);
+    if (!board) return null;
+    const c = await this.compute(LADDER_DAYS, new Set(board.groups)), shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
+    if (!shown.length) return null;
+    const { top } = this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), LADDER_POOL + 10);
+    const seen = new Set<string>(), own = top.filter((t) => !t.parent).sort((a, b) => b.signal - a.signal).filter((t) => { const k = topicSlug(t.term); return seen.has(k) ? false : (seen.add(k), true); }).slice(0, LADDER_POOL);
+    if (!own.length) return null;
+    const sql = this.ctx.storage.sql, T = this.tables(), now = Date.now(), all = Array.from({ length: LADDER_DAYS + LADDER_WINDOW - 1 }, (_, i) => dayOf(now - (LADDER_DAYS + LADDER_WINDOW - 2 - i) * 86_400_000)), at = new Map(all.map((d, i) => [d, i] as const));
+    const gi = new Map(shown.map((g, i) => [g.key, i] as const)), items = shown.map(() => all.map(() => 0));
+    for (const r of sql.exec<{ day: string; watch: string; n: number }>(`SELECT day, watch, n FROM ${T.items} WHERE day >= ?`, all[0])) {
+      const g = gi.get(c.of.get(r.watch) ?? ''), d = at.get(r.day);
+      if (g !== undefined && d !== undefined) items[g][d] += r.n;
+    }
+    const owner = new Map<string, number[]>();
+    own.forEach((t, i) => { for (const name of new Set([t.term, ...t.members].flatMap((x) => this.namesOf(x)))) (owner.get(name) ?? owner.set(name, []).get(name)!).push(i); });
+    const mentions = own.map(() => shown.map(() => all.map(() => 0)));
+    for (const r of sql.exec<{ day: string; watch: string; term: string; n: number }>(`SELECT day, watch, term, n FROM ${T.terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify([...owner.keys()]), all[0])) {
+      const g = gi.get(c.of.get(r.watch) ?? ''), d = at.get(r.day);
+      if (g === undefined || d === undefined) continue;
+      for (const i of owner.get(r.term) ?? []) mentions[i][g][d] += r.n;
+    }
+    const weights = shown.map((g) => g.weight), ladder = ladderOf(own.map((t, i) => ({ key: topicSlug(t.term), label: t.label, scores: dayScores(mentions[i], items, weights) })));
+    const on = new Set(ladder.topics.map((t) => t.key));
+    return { ...ladder, days: all.slice(LADDER_WINDOW - 1), baselineOk: c.baselineOk, meta: own.filter((t) => on.has(topicSlug(t.term))).map((t) => ({ key: topicSlug(t.term), term: t.term, members: t.members, isNew: t.isNew, change: t.change })) };
+  }
   /** The layouts kept for the days before today (at most a week), for the landscape's replay. Read only: a day nobody opened the page has no layout and is simply missing. */
   private landscapeReplay(slug: string, daysIn: number): ReplayFrame[] {
     const board = this.boards().find((b) => b.public && b.slug === slug), win = daysIn === 3 || daysIn === 7 ? daysIn : 1;
@@ -1413,12 +1446,12 @@ export class MonitorDO extends DurableObject<Env> {
     if (!want.size) throw new Error('term required');
     const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number; likes: number; replies: number; views: number }>(
       'SELECT watch, item, ts, title, url, disc, by, match, eng, likes, replies, views FROM item_log WHERE day >= ? AND day <= ? ORDER BY ts DESC LIMIT 8000', from, to).toArray();
-    const hits: Array<{ watch: string; group: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number; likes: number; replies: number; views: number; matched: string[] }> = [];
+    const hits: Array<{ watch: string; item: string; group: string; ts: number; title: string; url: string; disc: string; by: string; match: string; eng: number; likes: number; replies: number; views: number; matched: string[] }> = [];
     for (const r of rows) {
       const g = of.get(r.watch); if (!g || (q.only && !q.only.has(g))) continue;
       const have = new Set((ai ? ai.get(`${r.watch}\n${r.item}`) ?? [] : extractTerms(r.match)).map(alias));
       const matched = [...want].filter((t) => have.has(t));
-      if (matched.length) hits.push({ watch: r.watch, group: g, ts: r.ts, title: r.title, url: r.url, disc: r.disc, by: r.by, match: r.match, eng: r.eng, likes: r.likes, replies: r.replies, views: r.views, matched });
+      if (matched.length) hits.push({ watch: r.watch, item: r.item, group: g, ts: r.ts, title: r.title, url: r.url, disc: r.disc, by: r.by, match: r.match, eng: r.eng, likes: r.likes, replies: r.replies, views: r.views, matched });
     }
     const tally = <K extends string>(key: (h: (typeof hits)[number]) => K) => { const m = new Map<K, number>(); for (const h of hits) m.set(key(h), (m.get(key(h)) ?? 0) + 1); return m; };
     const byGroup = tally((h) => h.group), byWatch = tally((h) => h.watch);
@@ -1431,7 +1464,7 @@ export class MonitorDO extends DurableObject<Env> {
       items: shown.slice(offset, offset + limit).map((h) => ({ watch: h.watch, label: labels.get(h.watch) ?? h.watch, group: h.group, ts: h.ts, title: cleanTitle(h.title, 200), url: h.url, discussionUrl: h.disc, by: h.by, reactions: h.eng, matched: h.matched,
         snippet: h.match.replace(/\s+/g, ' ').trim() === h.title ? '' : h.match.replace(/\s+/g, ' ').slice(0, 260) })),
       more: offset + limit < shown.length,
-      ...(q.all ? { hits: hits.map((h) => ({ watch: h.watch, label: labels.get(h.watch) ?? h.watch, ts: h.ts, title: cleanTitle(h.title, 200), url: h.url, discussionUrl: h.disc, by: h.by, likes: h.likes, replies: h.replies, views: h.views })) } : {}),
+      ...(q.all ? { hits: hits.map((h) => ({ watch: h.watch, item: h.item, matched: h.matched, label: labels.get(h.watch) ?? h.watch, ts: h.ts, title: cleanTitle(h.title, 200), url: h.url, discussionUrl: h.disc, by: h.by, likes: h.likes, replies: h.replies, views: h.views })) } : {}),
     };
   }
   /** Who Said It First (src/signal/first.ts): the order Signal's topics reached the groups in, and which groups tend to be early. Briefing posts are left out, because they are written from the other sources. */
@@ -1567,15 +1600,16 @@ export class MonitorDO extends DurableObject<Env> {
   private async topicItems(v: BoardView, names: string[]) {
     const r = await this.signalItems({ terms: names, days: 14, group: '', watch: '', offset: 0, limit: 1, only: new Set(v.board.groups), all: true });
     const watches = new Map(this.watches().map((w) => [w.id, w] as const)), from = Date.parse(v.c.from + 'T00:00:00Z');
-    const hits = r.hits ?? [], items: EvItem[] = [], wide: EvItem[] = [];
+    const hits = r.hits ?? [], items: EvItem[] = [], wide: EvItem[] = [], meta = new Map<EvItem, { watch: string; item: string; matched: string[] }>();
     for (const h of hits) {
       const w = watches.get(h.watch);
       if (!w || w.briefing || sourceOf(w) === 'arxiv') continue;   // papers have their own angle
-      const item: EvItem = { kind: sourceOf(w) as EvKind, by: h.by, source: h.label, title: h.title, url: h.url, discussionUrl: h.discussionUrl, ts: h.ts, likes: h.likes, replies: h.replies, views: h.views };
+      const id = itemId(h.url), item: EvItem = { ...(id ? { id } : {}), kind: sourceOf(w) as EvKind, by: h.by, source: h.label, title: h.title, url: h.url, discussionUrl: h.discussionUrl, ts: h.ts, likes: h.likes, replies: h.replies, views: h.views };
+      meta.set(item, { watch: h.watch, item: h.item, matched: h.matched });   // for the source card: which item of the log it is
       wide.push(item);   // all 14 days: the timeline and who had it first need the quiet before a wave
       if (h.ts >= from) items.push(item);
     }
-    return { hits, items, wide };
+    return { hits, items, wide, meta };
   }
   /** New papers (last 30 days) that are about the subject: its name in the title, or, for a name of two words or more, in the abstract. With who is paying attention to each. Abstracts only: full text is never read. */
   private topicPapers(names: string[]) {
@@ -1614,7 +1648,7 @@ export class MonitorDO extends DurableObject<Env> {
     for (const i of items) byKind[i.kind] = (byKind[i.kind] ?? 0) + 1;
     const weight = (i: EvItem) => Math.max(0, i.likes) + 2 * Math.max(0, i.replies) + Math.max(0, i.views) / 100;
     const talk = !proof ? [] : (['x', 'hn', 'youtube', 'rss'] as EvKind[]).flatMap((k) => items.filter((i) => i.kind === k).sort((a, b) => weight(b) - weight(a) || b.ts - a.ts).slice(0, 8)
-      .map((i) => ({ kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl, source: i.source, by: i.by, ts: i.ts, ...(i.likes >= 0 ? { likes: i.likes } : {}), ...(i.replies >= 0 ? { replies: i.replies } : {}), ...(i.views > 0 ? { views: i.views } : {}) })));
+      .map((i) => ({ ...(i.id ? { id: i.id } : {}), kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl, source: i.source, by: i.by, ts: i.ts, ...(i.likes >= 0 ? { likes: i.likes } : {}), ...(i.replies >= 0 ? { replies: i.replies } : {}), ...(i.views > 0 ? { views: i.views } : {}) })));
     const sm = this.ctx.storage.sql.exec<{ day: string; text: string; items: string; n: number; model: string }>('SELECT day, text, items, n, model FROM topic_summary WHERE slug = ? ORDER BY day DESC LIMIT 1', canonical).toArray()[0];
     const summary = sm && summaryFresh(sm.day) ? { text: sm.text, day: sm.day, model: sm.model, itemCount: sm.n, items: proof ? (JSON.parse(sm.items) as NonNullable<TopicData['summary']>['items']) : [] } : null;
     const top = this.boardTop(v).top, seen = new Set([canonical]), related: TopicData['related'] = [];
@@ -1641,6 +1675,51 @@ export class MonitorDO extends DurableObject<Env> {
     const own = proof ? wide.filter((i) => i.kind === 'youtube' && i.url).map((i) => ({ title: i.title, url: i.url, source: i.source, by: i.by, ts: i.ts, ...(i.views > 0 ? { views: i.views } : {}) })) : [];
     const feeds = this.views().filter((x) => x.public).flatMap((v) => this.viewItems({ ...v, count: 150, show: 'top', days: 14, perSource: false }).filter((i) => i.url).map((i) => ({ via: v.title, title: i.title, url: i.url, source: i.source, by: i.by, ts: i.ts, reactions: i.reactions, video: i.video })));
     return pickWatch(own, feeds, names);
+  }
+
+  /**
+   * The source card of one item of a topic (src/signal/sourcecard.ts): the item with its place among the topic's items, the names it matched, the copies folded into it and the other topics it is in.
+   * Only items the topic page may show: from a Signal that shows its sources, and videos from public feed pages. `gone`: the item is in the log but no longer in the topic (or the window), and the card then
+   * only leads to the original. `found: false`: no such topic, or an id nobody can tell is real. Read only.
+   */
+  private async topicCard(slug: string, id: string, hint: Area | null) {
+    if (!ITEM_ID.test(id)) return { found: false as const };
+    const found = await this.findTopic(slug, hint);
+    if (!found) return { found: false as const };
+    const { v, topic } = found, canonical = topicSlug(topic.term), proof = v.board.proof === true, area = areaOf(v.board), names = [topic.term, ...topic.members];
+    if (slug !== canonical) return { found: true as const, redirect: canonical, area };
+    const t: CardTopic = { slug: canonical, label: topic.label, term: topic.term, members: topic.members, area, board: { slug: v.board.slug, title: v.board.title } };
+    const { wide, meta } = proof ? await this.topicItems(v, names) : { wide: [] as EvItem[], meta: new Map<EvItem, { watch: string; item: string; matched: string[] }>() };
+    const pool: EvItem[] = [...wide];
+    for (const w of this.topicWatch(wide, names, proof)) if (w.id && !pool.some((i) => i.id === w.id)) pool.push({ id: w.id, kind: 'youtube', by: w.by, source: w.source, title: w.title, url: w.url, discussionUrl: '', ts: w.ts, likes: -1, replies: -1, views: w.views ?? -1 });
+    const item = inTimeOrder(pool).find((i) => i.id === id);
+    const sql = this.ctx.storage.sql;
+    if (!item) {   // in the log of this Signal's groups, but not in the topic now: the card is gone, the original is not
+      if (!proof) return { found: false as const };
+      const { of } = await this.groups(), groups = new Set(v.board.groups), plain = new Set(this.watches().filter((w) => !w.briefing && sourceOf(w) !== 'arxiv').map((w) => w.id));
+      for (const r of sql.exec<{ watch: string; url: string; disc: string }>('SELECT watch, url, disc FROM item_log WHERE day >= ? ORDER BY ts DESC LIMIT 20000', dayOf(Date.now() - SIGNAL_KEEP_DAYS * 86_400_000))) {
+        if (itemId(r.url) === id && plain.has(r.watch) && groups.has(of.get(r.watch) ?? '')) return { found: true as const, gone: true as const, topic: t, original: r.url, discussionUrl: r.disc };
+      }
+      return { found: false as const };
+    }
+    const m = meta.get(item), extras: { matched?: string[]; copies?: number | null; alsoIn?: Array<{ slug: string; label: string }> } = { matched: m?.matched ?? [] };
+    if (m) {
+      const key = `${m.watch}\n${m.item}`;
+      // Said the same: the copies the meaning step folded into this post. Only known for an item that was read for its meaning (it has a vector).
+      if (sql.exec('SELECT 1 FROM item_vec WHERE watch = ? AND item = ?', m.watch, m.item).toArray().length) extras.copies = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM item_vec WHERE copy = ?', key).one().n;
+      // Also in: the other topics whose names the item was read to have.
+      const row = sql.exec<{ day: string; match: string }>('SELECT day, match FROM item_log WHERE watch = ? AND item = ?', m.watch, m.item).toArray()[0];
+      if (row) {
+        const ai = this.aiTopics(row.day), alias = this.aliasFn(), have = new Set((ai ? ai.get(key) ?? [] : extractTerms(row.match)).map(alias)), seen = new Set([canonical]), also: Array<{ slug: string; label: string }> = [];
+        for (const o of this.boardTop(v).top) {
+          const sl = topicSlug(o.term);
+          if (o.parent || seen.has(sl) || ![o.term, ...o.members].some((x) => have.has(alias(x)))) continue;
+          seen.add(sl); also.push({ slug: sl, label: o.label });
+        }
+        extras.alsoIn = also.slice(0, 6);
+      }
+    }
+    return { found: true as const, card: buildCard(pool, id, t, extras) as SourceCard };
   }
 
   // ---- Topic summaries: a model writes one paragraph per active topic per day. Run from the alarm, never from a page request.
@@ -1810,6 +1889,13 @@ export class MonitorDO extends DurableObject<Env> {
           this.pubCache.set(k, { at: Date.now(), v });
           return json(v);
         }
+        if (name === 'ladder-public') {   // the Ladder of a published Signal: kept for two minutes
+          const slug = url.searchParams.get('slug') ?? '', k = `ladder|${slug}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = await this.ladderPublic(slug);
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
         if (name === 'landscape-replay-public') {   // the layouts of the last days, for the replay on the landing page: kept for two minutes
           const slug = url.searchParams.get('slug') ?? '', days = Number(url.searchParams.get('days')), k = `landr|${slug}|${days}`, hit = this.pubCache.get(k);
           if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
@@ -1844,6 +1930,14 @@ export class MonitorDO extends DurableObject<Env> {
           this.pubCache.set(k, { at: Date.now(), v });
           if (url.searchParams.get('quiet') !== '1' && this.summaryWake()) await this.reschedule();   // summaries are due: start writing them (a page never waits for one). `quiet`: the public MCP server only reads
           return v ? json(v) : json({ error: 'not found' }, 404);
+        }
+        if (name === 'topic-item-public') {   // the source card /t/<slug>/i/<id> and the get_item tool: kept for two minutes
+          const slug = (url.searchParams.get('slug') ?? '').toLowerCase().slice(0, 64), id = (url.searchParams.get('item') ?? '').slice(0, 20), hint = areaHint(url.searchParams.get('area')), k = `card|${slug}|${id}|${hint ?? ''}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = await this.topicCard(slug, id, hint);
+          if (this.pubCache.size > 300) this.pubCache.delete(this.pubCache.keys().next().value as string);   // anyone can ask for any id: the cache stays small
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
         }
         if (name === 'research-page') {   // a topic's page: kept for two minutes
           const slug = url.searchParams.get('slug') ?? '', page = Number(url.searchParams.get('page')) || 1, key = `research\n${slug}\n${page}`, hit = this.pubCache.get(key);

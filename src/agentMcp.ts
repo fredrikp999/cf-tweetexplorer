@@ -10,7 +10,8 @@ import { ARXIV_THANKS } from './sources/arxiv';
 import { SLUG } from './durable-objects/publish';
 import { areaOf, publishedAreas, type Area } from './signal/area';
 import { TOPIC_SLUG, topicSlug } from './signal/topicpage';
-import { loadTopic } from './site/topicData';
+import { loadItemCard, loadTopic } from './site/topicData';
+import { ITEM_ID } from './signal/sourcecard';
 import type { TopicData } from './signal/topicpage';
 import depthHtml from './apps/depth';
 import landscapeHtml from './apps/landscape';
@@ -20,12 +21,13 @@ import { loadLenses, loadOverview, loadRising } from './site/overview';
 import { risingOut } from './site/rising';
 import { SEARCH_KINDS, SEARCH_WINDOWS, cleanQuery, windowOfSearch } from './site/search';
 import { loadSearch } from './site/searchData';
-import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPrompt, digIntoPrompt, itemsOut, listLensesOut, overviewOut, paperMissing, paperOut, papersOut, searchOut, topicFirstOut, topicMissing, topicOut,
+import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPrompt, digIntoPrompt, itemGoneOut, itemMissing, itemOut, itemsOut, listLensesOut, overviewOut, paperMissing, paperOut, papersOut, searchOut, topicFirstOut, topicMissing, topicOut,
   type Answer, type BoardFirstIn, type BriefingIn, type Detail, type ItemsIn, type PaperIn } from './site/agentText';
 
 /** The Landscape view of get_overview. Bump the suffix when the page changes: hosts keep the resource they were given. */
 /** v3: the view keeps the area of the data it was given (politics has its own lenses) and passes it back to get_overview. */
-export const LANDSCAPE_UI = 'ui://undercurrent/landscape-v5.html';
+/** v6: the Ladder as a second picture (the rank of the biggest topics per day, from `ladder` in structuredContent). */
+export const LANDSCAPE_UI = 'ui://undercurrent/landscape-v6.html';
 /** The Depth chart, the view of get_rising. */
 export const DEPTH_UI = 'ui://undercurrent/depth-v1.html';
 /** The Topic hub, the view of get_topic. */
@@ -148,6 +150,19 @@ export function registerAgentTools(server: McpServer, env: Env, origin: string, 
     const p = new URLSearchParams({ slug, sort, offset: String(offset), ...(kind ? { kind } : {}), ...(area ? { area } : {}) });
     const r = await json<ItemsIn>(await mon(env, `topic-items-public?${p}`));
     return itemsOut(r ?? { found: false }, { topic, kind, sort, offset }, origin, detail as Detail);
+  }));
+
+  // The source card as text: one item in context. Ids come from get_topic_items and the talk lists of get_topic.
+  server.registerTool('get_item', {
+    title: 'One item in context',
+    description: 'Level 3, one item: a post, thread, article or video of a topic with author, time and reactions in the source\'s own unit, why the topic has it (which of its names it matched), its place in the wave ("3rd of 12 items, 40 min after the first"), how many copies were folded into it, the items just before and after it in the topic, other topics it is in, and the link to the original. Needs the topic and the item id from get_topic_items (each line ends with it). Only for Signals that show their sources, and for videos on public feed pages. An item that has left the topic answers with the link to the original.',
+    inputSchema: { topic: topicArg, item: z.string().regex(ITEM_ID).describe('The item id: eleven letters and digits, as given by get_topic_items'), area: areaHintArg, detail: detailArg },
+    annotations: READ_ONLY,
+  }, ({ topic, item, area, detail }) => run('get_item', { topic: asSlug(topic), item, area, detail }, async () => {
+    let r = await loadItemCard(env, asSlug(topic), item, area);
+    if (r && 'redirect' in r) r = await loadItemCard(env, r.redirect, item, area);   // a name counted under a bigger topic opens that topic's card
+    if (!r || 'redirect' in r) return itemMissing({ topic, item }, origin);
+    return 'gone' in r ? itemGoneOut(r.gone, item, origin) : itemOut(r.card, origin, detail as Detail);
   }));
 
   // Who said it first. Public data only, text and JSON (no view: the ripple view draws waves across groups, which is not this answer's shape; the topic hub's "Who said it first" tab draws it).

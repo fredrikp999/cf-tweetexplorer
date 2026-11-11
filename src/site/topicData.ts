@@ -1,6 +1,7 @@
 // One function that assembles a topic for everything that shows one: the page /t/<slug>, its JSON at /t/<slug>.json and, in later steps, the MCP `get_topic` tool and the topic hub view.
 // The Monitor gathers the numbers, evidence, papers and summary (`/mon/topic-public`); the briefings that mention the topic live in the Publish object (`/pub/mentions`).
 import { topicHref, type Area } from '../signal/area';
+import { ITEM_ID, type CardTopic, type SourceCard } from '../signal/sourcecard';
 import { TOPIC_SLUG, type TopicBriefing, type TopicData } from '../signal/topicpage';
 
 export type TopicLoad = { data: TopicData } | { redirect: string } | null;
@@ -20,4 +21,26 @@ export async function loadTopic(env: Env, slug: string, opts: { /** The MCP serv
   data.briefings = await env.PUBLISH.getByName('main').fetch(new Request(`https://internal/pub/mentions?q=${encodeURIComponent(names)}&area=${data.area}`))
     .then((x) => (x.ok ? (x.json() as Promise<TopicBriefing[]>) : [])).catch(() => [] as TopicBriefing[]);
   return { data };
+}
+
+export type CardLoad =
+  | { card: SourceCard }
+  | { redirect: string }
+  /** The item is no longer in the topic: only its original can be pointed to. */
+  | { gone: { topic: CardTopic; original: string; discussionUrl: string } }
+  | null;
+
+/**
+ * The source card of one item of a topic (src/signal/sourcecard.ts), for the page /t/<slug>/i/<id>, its JSON and the MCP tool `get_item`. Null when there is no such topic or nobody can tell the id is real
+ * (404); `gone` when the item has left the topic (410). `redirect` is the topic's own slug when `slug` is a name counted under a bigger topic. Never starts a model call.
+ */
+export async function loadItemCard(env: Env, slug: string, id: string, area?: Area | null): Promise<CardLoad> {
+  if (!TOPIC_SLUG.test(slug) || !ITEM_ID.test(id)) return null;
+  const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/topic-item-public?slug=${encodeURIComponent(slug)}&item=${id}${area ? '&area=' + area : ''}`));
+  if (!r.ok) { await r.body?.cancel(); return null; }
+  const d = (await r.json().catch(() => null)) as { found: boolean; redirect?: string; gone?: boolean; topic?: CardTopic; original?: string; discussionUrl?: string; card?: SourceCard } | null;
+  if (!d?.found) return null;
+  if (d.redirect) return { redirect: d.redirect };
+  if (d.gone && d.topic && d.original) return { gone: { topic: d.topic, original: d.original, discussionUrl: d.discussionUrl ?? '' } };
+  return d.card ? { card: d.card } : null;
 }

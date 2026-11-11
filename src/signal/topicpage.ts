@@ -55,7 +55,8 @@ export const EV_LABEL: Record<EvKind, string> = { x: 'X', hn: 'Hacker News', you
 const EV_ORDER: EvKind[] = ['x', 'hn', 'youtube', 'rss', 'arxiv'];
 
 /** One item of a topic, as the kinds of evidence need it. A number of -1 was not recorded for that item (items logged before the numbers were kept). */
-export interface EvItem { kind: EvKind; by: string; source: string; title: string; url: string; discussionUrl: string; ts: number; likes: number; replies: number; views: number }
+/** `id`: the public id of the item's card (src/signal/sourcecard.ts), only for an item with a web address. */
+export interface EvItem { id?: string; kind: EvKind; by: string; source: string; title: string; url: string; discussionUrl: string; ts: number; likes: number; replies: number; views: number }
 /** One segment of the strip: a kind of source, with what it can honestly say. `lines` are plain text (the page escapes them); `names` only when the Signal shows its sources. */
 export interface EvSegment { kind: EvKind; label: string; count: number; lines: string[]; names?: string[] }
 
@@ -131,7 +132,7 @@ export function fallbackSummary(t: { label: string; state: TopicState | null; to
 export interface TopicPaper { id: string; published: number; title: string; authors: string[]; categories: string[]; abstract: string; absUrl: string; pdfUrl: string; also: Array<{ slug: string; title: string }>;
   attention: { top: boolean; hf?: { upvotes: number; url: string }; hn?: { points: number; comments: number; url: string }; mentions: Array<{ by: string; url: string; reactions: number }>; accounts: number } }
 /** An item in the Talk angle. Present only when the Signal shows its sources. */
-export interface TopicTalkItem { kind: EvKind; title: string; url: string; discussionUrl: string; source: string; by: string; ts: number; likes?: number; replies?: number; views?: number }
+export interface TopicTalkItem { id?: string; kind: EvKind; title: string; url: string; discussionUrl: string; source: string; by: string; ts: number; likes?: number; replies?: number; views?: number }
 export interface TopicSummary { text: string; /** The day it was written (UTC). */ day: string; model: string; /** How many items it was read from, and, when the Signal shows sources, which. */ itemCount: number; items: Array<{ title: string; url: string; by: string; kind: EvKind }> }
 export interface TopicBriefing { slug: string; title: string; id: string; publishedAt: number; tldr: string; theme?: string; anchor?: string }
 export interface TopicData {

@@ -5,6 +5,8 @@
 // A click on a bubble: ask Claude to show the topic where the host allows messages (see act), else open its page.
 // Data: the structuredContent of get_overview (or its JSON text, which is what the site gives): { window, lens: {key,name}|null, landscape: { w, h, clusters: [{id,name,x,y,r,members}],
 //   bubbles: [{slug,label,url,x,y,r,cluster,state,change,score,lensColor,inLens,mix}], lens, lenses: [{key,name,color,light,dark}] } | null, topics: [...], since, rising }.
+// ladder: { days, top, span, window, lens, topics: [{slug,label,url,state,lensColor,inLens,rank[],score[],best,first,move}] } | null: the rank of the biggest topics per day (src/signal/ladder.ts),
+//   drawn as a second picture (the Ladder button): one line per topic; hover lights a line, a click keeps it lit (up to three), a click on a name opens the topic, Draw it draws it from left to right.
 // On the site only (no lens): replay: { today, frames: [{ day, bubbles: [{k,x,y,r,l}] }] }, the layouts of the days before today, for the Replay button.
 export default `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
@@ -45,10 +47,13 @@ ol li .n{flex:1}ol li .t{color:var(--ac);font-size:12.5px}ol li .p{color:var(--m
 .glow{fill:none;stroke:var(--ac);stroke-width:3;stroke-opacity:.55;stroke-dasharray:none;animation:glow 2.2s ease-out 3}@keyframes glow{0%{stroke-opacity:1;stroke-width:5}100%{stroke-opacity:.35;stroke-width:2}}
 @media (prefers-reduced-motion:reduce){.glow{animation:none}}
 #since{position:absolute;right:8px;top:6px;z-index:4;font-size:12.5px;font-weight:700;color:var(--fg);background:var(--halo);border:1px solid var(--ac);padding:2px 10px;border-radius:999px;pointer-events:none;backdrop-filter:blur(3px)}
+.lad{cursor:pointer;outline:none;transition:opacity .15s}.lad path.ln{fill:none;stroke-linecap:round;stroke-linejoin:round}.lad path.hit{fill:none;stroke:transparent;pointer-events:stroke}.lad text{fill:var(--fg);cursor:pointer}.lad.grey text{fill:var(--mut)}.lad.pin text{font-weight:700}.lad:focus-visible path.ln{stroke-dasharray:1 0;filter:drop-shadow(0 0 3px var(--ac))}.lad text:focus-visible{outline:2px solid var(--ac)}
+.lgrid line{stroke:var(--line);stroke-opacity:.7}.lgrid text{fill:var(--mut)}
+#modes{display:inline-flex;gap:4px}
 body.full #app{min-height:100vh}
 body.hero #bar,body.hero #lbox,body.hero #note:empty{display:none!important}body.hero #app{padding:8px 10px 6px}body.hero svg{height:340px}body.hero #legend{text-align:center;margin:6px 2px 2px}
 </style></head><body><div id="s">Reading the landscape…</div><div id="app" class="hide">
-<div id="bar"><label>Lens <select id="lens" aria-label="Lens"></select></label><span id="wins" role="group" aria-label="Time window"></span><span class="sp"></span>
+<div id="bar"><label>Lens <select id="lens" aria-label="Lens"></select></label><span id="modes" class="hide" role="group" aria-label="Picture"></span><span id="wins" role="group" aria-label="Time window"></span><button id="ldraw" class="hide" type="button">▶ Draw it</button><span class="sp"></span>
 <button id="pickb" class="hide" aria-pressed="false" title="Click bubbles to pick them, then ask Claude about them">Pick topics</button><button id="ask" class="hide"></button><button id="fs" class="hide">Fullscreen</button></div>
 <div id="stage"><svg id="svg" role="group" aria-label="The landscape of topics"></svg><div id="tip" class="hide" role="status"></div><div id="rday" class="hide" aria-live="polite"></div><div id="since" class="hide"></div><div id="rp" class="hide"><button id="play" type="button"></button><span id="rdots" aria-hidden="true"></span></div></div>
 <p id="legend"></p><p id="note" aria-live="polite"></p>
@@ -58,6 +63,8 @@ var NS = 'http://www.w3.org/2000/svg', WINS = [[1, 'Today'], [3, '3 days'], [7, 
 var pending = {}, nextId = 2, host = {}, D = null, L = null, busy = false, theme = '', win = 1, lens = '', area = 'ai', picking = false, sel = {}, ctxTimer = 0, scale = 1, tipFor = '', ox = 0, oy = 0;
 // Hero: the picture on the site's landing page (the host says so in hostContext.embed). The page has the lens, the window and the list already, so the view shows only the bubbles, zoomed to fit them.
 var hero = false, lastVisit = 0, fresh = {};
+// The second picture: the Ladder (D.ladder). pins: the lines kept lit; ladT: how much of it is drawn (1: all).
+var mode = 'map', pins = {}, ladHot = '', ladT = 1, ladRaf = 0;
 function el(id) { return document.getElementById(id); }
 function send(m) { m.jsonrpc = '2.0'; parent.postMessage(m, '*'); }
 function request(method, params, ms, done) {
@@ -100,6 +107,7 @@ function togetherWith(b) {
 
 // ---- drawing
 function draw() {
+  if (mode === 'ladder' && D && D.ladder) { drawLadder(); return; }
   if (playing) { drawReplay(rT); return; }
   var svg = el('svg'), w = L.w, h = L.h, vx = 0, vy = 0, sc, fs, rect;
   svg.textContent = '';
@@ -330,6 +338,92 @@ function sinceLast() {
   tag.textContent = 'Since ' + dayText(then.day) + ': ' + n + ' new ' + (n === 1 ? 'topic' : 'topics') + ' (ringed)';
   tag.classList.remove('hide');
 }
+// ---- the Ladder: the rank of the biggest topics on each day, one line per topic. Without a lens the ten highest today have a colour each; with one, its topics take its colour and the rest are grey.
+var LAD_COLORS = ['#1f7a8c', '#d6336c', '#e3a008', '#7c5cbf', '#2f9e6b', '#c2410c', '#4263eb', '#74b816', '#ae3ec9', '#99582a'];
+function pinned() { return D && D.ladder ? D.ladder.topics.filter(function (t) { return pins[t.slug]; }) : []; }
+function ladColor(t) {
+  var A = D.ladder, now = t.rank[t.rank.length - 1], l;
+  if (A.lens) { l = t.inLens && t.lensColor ? (L.lenses || []).filter(function (x) { return x.color === t.lensColor; })[0] : null; return l ? (dark() ? l.dark : l.light) : null; }
+  return now && now <= LAD_COLORS.length ? LAD_COLORS[now - 1] : null;
+}
+function ladLight() {
+  var any = !!ladHot || pinned().length > 0;
+  Array.prototype.forEach.call(el('svg').querySelectorAll('.lad'), function (g) { var k = g.getAttribute('data-k'), on = !any || k === ladHot || pins[k]; g.setAttribute('opacity', on ? '1' : '.16'); g.classList.toggle('pin', !!pins[k]); g.setAttribute('aria-pressed', pins[k] ? 'true' : 'false'); });
+}
+function togglePin(t) {
+  if (pins[t.slug]) delete pins[t.slug];
+  else if (pinned().length >= 3) { el('note').textContent = 'Three lines are kept lit already: click one of them to let it go.'; return; }
+  else pins[t.slug] = true;
+  el('note').textContent = ''; ladLight(); renderAsk(); sendContext();
+}
+function ladTip(t, x, y) {
+  var tip = el('tip'), w = el('stage').getBoundingClientRect().width, now = t.rank[t.rank.length - 1];
+  tip.textContent = '';
+  tip.appendChild(mk('b', '', t.label));
+  tip.appendChild(mk('span', 'st', (now ? 'Number ' + now + ' today' : 'Not on the ladder today') + ' · ' + t.move));
+  tip.appendChild(mk('span', '', 'Best place: ' + t.best + (now ? ' · ' + pct(t.score[t.score.length - 1]) + ' of items now' : '')));
+  tip.appendChild(mk('span', '', pins[t.slug] ? 'Click to let it go.' : 'Click to keep it lit.'));
+  tip.classList.remove('hide');
+  var tw = tip.offsetWidth, th = tip.offsetHeight, top = y * scale - th - 12;
+  tip.style.left = Math.min(Math.max(4, x * scale - tw / 2), Math.max(4, w - tw - 4)) + 'px'; tip.style.top = (top < 2 ? y * scale + 14 : top) + 'px';
+}
+function drawLadder() {
+  var A = D.ladder, svg = el('svg'), S = A.days.length, last = S - 1, rows = 1, W = 1000, Lm, top = 14, rect, sc, fs, R, rowH, H;
+  A.topics.forEach(function (t) { t.rank.forEach(function (r) { if (r && r > rows) rows = r; }); });
+  svg.textContent = '';
+  rect = svg.getBoundingClientRect(); sc = (rect.width || 600) / W; scale = sc; ox = 0; oy = 0;
+  fs = function (px) { return Math.round(px / sc * 10) / 10; };
+  Lm = fs(26); R = Math.min(W * 0.45, fs(200)); rowH = Math.max(24, fs(21)); H = top + rows * rowH + fs(26);
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  var x = function (i) { return Lm + (S > 1 ? i / (S - 1) : 0.5) * (W - Lm - R); }, y = function (r) { return top + (r - 0.5) * rowH; }, i;
+  var grid = sv('g', { 'class': 'lgrid', 'aria-hidden': 'true' });
+  for (i = 0; i < S; i++) grid.appendChild(sv('line', { x1: x(i), x2: x(i), y1: top, y2: top + rows * rowH }));
+  for (i = 1; i <= rows; i++) grid.appendChild(sv('text', { x: Lm - fs(9), y: y(i) + fs(4), 'text-anchor': 'end', 'font-size': fs(11.5) }, String(i)));
+  [0, Math.floor(last / 2), last].forEach(function (d, j) { grid.appendChild(sv('text', { x: x(d), y: H - fs(7), 'text-anchor': j === 0 ? 'start' : 'middle', 'font-size': fs(11.5) }, dayText(A.days[d]) + (d === last ? ' · today' : ''))); });
+  svg.appendChild(grid);
+  if (ladT < 1) { var defs = sv('defs', {}), cp = sv('clipPath', { id: 'lclip' }); cp.appendChild(sv('rect', { x: 0, y: 0, width: Lm + ladT * (W - Lm - R) + fs(6), height: H })); defs.appendChild(cp); svg.appendChild(defs); }
+  var lines = sv('g', ladT < 1 ? { 'clip-path': 'url(#lclip)' } : {});
+  svg.appendChild(lines);
+  A.topics.map(function (t) { return { t: t, c: ladColor(t) }; }).sort(function (a, b) { return Number(!b.c) - Number(!a.c); }).forEach(function (o) {
+    var t = o.t, col = o.c || 'var(--grey)', now = t.rank[last], d = '', endI = -1, g = sv('g', { 'class': 'lad' + (o.c ? '' : ' grey'), 'data-k': t.slug, tabindex: 0, role: 'button' });
+    g.setAttribute('aria-label', t.label + ': ' + (now ? 'number ' + now + ' today' : 'not on the ladder today') + ', ' + t.move + '. Press Enter to keep its line lit.');
+    var dots = [];
+    t.rank.forEach(function (r, k) {
+      if (r === null || r === undefined) return;
+      var before = k > 0 ? t.rank[k - 1] : null, mx;
+      if (before === null || before === undefined) d += 'M' + x(k) + ' ' + y(r);
+      else { mx = (x(k - 1) + x(k)) / 2; d += 'C' + mx + ' ' + y(before) + ' ' + mx + ' ' + y(r) + ' ' + x(k) + ' ' + y(r); }
+      dots.push(before === null && k > 0 ? sv('circle', { cx: x(k), cy: y(r), r: fs(4.2), fill: 'var(--bg)', stroke: col, 'stroke-width': fs(2) }) : sv('circle', { cx: x(k), cy: y(r), r: fs(k === last ? 4.2 : 2.4), fill: col }));
+      endI = k;
+    });
+    g.appendChild(sv('path', { 'class': 'hit', d: d, 'stroke-width': fs(14) }));
+    g.appendChild(sv('path', { 'class': 'ln', d: d, stroke: col, 'stroke-width': fs(o.c ? 3.2 : 1.6), 'stroke-opacity': o.c ? 1 : 0.65 }));
+    dots.forEach(function (c) { g.appendChild(c); });
+    var tipAt = function () { if (endI >= 0) ladTip(t, x(endI), y(t.rank[endI])); };
+    g.addEventListener('mouseenter', function () { ladHot = t.slug; ladLight(); tipAt(); });
+    g.addEventListener('mouseleave', function () { if (ladHot === t.slug) ladHot = ''; ladLight(); hideTip(); });
+    g.addEventListener('focus', function () { ladHot = t.slug; ladLight(); tipAt(); });
+    g.addEventListener('blur', function () { if (ladHot === t.slug) ladHot = ''; ladLight(); hideTip(); });
+    g.addEventListener('click', function () { togglePin(t); tipAt(); });
+    g.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePin(t); } });
+    lines.appendChild(g);
+    if (now && ladT >= 1) {   // the name at the end of the line opens the topic
+      var chars = Math.max(6, Math.floor((R - fs(18)) * sc / 6.6)), nm = sv('text', { x: W - R + fs(13), y: y(now) + fs(4.5), 'font-size': fs(12.5), tabindex: 0, role: 'link' }, t.label.length > chars ? t.label.slice(0, chars - 1) + '…' : t.label);
+      nm.setAttribute('aria-label', 'Open ' + t.label);
+      nm.addEventListener('click', function (e) { e.stopPropagation(); act(t); });
+      nm.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); act(t); } });
+      g.appendChild(nm);
+    }
+  });
+  ladLight();
+  if (ladT >= 1) reportSize();
+}
+el('ldraw').onclick = function () {
+  if (mode !== 'ladder' || reduced()) return;
+  cancelAnimationFrame(ladRaf); hideTip();
+  var t0 = 0, step = function (ts) { if (!t0) t0 = ts; ladT = Math.min(1, (ts - t0) / 2600); if (mode === 'ladder') draw(); if (ladT < 1) ladRaf = requestAnimationFrame(step); };
+  ladT = 0; ladRaf = requestAnimationFrame(step);
+};
 // ---- the page around it
 function renderBar() {
   var s = el('lens'), ls = L.lenses || [];
@@ -342,11 +436,26 @@ function renderBar() {
   var can = !!(host.message || host.updateModelContext) || !Object.keys(host).length;   // a host that lists what it can do and cannot message gets no ask button
   el('pickb').classList.toggle('hide', !can);
   el('pickb').setAttribute('aria-pressed', picking ? 'true' : 'false');
+  var hasLad = !hero && !!(D.ladder && D.ladder.topics && D.ladder.topics.length), m = el('modes'), lad = mode === 'ladder';
+  m.textContent = ''; m.classList.toggle('hide', !hasLad);
+  [['map', 'Landscape'], ['ladder', 'Ladder']].forEach(function (p) { var b = mk('button', '', p[1]); b.setAttribute('aria-pressed', p[0] === mode ? 'true' : 'false'); b.title = p[0] === 'map' ? 'The topics of the window as bubbles' : 'The rank of the biggest topics on each of the last days'; b.onclick = function () { setMode(p[0]); }; m.appendChild(b); });
+  el('wins').classList.toggle('hide', lad); el('ldraw').classList.toggle('hide', !lad || reduced());
+  if (lad) el('pickb').classList.add('hide');
   renderAsk();
+}
+function setMode(m) {
+  if (m === mode) return;
+  mode = m; picking = false; sel = {}; stopReplay(); rT = 0; cancelAnimationFrame(ladRaf); ladT = 1; hideTip();
+  renderBar(); renderLegend();
+  if (m === 'map') { sinceLast(); draw(); setupReplay(); } else { el('since').classList.add('hide'); el('rday').classList.add('hide'); el('rp').classList.add('hide'); draw(); }
+  el('note').textContent = ''; sendContext();
 }
 function chosen() { return L.bubbles.filter(function (b) { return sel[b.slug]; }); }
 function renderAsk() {
   var n = chosen().length, b = el('ask');
+  if (mode === 'ladder') {   // in the Ladder the pinned lines are what is asked about
+    n = pinned().length; b.classList.toggle('hide', !n || !(host.message || !Object.keys(host).length)); b.textContent = 'Ask Claude about these (' + n + ')'; b.disabled = !n; return;
+  }
   b.classList.toggle('hide', !picking);
   b.textContent = n ? 'Ask Claude about these (' + n + ')' : 'Pick topics to ask about';
   b.disabled = !n;
@@ -354,6 +463,11 @@ function renderAsk() {
 function renderLegend() {
   var p = el('legend'), parts = [];
   p.textContent = '';
+  if (mode === 'ladder' && D.ladder) {
+    p.appendChild(mk('b', '', 'How to read it. '));
+    p.appendChild(document.createTextNode('Each line is a topic and its place in the order on each day, among the ' + D.ladder.top + ' biggest; a ring is where it came onto the ladder. The order is by the Signal score of the ' + D.ladder.window + ' days to each day, balanced between the groups of sources: order, not volume. Hover a line to light it, click it to keep it lit (up to three), click a name to open the topic.'));
+    return;
+  }
   if (hero) {   // a short key: the page explains the rest. The tags as they look on the bubbles, then the lens colours, each colour kept on one line with its name
     var k1 = mk('div', 'key'), it = function (box, node, text) { var s = mk('span', 'it'); s.appendChild(node); s.appendChild(document.createTextNode(text)); box.appendChild(s); };
     k1.appendChild(mk('span', 'it', 'Bigger bubble, bigger share'));
@@ -400,9 +514,12 @@ function show(data) {
     reportSize(); return;
   }
   var keep = {}; L.bubbles.forEach(function (b) { if (sel[b.slug]) keep[b.slug] = true; }); sel = keep;
+  if (!D.ladder || !D.ladder.topics || hero) mode = 'map';
+  var kp = {}; if (D.ladder) D.ladder.topics.forEach(function (t) { if (pins[t.slug]) kp[t.slug] = true; }); pins = kp; cancelAnimationFrame(ladRaf); ladT = 1;
   el('s').classList.add('hide'); el('app').classList.remove('hide');
   stopReplay(); rT = 0; sinceLast();
   renderBar(); renderLegend(); renderList(); draw(); setupReplay();
+  if (mode === 'ladder') { el('rp').classList.add('hide'); el('since').classList.add('hide'); }
   el('note').textContent = '';
 }
 function reload() {
@@ -439,6 +556,11 @@ function describe(b) {
   return '- ' + b.label + ' (topic ' + b.slug + (st ? ', ' + st : '') + ', ' + pct(b.score) + ' of items' + (b.mix ? ', from ' + b.mix : '') + (t.length ? ', talked about with ' + t.slice(0, 4).join(', ') : '') + ')';
 }
 function contextText() {
+  if (mode === 'ladder' && D.ladder) {
+    var pl = pinned();
+    if (!pl.length) return 'In the Undercurrent ladder (rank of topics per day), no lines are pinned.';
+    return 'In the Undercurrent ladder (the rank of the biggest topics on each of ' + D.ladder.days.length + ' days, by Signal score: order, not volume' + (area === 'politics' ? ', politics' : '') + '), the user pinned these topics:\\n' + pl.map(function (t) { var now = t.rank[t.rank.length - 1]; return '- ' + t.label + ' (topic ' + t.slug + ', ' + (now ? 'number ' + now + ' today' : 'not on the ladder today') + ', ' + t.move + ', best ' + t.best + ')'; }).join('\\n') + '\\nUse get_topic with the topic address' + (area === 'politics' ? ' (area politics)' : '') + ' for the summary and evidence.';
+  }
   var list = chosen();
   if (!list.length) return 'In the Undercurrent landscape, no topics are picked.';
   return 'In the Undercurrent landscape (' + (WINS.filter(function (p) { return p[0] === win; })[0][1].toLowerCase()) + (area === 'politics' ? ', politics' : '') + (L.lens ? ', lens ' + L.lens.name : '') + '), the user picked these topics:\\n' + list.map(describe).join('\\n') + '\\nUse get_topic with the topic address' + (area === 'politics' ? ' (area politics)' : '') + ' for the summary and evidence.';
@@ -448,6 +570,11 @@ function sendContext() {
   ctxTimer = setTimeout(function () { request('ui/update-model-context', { content: [{ type: 'text', text: contextText() }] }, 8000, function () {}); }, 400);
 }
 function askClaude() {
+  if (mode === 'ladder') {
+    var pl = pinned(); if (!pl.length) return;
+    request('ui/message', { role: 'user', content: [{ type: 'text', text: 'Why did ' + pl.map(function (t) { return t.label; }).join(', ') + ' move the way ' + (pl.length === 1 ? 'it' : 'they') + ' did in the ladder?\\n\\n' + contextText() }] }, 10000, function (err, res) { el('note').textContent = err || (res && res.isError) ? 'Could not send that. Ask in the chat instead.' : 'Sent to Claude.'; });
+    return;
+  }
   var list = chosen();
   if (!list.length) return;
   var text = 'What is going on with ' + list.map(function (b) { return b.label; }).join(', ') + '? How do these topics relate, and what changed lately?\\n\\n' + contextText();

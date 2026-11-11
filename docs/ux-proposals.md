@@ -342,6 +342,8 @@ kindest way of saying "look over here".
 ## Built
 
 - **B1 Depth chart**: `/rising`, `/rising.json` and the `get_rising` tool with its view. See [architecture.md](architecture.md) and [mcp.md](mcp.md). Not yet done from the proposal: the small still version on the landing page.
+- **B5 The Ladder**: on the landing page under *Two weeks of talk* (the *Rank* choice next to *Volume*), and as the *Ladder* picture in the Landscape view of `get_overview`. Not done from the proposal: setting the whole page to a day by clicking its header (the page has no per-day form), and on the site pinning and the play button, which need script; hovering a line dims the rest there, and the MCP view has pinning and *Draw it*.
+- **A1 The source card**: `/t/<topic>/i/<item>` (and `.json`), reached from the title of every Talk item and from the marks of the timeline, and the `get_item` tool; `get_topic_items` lines and the talk lists of `get_topic` now carry the item id. The id is a short hash (eleven letters and digits) of the item's own web address. See [architecture.md](architecture.md) and [mcp.md](mcp.md). Not done from the proposal: *Also in* names other topics only, not briefing themes or saved lists (those are not cheap to look up from an item); *Said the same* is a count only (no list of who repeated it) and is left out for an item that was not read for its meaning; the topic hub view does not open an item as a panel; *Ask Claude about this* with the one item is not built; the card exists while the item is within the topic's 14 days (older, up to the 30 days the item log is kept: 410 with the link to the original; after that 404), and a topic that has itself left the Signals answers 404.
 
 ## What was open before building
 

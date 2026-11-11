@@ -19,7 +19,8 @@ import { partsAfterParents } from '../signal/topics';
 import { STATE_LABEL, STATE_MARK, topicSlug, TOPIC_SLUG, roughly, type EvKind, type TopicData, type TopicTalkItem } from '../signal/topicpage';
 import { TIE_MS } from '../signal/first';
 import { KIND_MARK, KIND_TITLE as KIND_NAME, firstCaveat, firstSentence, lagWords, stampUtc, timelineWords, type TimelineDot } from '../signal/topicview';
-import { loadTopic } from './topicData';
+import { loadItemCard, loadTopic } from './topicData';
+import { ITEM_ID, itemHref, type CardTopic, type SourceCard } from '../signal/sourcecard';
 import { CARD_FONT, CARD_W, shareCardSvg } from './shareCard';
 import { svgToPng } from '../media/png';
 import { PHASE_LABEL, PHASE_MARK, PHASE_TRACK, lifecycle, smooth, type Lifecycle } from '../signal/lifecycle';
@@ -33,7 +34,7 @@ import { LENS_COLORS, LENS_JS, applyLens, lensMatch, chosenLens, lensColorCss, l
 import { avatarResponse, isOwnLens, isPersonal, mePost, ownLenses, viewerOf, type Viewer } from './me';
 import type { AskRow, ListBrief, ListView, Me } from '../durable-objects/users';
 import { FEATURES, MAX_FOLLOWS, MAX_OWN_LENSES, MAX_SAVED_ITEMS, MAX_SAVED_LISTS, VISIBILITIES, VISIBILITY_LABEL, canPublish, homeFor, type SavedList, type Visibility } from '../users/model';
-import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, plainLine, topicFor, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
+import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, plainLine, topicFor, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, ladderData, type LadderData, type LadderRaw, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
 import { HOST_JS, VIZ_CSS, VIZ_VIEWS, vizFrame, viewCsp } from './viz';
 import { climbWords, climbs, inZone, pctOf, risingOut, type RisingData, type RisingTopic } from './rising';
 import { MIN_CLIMB, ZONE_LABEL, type Zone } from '../signal/depth';
@@ -182,6 +183,10 @@ form.report{display:grid;gap:12px;max-width:640px}form.report textarea{width:100
 .memsg{margin:10px 0 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--card);border-radius:6px;font-size:14px}
 .askbox{display:grid;gap:8px;margin:14px 0 0;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);max-width:720px}.askbox label{font-weight:600}.askbox textarea,.lensform textarea,.lensform input,.meform select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg,var(--card));color:var(--text);max-width:100%}
 .askrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.askrow small{color:var(--muted)}.meform button{font:inherit;padding:7px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}.meform button[type=submit]:not(.ghost):not(.followbtn):not(.savebtn){border-color:var(--accent)}.meform button:disabled{opacity:.5;cursor:default}
+.tline a:hover .dot,.tline a:focus-visible .dot{stroke:var(--accent)}.tline a:focus-visible{outline:none}
+.icard{max-width:46rem}.icard h1{overflow-wrap:anywhere}.icard .who{color:var(--muted);margin:4px 0 0}.icard .out{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:14px 0 0}.icard .go{display:inline-block;padding:8px 18px;border-radius:999px;border:1px solid var(--accent);background:var(--accent);color:var(--card);font-weight:600;text-decoration:none}.icard .go:hover{color:var(--card);opacity:.9}.icard .go:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.icard .nums{display:flex;flex-wrap:wrap;gap:6px 8px;list-style:none;margin:10px 0 0;padding:0}.icard .nums li{padding:2px 10px;border:1px solid var(--line);border-radius:999px;font-size:14px;background:var(--card)}
+.icard .near{display:grid;grid-template-columns:1fr 1fr;gap:12px;list-style:none;margin:0;padding:0}.icard .near li{border:1px solid var(--line);border-radius:12px;padding:10px 14px;background:var(--card);overflow-wrap:anywhere}.icard .near small{display:block;color:var(--muted)}.icard .near li.none{border-style:dashed;color:var(--muted)}@media(max-width:560px){.icard .near{grid-template-columns:1fr}}
 .savef,.savebox{display:inline-block;margin-left:6px;vertical-align:middle}.savebtn,.meform .savebtn{font:inherit;font-size:12.5px;padding:1px 9px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;list-style:none}.savebtn::-webkit-details-marker{display:none}.savebtn[aria-pressed=true],.savebox:has(button[aria-pressed=true])>.savebtn{color:var(--accent);border-color:var(--accent)}
 .savebox[open]>form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 2px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--card)}.savebox form button{font-size:13px;padding:3px 10px}.savebox form button[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}.savebox form a{font-size:13px}
 .vistag{font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}.vistag.vis-public{border-color:var(--accent);color:var(--accent)}.itemnote{margin:4px 0 0;padding-left:10px;border-left:3px solid var(--accent);font-style:italic}.saveact{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:flex-start;margin-top:4px}.mynote{font-size:13px}.mynote summary{cursor:pointer;color:var(--muted)}.mynote form{margin-top:4px}.mynote input{font:inherit;min-width:min(420px,70vw);padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text)}.mepage-one{margin-top:20px;max-width:760px;display:block;padding:16px 18px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
@@ -248,6 +253,9 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 :root[data-theme=dark]{--k-x:#3fa5b8;--k-hn:#f76707;--k-youtube:#e64980;--k-rss:#845ef7;--k-arxiv:#40c057}
 .tstream{margin:0 0 18px;padding:12px 14px 6px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:var(--sh1)}.tstream svg{display:block;width:100%;height:auto}
 .tsb{stroke:var(--card);stroke-width:1.2;fill-opacity:.86;transition:fill-opacity .15s}.tstream a:hover .tsb,.tstream a:focus .tsb{fill-opacity:1;stroke:var(--text);stroke-width:1.5}.tstream:hover .tsb{fill-opacity:.55}.tstream:hover a:hover .tsb{fill-opacity:1}
+.vsw>input{position:absolute;opacity:0;width:1px;height:1px}.vswt{display:flex;gap:4px;align-items:center;margin:0 0 10px;flex-wrap:wrap}.vswt label{padding:4px 14px;border-radius:999px;border:1px solid var(--line);font-size:14px;background:var(--card);cursor:pointer}.vswt .lenslbl{margin-right:6px;color:var(--muted);font-size:13px}#vsw-r:checked~.vsv,#vsw-v:checked~.vsr{display:none}#vsw-v:checked~.vswt label[for=vsw-v],#vsw-r:checked~.vswt label[for=vsw-r]{border-color:var(--accent);color:var(--accent);font-weight:600}#vsw-v:focus-visible~.vswt label[for=vsw-v],#vsw-r:focus-visible~.vswt label[for=vsw-r]{outline:2px solid var(--accent);outline-offset:2px}
+.lad{--c:var(--muted);transition:opacity .15s}.lad path{fill:none;stroke:var(--c);stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}.lad circle{fill:var(--c)}.lad circle.len{fill:var(--card);stroke:var(--c);stroke-width:2.2}.lad .lnm{fill:var(--text);font-size:13.5px;font-weight:600}.lad.grey path{stroke-width:1.6;stroke-opacity:.6}.lad.grey circle{fill-opacity:.6}.lad.grey .lnm{font-weight:400;fill:var(--muted)}.ladder svg:hover .lad{opacity:.2}.ladder svg .lad:hover,.ladder svg .lad:focus{opacity:1}.lad:hover path,.lad:focus path{stroke-width:4.5;stroke-opacity:1}.lad:hover .lnm,.lad:focus .lnm{fill:var(--text);font-weight:700}.lgl{stroke:var(--line);stroke-opacity:.6}
+.lkey{list-style:none;margin:10px 0 6px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:3px 18px;font-size:13.5px;counter-reset:lk}.lkey li{display:flex;align-items:baseline;gap:6px;counter-increment:lk}.lkey li::before{content:counter(lk);color:var(--muted);font-variant-numeric:tabular-nums;min-width:1.3em;text-align:right}.lkey li.out{opacity:.7}.lkey .sk{width:11px;height:11px;border-radius:3px;flex:none;align-self:center}.lkey a{color:var(--text);text-decoration:none}.lkey a:hover{color:var(--accent);text-decoration:underline}.lkey small{color:var(--muted);white-space:nowrap}@media(max-width:560px){.lad .lnm{display:none}.ladder .sax{font-size:22px}}
 .tsl{fill:#fff;font-weight:700;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,.3);stroke-width:2.5px}
 .tskey{list-style:none;margin:8px 0 2px;padding:0;display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13.5px}.tskey li{display:flex;align-items:center;gap:6px}.tskey .sk{width:11px;height:11px;border-radius:3px}.tskey a{color:var(--text);text-decoration:none}.tskey a:hover{color:var(--accent);text-decoration:underline}
 .heat{display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center;margin:0 0 8px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:var(--sh1)}.heat svg{display:block;max-width:100%;height:auto}
@@ -454,7 +462,7 @@ ${ctx.reports.length ? `<h2 class="sect">Reports</h2><ul class="topics">${report
 // ---- The landing page at / (INTENT.md section 6): top bar, since your last visit, in brief, the landscape (a ranked list until step 5 draws it), rising, lens cards, research, watch and read.
 /** What the landing page reads besides the briefings and Signal: the Monitor's `landing-public`. */
 export interface LandingExtras { lines: Record<string, string>; series: Record<string, number[]>; days: string[]; /** The mentions of all the topics asked for, per day over 30 days (the heat calendar). */ heat?: { days: string[]; counts: number[] }; papers: RecentPaper[]; risingResearch: Array<{ slug: string; title: string; state: string }>; reads: ReadItem[] }
-export interface LandingData { /** The area of the page (default: the one of the Ctx). */ area?: Area; window: LandingWindow; lenses: Lens[]; lens?: Lens; /** Signal for the window, and for 7 days (what In brief matches against). */ sig: PubSignal | null; sig7: PubSignal | null; extras: LandingExtras | null; /** Where the bubbles of the landscape sit; the frame is drawn only when there is a layout. */ landscape?: Layout | null }
+export interface LandingData { /** The rank of the biggest topics per day (the Ladder), as the Monitor gives it. */ ladder?: LadderRaw | null; /** The area of the page (default: the one of the Ctx). */ area?: Area; window: LandingWindow; lenses: Lens[]; lens?: Lens; /** Signal for the window, and for 7 days (what In brief matches against). */ sig: PubSignal | null; sig7: PubSignal | null; extras: LandingExtras | null; /** Where the bubbles of the landscape sit; the frame is drawn only when there is a layout. */ landscape?: Layout | null }
 
 /** The address of the landing page of an area with a lens and a window. */
 export const landingHref = (p: { lens?: string; window?: number }, area: Area = 'ai'): string => { const q = [p.lens ? 'lens=' + encodeURIComponent(p.lens) : '', p.window && p.window !== 1 ? 'window=' + p.window : ''].filter(Boolean).join('&amp;'); return AREA_HOME[area] + (q ? '?' + q : ''); };
@@ -583,9 +591,14 @@ ${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in
     const ex = extras;
     if (!ex?.days?.length) return '';
     const rows = rank.rows.filter((r) => !r.part && (!lens || r.inLens)).map((r) => r.topic).filter((t) => (ex.series[t.term.toLowerCase()] ?? []).some((v) => v > 0)).slice(0, STREAM_TOPICS);
-    if (rows.length < 2) return '';
+    // The same two weeks as order instead of volume (the Ladder): a switch when there are both pictures. Radio buttons and CSS, so it works without script and the page stays one cached copy.
+    const lad = ladderData(d.ladder, { area, lens, lenses, origin: '' }), ladder = lad ? topicLadder(lad) : '';
+    if (rows.length < 2 && !ladder) return '';
+    const vol = rows.length < 2 ? '' : topicStream(rows.map((t) => ({ term: t.term, label: t.label, href: topicUrl(t.term, area), values: ex.series[t.term.toLowerCase()] })), ex.days, lens?.color);
+    const pics = vol && ladder ? `<div class="vsw"><input type="radio" name="vsw" id="vsw-v" checked><input type="radio" name="vsw" id="vsw-r"><div class="vswt"><span class="lenslbl">Show</span><label for="vsw-v">Volume</label><label for="vsw-r">Rank</label></div><div class="vsv">${vol}</div><div class="vsr">${ladder}</div></div>` : vol || ladder;
+    if (rows.length < 2) return `<section aria-labelledby="h-stream"><h2 class="lh" id="h-stream">Two weeks of talk</h2>${pics}</section>`;
     const hm = ex.heat?.counts.some((v) => v > 0) ? `<h3 class="azh">The last ${ex.heat.days.length} days</h3>${heatHtml(ex.heat, `Mentions of these ${rows.length} topics`)}` : '';
-    return `<section aria-labelledby="h-stream"><h2 class="lh" id="h-stream">Two weeks of talk${lens ? ': ' + esc(lens.name) : ''}</h2>${topicStream(rows.map((t) => ({ term: t.term, label: t.label, href: topicUrl(t.term, area), values: ex.series[t.term.toLowerCase()] })), ex.days, lens?.color)}${hm}</section>`;
+    return `<section aria-labelledby="h-stream"><h2 class="lh" id="h-stream">Two weeks of talk${lens ? ': ' + esc(lens.name) : ''}</h2>${pics}${hm}</section>`;
   });
 
   const research = guard(() => {
@@ -889,7 +902,8 @@ function timelineHtml(d: TopicData): string {
   const lanes = kinds.map((k, i) => ({ k, y: top + laneH / 2 + i * laneH }));
   const marks = dots.map((t) => {
     const y = lanes.find((l) => l.k === t.kind)!.y, r = Math.min(9, 3.5 + 1.6 * Math.sqrt(t.n)), what = `${KIND_NAME[t.kind]}, ${stampUtc(t.ts).slice(0, -10).trim()}: ${t.n} ${t.n === 1 ? 'item' : 'items'}${t.item?.title ? `, most reacted: ${t.item.title}` : ''}`;
-    return kindShape(t.kind, x(t.x), y, r, 'dot', what);
+    const shape = kindShape(t.kind, x(t.x), y, r, 'dot', what);
+    return t.item?.id ? `<a href="${esc(itemHref(d.slug, t.item.id, d.area))}">${shape}</a>` : shape;   // the mark opens the source card of the item it names
   }).join('');
   const days = d.series.days, ticks = [0, Math.floor((days.length - 1) / 2), days.length - 1].map((i, j) => `<text x="${(j === 0 ? L : j === 2 ? W - R : (L + W - R) / 2).toFixed(0)}" y="${H - 6}" text-anchor="${j === 0 ? 'start' : j === 2 ? 'end' : 'middle'}">${esc(shortDay(days[i]))}</text>`).join('');
   const label = `Timeline of the last ${days.length} days. ${timelineWords(dots).join('. ')}.`;
@@ -945,8 +959,46 @@ function spreadHtml(d: TopicData): string {
 ${flow}<p class="meta">One band per kind of source, as thick as its items at the time${papers.length ? '; diamonds above are new papers on the subject' : ''}. Numbers mark the order the kinds had the latest wave in, among the sources we follow; it does not say where the story began. Each kind is shown in its own band and never added into one number.</p>`;
 }
 
+/**
+ * The Ladder (src/signal/ladder.ts): the rank of the biggest topics on each day, one line per topic, so the order and who overtook whom can be read where the streamgraph shows volume.
+ * Inline SVG, no script: every line is a link, hovering one dims the rest, and the list under it gives today's order and how each topic moved, so nothing depends on the colours.
+ * Without a lens the ten highest today have a colour each; with one, its topics take its colour and the rest are grey.
+ */
+function topicLadder(d: LadderData): string {
+  const S = d.days.length, last = S - 1, rows = Math.max(1, ...d.topics.flatMap((t) => t.rank.filter((r): r is number => r !== null)));
+  const W = 960, L = 30, R = 236, top = 12, rowH = 24, bottom = 26, H = top + rows * rowH + bottom;
+  const x = (i: number) => L + (S > 1 ? i / (S - 1) : 0.5) * (W - L - R), y = (r: number) => top + (r - 0.5) * rowH;
+  const colorOf = (t: LadderData['topics'][number]): string | null => { const now = t.rank[last];
+    return d.lens ? (t.inLens && t.lensColor ? `var(--lc-${t.lensColor})` : null) : now !== null && now <= LADDER_COLORS.length ? LADDER_COLORS[now - 1] : null; };
+  const lines = d.topics.map((t) => {
+    const c = colorOf(t), now = t.rank[last];
+    let path = '', dots = '';
+    t.rank.forEach((r, i) => {
+      if (r === null) return;
+      const before = i > 0 ? t.rank[i - 1] : null, px = x(i).toFixed(1), py = y(r).toFixed(1);
+      if (before === null) path += `M${px} ${py}`;
+      else { const mx = ((x(i - 1) + x(i)) / 2).toFixed(1); path += `C${mx} ${y(before).toFixed(1)} ${mx} ${py} ${px} ${py}`; }
+      dots += before === null && i > 0 ? `<circle class="len" cx="${px}" cy="${py}" r="4.5"/>` : `<circle cx="${px}" cy="${py}" r="${i === last ? 4.5 : 2.6}"/>`;
+    });
+    const name = now === null ? '' : `<text class="lnm" x="${W - R + 14}" y="${(y(now) + 4.5).toFixed(1)}">${esc(t.label.length > 30 ? t.label.slice(0, 29) + '…' : t.label)}</text>`;
+    return `<a class="lad${c ? '' : ' grey'}" href="${esc(t.url)}"${c ? ` style="--c:${c}"` : ''}><title>${esc(t.label)}: ${now === null ? 'not on the ladder today' : `number ${now} today`}, ${esc(t.move)}; best ${t.best}</title><path d="${path}"/>${dots}${name}</a>`;
+  });
+  // grey lines first, so the coloured ones are on top
+  const order = d.topics.map((t, i) => ({ i, grey: colorOf(t) === null })).sort((a, b) => Number(b.grey) - Number(a.grey)).map((o) => lines[o.i]).join('');
+  const ranks = Array.from({ length: rows }, (_, i) => `<text class="sax" x="${L - 12}" y="${(y(i + 1) + 4).toFixed(1)}" text-anchor="end">${i + 1}</text>`).join('');
+  const grid = d.days.map((_, i) => `<line class="lgl" x1="${x(i).toFixed(1)}" x2="${x(i).toFixed(1)}" y1="${top}" y2="${top + rows * rowH}"/>`).join('');
+  const ticks = [0, Math.floor(last / 2), last].map((i, j) => `<text class="sax" x="${x(i).toFixed(0)}" y="${H - 6}" text-anchor="${j === 0 ? 'start' : 'middle'}">${esc(shortDay(d.days[i]))}${i === last ? ' · today' : ''}</text>`).join('');
+  const today = d.topics.filter((t) => t.rank[last] !== null), gone = d.topics.filter((t) => t.rank[last] === null);
+  const label = `The rank of the biggest topics on each of ${S} days. Today: ${today.map((t) => `${t.rank[last]} ${t.label} (${t.move})`).join('; ')}.`;
+  const key = today.map((t) => { const c = colorOf(t); return `<li${d.lens && t.inLens === false ? ' class="out"' : ''}><span class="sk" style="background:${c ?? 'var(--muted)'}" aria-hidden="true"></span><a href="${esc(t.url)}">${esc(t.label)}</a> <small>${esc(t.move)}</small></li>`; }).join('');
+  return `<div class="tstream ladder"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${grid}${ranks}${order}${ticks}</svg><ol class="lkey">${key}</ol>
+${gone.length ? `<p class="meta">On the ladder earlier in these days, not today: ${gone.map((t) => `<a href="${esc(t.url)}">${esc(t.label)}</a> (best ${t.best})`).join(', ')}.</p>` : ''}
+<p class="meta">Each line is a topic and its place in the order, day by day, among the ${d.top} biggest${d.lens ? ` of the whole area (the topics of ${esc(d.lens.name)} have its colour)` : ''}; a ring is where a topic came onto the ladder. The order is by the <a href="/signal/method">Signal score</a> of the ${d.window} days to each day, which is balanced between the groups of sources: order, not volume. &ldquo;Up 5&rdquo; compares today with ${d.span} days ago.</p></div>`;
+}
+
 /** The colours of the streamgraph's bands, biggest topic first: distinct from each other in both themes. With a lens, its own colour leads. */
 const STREAM_COLORS = ['#1f7a8c', '#d6336c', '#e3a008', '#7c5cbf', '#2f9e6b', '#c2410c', '#4263eb', '#74b816', '#ae3ec9', '#868e96'];
+const LADDER_COLORS = [...STREAM_COLORS.slice(0, 9), '#99582a'];   // the streamgraph's colours, with a brown for its grey: grey is what a line off today's first ten is drawn in
 /**
  * Topics as a streamgraph (src/signal/stream.ts): one band per topic over `days`, as thick as its mentions each day, centred on a line that moves so the bands bend as little as they can.
  * The biggest topics are named inside their bands; every band is a link, and the list under it names them all, so nothing depends on the colours.
@@ -1002,8 +1054,42 @@ function watchPanel(d: TopicData, ctx: Ctx): string {
   const w = d.watch ?? [];
   if (!w.length) return `<p class="meta">No video on this subject in the last two weeks${d.board.proof ? '' : ' (this Signal does not show the items it counts, so only videos on public feed pages are looked for)'}. Videos come from the YouTube channels followed here and from the feed pages of this site.</p>`;
   return `<ul class="vcards watchcards">${w.map((v) => `<li><a class="play" href="${esc(v.url)}" rel="noopener noreferrer nofollow" target="_blank"><img src="https://i.ytimg.com/vi/${esc(v.video)}/mqdefault.jpg" alt="" loading="lazy" width="320" height="180"></a>
-<a href="${esc(v.url)}" rel="noopener noreferrer nofollow" target="_blank"><b>${esc(v.title)}</b></a><small>${esc(v.source)}${v.by && v.by !== v.source ? ' &middot; ' + esc(v.by) : ''} &middot; ${date(v.ts)}${v.views ? ` &middot; ${esc(roughly(v.views))} views` : ''}</small>${saveCtl(ctx, d, 'watch', v.url)}</li>`).join('')}</ul>
+<a href="${esc(v.url)}" rel="noopener noreferrer nofollow" target="_blank"><b>${esc(v.title)}</b></a><small>${esc(v.source)}${v.by && v.by !== v.source ? ' &middot; ' + esc(v.by) : ''} &middot; ${date(v.ts)}${v.views ? ` &middot; ${esc(roughly(v.views))} views` : ''}${v.id ? ` &middot; <a href="${esc(itemHref(d.slug, v.id, d.area))}">Source card</a>` : ''}</small>${saveCtl(ctx, d, 'watch', v.url)}</li>`).join('')}</ul>
 <p class="note">Videos from chosen YouTube channels and from feed pages, matched by the topic's names in their titles. Nothing plays here: each link opens the video on YouTube. Titles and pictures belong to their publishers.</p>`;
+}
+
+// ---- The source card /t/<slug>/i/<id> (src/signal/sourcecard.ts): level 3. One item, with what only this site knows. Plain HTML, no script.
+const OPEN_LABEL: Record<EvKind, string> = { x: 'Open the post on X', hn: 'Open the article', youtube: 'Watch on YouTube', rss: 'Read the original', arxiv: 'Open the paper' };
+const gapWords = (ms: number) => (ms < 60_000 ? 'under a minute' : lagWords(ms));
+export function itemCardHtml(c: SourceCard, ctx: Ctx, origin = ''): string {
+  const i = c.item, t = c.topic, here = topicHref(t.slug, t.area), link = (u: string) => `href="${esc(u)}" rel="noopener noreferrer nofollow" target="_blank"`;
+  const who = [i.by && i.kind === 'x' ? '@' + i.by.replace(/^@/, '') : i.by, i.source && i.source !== i.by ? i.source : '', i.ts ? stampUtc(i.ts) : ''].filter(Boolean);
+  const disc = i.discussionUrl && i.discussionUrl !== i.url ? `<a href="${esc(i.discussionUrl)}" rel="noopener noreferrer nofollow" target="_blank">${i.kind === 'hn' ? 'Discussion on Hacker News' : 'The discussion'} &#8599;</a>` : '';
+  const nums = c.reactions.length ? `<ul class="nums" aria-label="Reactions, in the unit this source uses">${c.reactions.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : i.kind === 'rss' ? '<p class="meta">Blogs and news give no reaction counts.</p>' : '<p class="meta">No reaction counts were recorded for this item.</p>';
+  const near = (n: SourceCard['before'], dir: 'before' | 'after') => n
+    ? `<li><small>${dir === 'before' ? 'Before' : 'After'}, ${esc(gapWords(n.gap))} ${dir === 'before' ? 'earlier' : 'later'} &middot; ${esc(KIND_NAME[n.kind])}</small><a href="${esc(itemHref(t.slug, n.id, t.area))}">${esc(n.title || 'Untitled')}</a>${n.by ? ` <small>${esc(n.by)}</small>` : ''}</li>`
+    : `<li class="none"><small>${dir === 'before' ? 'Before' : 'After'}</small>${dir === 'before' ? 'Nothing earlier in this topic' : 'Nothing later in this topic'}</li>`;
+  const copies = c.copies === null ? '' : `<h2 class="sect">Said the same</h2><p>${c.copies ? `${n(c.copies)} later ${c.copies === 1 ? 'post' : 'posts'} saying nearly the same ${c.copies === 1 ? 'was' : 'were'} folded into this one, so ${c.copies === 1 ? 'it is' : 'they are'} not counted again.` : 'No later post saying the same was folded into this one.'}</p>`;
+  const also = c.alsoIn.length ? `<h2 class="sect">Also in</h2><p>${c.alsoIn.map((o) => `<a href="${esc(topicHref(o.slug, t.area))}">${esc(o.label)}</a>`).join(' &middot; ')}</p>` : '';
+  const title = i.title || i.url;
+  return shell(`${title.length > 70 ? title.slice(0, 69) + '…' : title} · ${t.label} · Undercurrent`, bar(ctx, undefined, 'topics'), `<div class="icard"><header class="pagehead"><div class="eyebrow"><a href="${esc(here)}">&larr; ${esc(t.label)}</a> &middot; ${esc(KIND_NAME[i.kind])}</div><h1>${esc(title)}</h1>
+<p class="who">${esc(who.join(' · '))}</p>
+<p class="out"><a class="go" ${link(i.url)}>${esc(OPEN_LABEL[i.kind])} &#8599;</a>${disc}</p></header>
+${nums}
+<h2 class="sect">Why it is here</h2><p>${esc(c.why.words)}</p><p>${esc(c.why.placeWords)}</p>
+${copies}
+<h2 class="sect">Before and after</h2><ul class="near">${near(c.before, 'before')}${near(c.after, 'after')}</ul>
+<p class="meta">In the order of this topic&rsquo;s items over the last two weeks (${n(c.why.among)} with an address), across all kinds of source.</p>
+${also}
+<p class="note">As on the topic page, only the title and the link of an item are shown; both are the original publisher&rsquo;s. Reactions are in the unit each source gives and are never added together.</p></div>`,
+  { description: `${title}${who.length ? ' (' + who.join(', ') + ')' : ''}: where it stands in the talk about ${t.label}.`, canonical: origin ? origin + itemHref(t.slug, c.id, t.area) : undefined });
+}
+/** The 410 page: the card is gone (the item has left the topic), the original is not. */
+export function itemGoneHtml(g: { topic: CardTopic; original: string; discussionUrl: string }, ctx: Ctx): string {
+  const t = g.topic;
+  return shell(`Gone · ${t.label} · Undercurrent`, bar(ctx, undefined, 'topics'), `<div class="icard"><header class="pagehead"><div class="eyebrow"><a href="${esc(topicHref(t.slug, t.area))}">&larr; ${esc(t.label)}</a></div><h1>This card has gone</h1>
+<p class="lede">The item is no longer part of this topic: it is older than the two weeks the site keeps for a topic, or the topic has moved on. The original is still where it was.</p>
+<p class="out"><a class="go" href="${esc(g.original)}" rel="noopener noreferrer nofollow" target="_blank">Open the original &#8599;</a> <a href="${esc(topicHref(t.slug, t.area))}">Back to ${esc(t.label)}</a></p></header></div>`);
 }
 
 function topicPanel(d: TopicData, angle: Angle, ctx: Ctx): string {
@@ -1024,8 +1110,9 @@ function topicPanel(d: TopicData, angle: Angle, ctx: Ctx): string {
   const kinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).map((k) => [k, d.talk.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
   return kinds.length ? kinds.map(([k, list]) => `<h3 class="azh">${KIND_TITLE[k]} <small>${n(d.counts[k] ?? list.length)} in the last week${(d.counts[k] ?? 0) > list.length ? `, the ${list.length} most reacted to` : ''}</small></h3>
 <ul class="sgitems">${list.map((i) => `<li><div class="by"><b>${esc(i.source)}</b>${i.by && i.by !== i.source ? ' &middot; ' + esc(i.by) : ''} &middot; ${i.ts ? date(i.ts) : ''}${metricOf(i) ? ` &middot; <span class="chip react">${esc(metricOf(i))}</span>` : ''}</div>
-${i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${esc(i.title || i.url)}</a>` : esc(i.title)}${i.discussionUrl ? ` <a class="dim" href="${esc(i.discussionUrl)}" rel="noopener noreferrer nofollow" target="_blank">discussion</a>` : ''}${saveCtl(ctx, d, 'talk', i.url)}</li>`).join('')}</ul>`).join('')
-    + '<p class="note">Titles and links are those of the original publishers. Follow the links to read the originals.</p>' : '<p class="meta">Nothing is logged for the last week.</p>';
+${i.id ? `<a href="${esc(itemHref(d.slug, i.id, d.area))}">${esc(i.title || i.url)}</a> <a class="dim" href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank" title="Open the original">original &#8599;</a>`
+  : i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${esc(i.title || i.url)}</a>` : esc(i.title)}${i.discussionUrl ? ` <a class="dim" href="${esc(i.discussionUrl)}" rel="noopener noreferrer nofollow" target="_blank">discussion</a>` : ''}${saveCtl(ctx, d, 'talk', i.url)}</li>`).join('')}</ul>`).join('')
+    + '<p class="note">Titles and links are those of the original publishers. A title opens its card here, with the context only this site has; <em>original</em> opens the source itself.</p>' : '<p class="meta">Nothing is logged for the last week.</p>';
 }
 
 export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', lenses: Lens[] = []): string {
@@ -1738,6 +1825,13 @@ async function vizData(env: Env, parts: string[], url: URL, me: Me | null = null
     if ('redirect' in r) return new Response(null, { status: 301, headers: { location: r.redirect.replace(/(\?|$)/, '.json$1'), 'cache-control': 'public, max-age=3600' } });
     return new Response(JSON.stringify(r.data), { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } });
   }
+  if (parts[0] === 't' && parts.length === 4 && parts[2] === 'i' && parts[3].endsWith('.json')) {   // /t/<slug>/i/<id>.json: the data behind a source card
+    const slug = parts[1], id = parts[3].slice(0, -5), area = areaHint(url.searchParams.get('area')), r = TOPIC_SLUG.test(slug) && ITEM_ID.test(id) ? await loadItemCard(env, slug, id, area) : null;
+    if (!r) return NOT_FOUND_JSON();
+    if ('redirect' in r) return new Response(null, { status: 301, headers: { location: `/t/${r.redirect}/i/${id}.json${area === 'politics' ? '?area=politics' : ''}`, 'cache-control': 'public, max-age=3600' } });
+    if ('gone' in r) return new Response(JSON.stringify({ error: 'gone', topic: r.gone.topic.slug, original: r.gone.original, discussionUrl: r.gone.discussionUrl || null }), { status: 410, headers: { 'content-type': 'application/json', ...NO_STORE } });
+    return new Response(JSON.stringify({ ...r.card, url: url.origin + itemHref(r.card.topic.slug, r.card.id, r.card.topic.area) }), { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } });
+  }
   const hist = (p: string) => env.HISTORY.getByName('main').fetch(new Request(`https://internal/hist/${p}`));
   if (parts[0] === 'history' && parts[1] && SLUG.test(parts[1])) {
     if (parts.length === 3 && parts[2] === 'galaxy.json') return jsonOf(await hist(`pub-galaxy?slug=${parts[1]}`));
@@ -1825,6 +1919,17 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
     const r = await env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/pulse-public'));
     if (!r.ok) { await r.body?.cancel(); return missing(); }
     return html(researchHtml((await r.json()) as PubPulse, ctx));
+  }
+  if (parts[0] === 't' && parts.length === 4 && parts[2] === 'i') {   // /t/<slug>/i/<id>: the source card of one item of a topic; 410 when the item has left the topic
+    const slug = parts[1], id = parts[3], hint = areaHint(url.searchParams.get('area'));
+    if (!TOPIC_SLUG.test(slug) || !ITEM_ID.test(id)) return missing();
+    const r = await loadItemCard(env, slug, id, hint);
+    if (!r) return missing();
+    if ('redirect' in r) return new Response(null, { status: 301, headers: { location: `/t/${r.redirect}/i/${id}${hint === 'politics' ? '?area=politics' : ''}`, 'cache-control': 'public, max-age=3600' } });
+    const area = 'gone' in r ? r.gone.topic.area : r.card.topic.area;
+    lensBy[area] ??= [...await lensesOf(env, area), ...ownLenses(viewer.me, area)];
+    const cctx = area === ctx.area ? ctx : ctxFor(area);
+    return 'gone' in r ? html(itemGoneHtml(r.gone, cctx), 410) : html(itemCardHtml(r.card, cctx, url.origin));
   }
   if (parts[0] === 't') {   // /t/<slug>[?angle=]: one topic, with its angles
     const slug = parts.length === 2 ? parts[1] : '';

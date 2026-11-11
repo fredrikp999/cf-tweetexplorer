@@ -6,6 +6,7 @@ import { partsAfterParents } from '../signal/topics.ts';
 import { topicHref, type Area } from '../signal/area.ts';
 import { topicSlug, topicState, type TopicState } from '../signal/topicpage.ts';
 import { layoutLens, type Layout } from '../signal/landscape.ts';
+import { moveWords, type Ladder } from '../signal/ladder.ts';
 
 /** The time windows of the page (`?window=`), in days. */
 export const WINDOWS = [1, 3, 7] as const;
@@ -190,4 +191,24 @@ export function landscapeOf(layout: Layout | null | undefined, topics: SigTopic[
   for (const b of bubbles) if (b.cluster && !kept.has(b.cluster)) b.cluster = '';
   return { w: layout.w, h: layout.h, clusters, bubbles, lens: o.lens ? { key: o.lens.key, name: o.lens.name } : null,
     lenses: o.lenses.map((l) => ({ key: l.key, name: l.name, color: l.color, light: LENS_PALETTE[l.color].light, dark: LENS_PALETTE[l.color].dark })) };
+}
+
+// ---- The Ladder (src/signal/ladder.ts): the rank of the biggest topics per day, joined with the lenses and the links. The landing page draws it under the streamgraph, the Landscape view as a second picture.
+/** What the Monitor answers (`/mon/ladder-public`). */
+export type LadderRaw = Ladder & { days: string[]; baselineOk: boolean; meta: Array<{ key: string; term: string; members: string[]; isNew: boolean; change: number | null }> };
+export interface LadderRow { slug: string; label: string; url: string; state: TopicState | null; /** A lens colour name, or null: with a lens chosen only its topics have a colour. */ lensColor: string | null; inLens: boolean | null;
+  rank: Array<number | null>; score: number[]; best: number; first: number; /** Rank now against `span` days ago, in words. */ move: string }
+export interface LadderData { days: string[]; top: number; span: number; window: number; lens: { key: string; name: string } | null; topics: LadderRow[]; rankIs: string }
+export const RANK_IS = 'the order of the topics by their Signal score on that day (the share of each group of sources\' items that mention the topic over 3 days, groups weighted). Order, not volume.';
+
+/** Null when there is nothing to draw (fewer than two topics or two days). */
+export function ladderData(raw: LadderRaw | null | undefined, o: { area?: Area; lens?: Lens; lenses: Lens[]; origin: string }): LadderData | null {
+  if (!raw?.topics || raw.topics.length < 2 || !raw.days || raw.days.length < 2) return null;
+  const meta = new Map(raw.meta.map((m) => [m.key, m] as const));
+  const topics: LadderRow[] = raw.topics.map((t) => {
+    const m = meta.get(t.key), mine = lensesOfTopic(o.lenses, { term: m?.term ?? t.label, label: t.label, members: m?.members ?? [] }), inLens = o.lens ? mine.some((l) => l.key === o.lens!.key) : null;
+    return { slug: t.key, label: t.label, url: o.origin + topicHref(t.key, o.area ?? 'ai'), state: m ? (m.isNew ? 'new' : raw.baselineOk ? topicState(m) : null) : null,
+      lensColor: o.lens ? (inLens ? o.lens.color : null) : mine[0]?.color ?? null, inLens, rank: t.rank, score: t.score, best: t.best, first: t.first, move: moveWords(t.rank, raw.span) };
+  });
+  return { days: raw.days, top: raw.top, span: raw.span, window: raw.window, lens: o.lens ? { key: o.lens.key, name: o.lens.name } : null, topics, rankIs: RANK_IS };
 }

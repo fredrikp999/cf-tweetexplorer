@@ -5,12 +5,13 @@
 import { PHASE_LABEL, lifecycle } from '../signal/lifecycle.ts';
 import { ARXIV_THANKS } from '../sources/arxiv.ts';
 import { anchorOf } from './brief.ts';
-import { inBrief, cardLine, firstLine, landscapeOf, mixText, pickReads, plainLine, rankList, researchStrip, risingStrip, sinceCounts, type BriefIn, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing.ts';
+import { inBrief, cardLine, firstLine, ladderData, landscapeOf, mixText, pickReads, plainLine, rankList, researchStrip, risingStrip, sinceCounts, type BriefIn, type LadderRaw, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing.ts';
 import { AREA_HOME, AREA_LABEL, AREAS, topicHref, type Area } from '../signal/area.ts';
 import { lensesOfTopic, type Lens } from '../signal/lens.ts';
 import type { Layout, ReplayFrame } from '../signal/landscape.ts';
 import { KIND_TITLE, KIND_WORDS, firstCaveat, firstSentence, lagWords, stampUtc, startedWithin, timelineWords, type TopicFirst } from '../signal/topicview.ts';
 import { SEARCH_KINDS, KIND_TITLE as SEARCH_TITLE, type SearchAnswer } from './search.ts';
+import { itemHref, type SourceCard } from '../signal/sourcecard.ts';
 import { roughly, STATE_LABEL, topicSlug, type EvItem, type EvKind, type TopicData, type TopicState } from '../signal/topicpage.ts';
 
 export type Detail = 'brief' | 'full';
@@ -94,6 +95,8 @@ export interface OverviewIn {
   landscape?: Layout | null;
   /** The landscape of the days before today, for the replay of the landing page's picture (only /overview.json asks for it). */
   replay?: ReplayFrame[] | null;
+  /** The rank of the biggest topics per day over 14 days (the Ladder). */
+  ladder?: LadderRaw | null;
 }
 const stateOf = (t: SigTopic, baselineOk: boolean): TopicState | null => (t.isNew ? 'new' : t.change !== null && t.change >= 1.5 ? 'rising' : t.change !== null && baselineOk && t.change <= 0.67 ? 'falling' : null);
 
@@ -117,6 +120,7 @@ export function overviewOut(d: OverviewIn, origin: string, detail: Detail = 'bri
     since: counts, inBrief: lines.map((l) => ({ text: l.text, topic: l.topic ? l.href.replace('/t/', '') : null, url: origin + l.href, briefing: { slug: l.briefing.slug, title: l.briefing.title, url: `${origin}/${l.briefing.slug}` } })),
     rising: rising.map((r) => ({ slug: topicSlug(r.term), label: r.label, state: r.state, change: r.change, url: origin + topicPath(topicSlug(r.term), area) })),
     landscape: landscapeOf(d.landscape, topics, { area, lens, lenses, groups, baselineOk: !!sig?.baselineOk, origin, stateOf: (t) => stateOf(t, !!sig?.baselineOk) }),
+    ladder: ladderData(d.ladder, { area, lens, lenses, origin }),
     ...(d.replay?.length && !lens ? { replay: { today: new Date(now).toISOString().slice(0, 10), frames: d.replay } } : {}),
     topics: ranked, outsideLens: rank.outside.map((t) => ({ slug: slugOf(t), label: t.label, url: urlOf(t) })),
     research: !ai ? null : { newPapers: rs.newPapers, paperDays, discussed: rs.discussed, risingTopics: (extras?.risingResearch ?? []).map((r) => ({ slug: r.slug, title: r.title, state: r.state, url: `${origin}/research/${r.slug}` })),
@@ -134,19 +138,21 @@ export function overviewOut(d: OverviewIn, origin: string, detail: Detail = 'bri
   const secRise = rising.length ? `## Rising\n${rising.map((r) => `- ${r.state === 'new' ? 'new' : r.state === 'rising' ? `rising${r.change ? ` ×${r.change.toFixed(1)}` : ''}` : 'falling'}: ${link(r.label, origin + topicPath(topicSlug(r.term), area))} ${code(topicSlug(r.term))}`).join('\n')}` : '';
   const rows = ranked.map((r, i) => `${r.partOf ? '   -' : `${i + 1}.`} ${link(r.label, r.url)} ${code(r.slug)}${r.state ? ` (${STATE_LABEL[r.state].toLowerCase()})` : ''}: ${pct(r.score)} of items${r.mix ? ` — ${r.mix}` : ''}${lens && r.inLens === false ? ' [outside lens]' : ''}\n   ${flat(r.summary, 180)}`);
   const secTop = `## ${lens ? `Topics, ${lens.name} first` : 'Topics'}\n${rows.join('\n') || 'None yet.'}`;
+  const lad = data.ladder, movers = lad ? lad.topics.filter((t) => t.rank[t.rank.length - 1] !== null && (!lens || t.inLens)).slice(0, 5) : [];
+  const secLad = lad && movers.length ? `## The ladder, ${lad.days.length} days\nRank today and how it moved in ${lad.span} days (order by Signal score per day, not volume).\n${movers.map((t) => `${t.rank[t.rank.length - 1]}. ${link(t.label, t.url)} ${code(t.slug)}: ${t.move}`).join('\n')}` : '';
   const secOut = rank.outside.length ? `## Outside ${lensName}, big ${win === 1 ? 'today' : 'in this period'}\n${rank.outside.map((t) => `- ${link(t.label, urlOf(t))} ${code(slugOf(t))}`).join('\n')}` : '';
   const secRes = extras && ai ? `## Research\n${plural(rs.newPapers, 'new paper')} in the last ${paperDays} days${lens ? ` in ${lens.name}` : ''}; ${plural(rs.discussed, 'paper')} being discussed this week (named in posts, Hacker News or Hugging Face). ${link('Research map', origin + '/research/map')}.${rs.top.length ? `\nMost discussed: ${rs.top.map((p) => link(p.title, `https://arxiv.org/abs/${p.id}`) + ' ' + code(p.id)).join('; ')}` : ''}${data.research!.risingTopics.length ? `\nRising research topics: ${data.research!.risingTopics.map((r) => link(r.title, r.url)).join(', ')}` : ''}` : '';
   const li = (i: ReadItem) => `- ${link(i.title, i.url)} (${flat(i.source, 40)}${i.reactions ? `, ${num(i.reactions)} points` : ''})`;
   const secRead = ai && (reads.articles.length || reads.hn.length) ? `## Read\n${[...reads.articles.map(li), ...reads.hn.map(li)].join('\n')}` : '';
   const lensNote = lens ? '' : lenses.length ? `Lenses: ${lenses.map((l) => code(l.key)).join(', ')}.` : '';
   const next = first ? `${code('get_topic')} with ${code(`topic: "${first.slug}"`)}${ai ? '' : ` and ${code('area: "politics"')}`} for the summary and evidence${lensNote ? '. ' + lensNote : ''}${ai && rs.top[0] ? `; ${code('get_paper')} with ${code(`id: "${rs.top[0].id}"`)} for a paper` : ''}.` : `${code('list_lenses')}.`;
-  return { text: assemble(lead, [secBrief, secTop, secRise, secOut, secRes, secRead], next, detail), data };
+  return { text: assemble(lead, [secBrief, secTop, secRise, secOut, secRes, secRead, secLad], next, detail), data };
 }
 
 // ---- get_topic
-const itemLine = (i: { title: string; url: string; discussionUrl?: string; source: string; by: string; ts: number; kind: string; likes?: number; replies?: number; views?: number }): string => {
+const itemLine = (i: { id?: string; title: string; url: string; discussionUrl?: string; source: string; by: string; ts: number; kind: string; likes?: number; replies?: number; views?: number }): string => {
   const bits: string[] = [i.by ? (i.kind === 'x' ? '@' + i.by.replace(/^@/, '') : i.by) : '', i.source && i.kind !== 'x' ? i.source : '', day(i.ts), reactionText(i)].filter(Boolean);
-  return `${link(i.title || i.url, i.url)} (${bits.join(', ')})${i.discussionUrl && i.discussionUrl !== i.url ? ` ${link('thread', i.discussionUrl)}` : ''}`;
+  return `${link(i.title || i.url, i.url)} (${bits.join(', ')})${i.discussionUrl && i.discussionUrl !== i.url ? ` ${link('thread', i.discussionUrl)}` : ''}${i.id ? ` ${code(i.id)}` : ''}`;
 };
 /** Reactions in the unit the source gives them: X in a range, Hacker News exact, YouTube views in a range, blogs none. */
 export function reactionText(i: { kind: string; likes?: number; replies?: number; views?: number }): string {
@@ -244,14 +250,15 @@ export function itemsOut(r: ItemsIn, a: { topic: string; kind?: string; sort: 'n
   const url = origin + topicPath(r.slug!, r.area), items = r.items ?? [], total = r.total ?? 0;
   const nextOffset = a.offset + items.length < total ? a.offset + items.length : null;
   const data = { topic: r.slug, label: r.label, url, kind: a.kind ?? null, sort: a.sort, total, counts: r.counts ?? {}, offset: a.offset, nextCursor: nextOffset === null ? null : String(nextOffset),
-    items: items.map((i) => ({ kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl || null, source: i.source, by: i.by, ts: i.ts, date: day(i.ts), reactionsText: reactionText(i), reactions: { likes: i.likes >= 0 ? i.likes : null, replies: i.replies >= 0 ? i.replies : null, views: i.views >= 0 ? i.views : null } })) };
+    items: items.map((i) => ({ id: i.id ?? null, ...(i.id ? { cardUrl: origin + itemHref(r.slug!, i.id, r.area) } : {}), kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl || null, source: i.source, by: i.by, ts: i.ts, date: day(i.ts), reactionsText: reactionText(i), reactions: { likes: i.likes >= 0 ? i.likes : null, replies: i.replies >= 0 ? i.replies : null, views: i.views >= 0 ? i.views : null } })) };
   if (!r.proof) return { text: `**${r.label}**: this topic's Signal does not show its sources, so its items are not public. ${link('The topic page', url)} has the summary and the numbers.\n\n**Next:** ${code('get_topic')} with ${code(`topic: "${r.slug}"`)}.`, data, error: false };
   const counts = Object.entries(r.counts ?? {}).map(([k, n]) => `${KIND_LABEL[k] ?? k} ${n}`).join(', ');
   const lead = [`**${r.label}**: ${plural(total, 'item')}${a.kind ? ` from ${KIND_LABEL[a.kind] ?? a.kind}` : ''} in the last 7 days${counts ? ` (${counts})` : ''}, ${a.sort === 'new' ? 'newest first' : 'most reacted first'}. ${link('Topic page', url)}.`,
     items.length ? `Showing ${a.offset + 1} to ${a.offset + items.length}.` : 'Nothing at this position.',
     a.sort === 'top' ? '"Most reacted" weighs likes, replies and views; compare numbers only within one kind of source (use the kind filter).' : ''].filter(Boolean);
   const body = items.map((i, n) => `${a.offset + n + 1}. **${KIND_LABEL[i.kind] ?? i.kind}** ${itemLine(i)}`).join('\n');
-  const next = nextOffset !== null ? `${code('get_topic_items')} with ${code(`topic: "${r.slug}"`)}${a.kind ? `, ${code(`kind: "${a.kind}"`)}` : ''}, ${code(`sort: "${a.sort}"`)}, ${code(`cursor: "${nextOffset}"`)} for the next ${Math.min(PAGE, total - nextOffset)}.` : `${code('get_topic')} with ${code(`topic: "${r.slug}"`)} for the summary.`;
+  const withId = items.find((i) => i.id), open = withId ? `${code('get_item')} with ${code(`topic: "${r.slug}"`)} and ${code(`item: "${withId.id}"`)} for one item in context (why it is in the topic, what came before and after). ` : '';
+  const next = open + (nextOffset !== null ? `${code('get_topic_items')} with ${code(`topic: "${r.slug}"`)}${a.kind ? `, ${code(`kind: "${a.kind}"`)}` : ''}, ${code(`sort: "${a.sort}"`)}, ${code(`cursor: "${nextOffset}"`)} for the next ${Math.min(PAGE, total - nextOffset)}.` : `${code('get_topic')} with ${code(`topic: "${r.slug}"`)} for the summary.`);
   return { text: assemble(lead, [body, THIRD_PARTY], next, detail), data };
 }
 
@@ -360,4 +367,35 @@ export function digIntoPrompt(a: { topic: string }): string {
     `3. For papers on the topic, call ${code('get_papers')} with ${code(`topic: "${t}"`)}, then ${code('get_paper')} for the most relevant.`,
     `4. If a briefing covered it, call ${code('get_briefing')} for that briefing topic.`,
     'Then write what is known: what happened, how widely (per source kind, in that kind\'s own unit; breadth of distinct accounts counts more than one viral post), who seems to have had it first (say it is only the order seen in these sources), what the papers say, and what is not known. Link every claim to its original and to the topic page.'].join('\n');
+}
+
+// ---- get_item (the source card)
+/** What get_item answers for an item that has left the topic: the original is still given. */
+export interface ItemGone { topic: { slug: string; label: string; area: Area }; original: string; discussionUrl?: string }
+export function itemMissing(asked: { topic: string; item: string }, origin: string): Answer {
+  return { text: `No published topic item has the address ${code(flat(asked.topic, 64))} / ${code(flat(asked.item, 20))}. Item ids come from ${code('get_topic_items')} (each line ends with its id) and from the ${code('talk')} lists of ${code('get_topic')}; only Signals that show their sources have them.\n\n**Next:** ${code('get_topic_items')} with ${code(`topic: "${flat(asked.topic, 64)}"`)}.`,
+    data: { error: 'not found', topic: flat(asked.topic, 64), item: flat(asked.item, 20) }, error: true };
+}
+export function itemGoneOut(g: ItemGone, id: string, origin: string): Answer {
+  const topicUrl = origin + topicPath(g.topic.slug, g.topic.area);
+  return { text: `**This item has left the topic ${link(g.topic.label, topicUrl)}.** It is older than the two weeks the site keeps for a topic, or the topic has moved on. The original is still at ${g.original}${g.discussionUrl ? ` (discussion: ${g.discussionUrl})` : ''}.\n\n**Next:** ${code('get_topic_items')} with ${code(`topic: "${g.topic.slug}"`)} for what is in the topic now.`,
+    data: { gone: true, id, topic: g.topic.slug, url: g.original, discussionUrl: g.discussionUrl || null }, error: true };
+}
+/** One item in context (level 3): what it is, in the units of its source, why the topic has it, where it stands in the wave, what is next to it in time. */
+export function itemOut(c: SourceCard, origin: string, detail: Detail = 'brief'): Answer {
+  const i = c.item, t = c.topic, url = origin + itemHref(t.slug, c.id, t.area), topicUrl = origin + topicPath(t.slug, t.area), full = detail === 'full';
+  const near = (n: SourceCard['before']) => (n ? { id: n.id, title: n.title, by: n.by, kind: n.kind, ts: n.ts, gapMs: n.gap, url: origin + itemHref(t.slug, n.id, t.area) } : null);
+  const data = { id: c.id, url, topic: { slug: t.slug, label: t.label, url: topicUrl }, kind: i.kind, title: i.title, by: i.by, source: i.source, ts: i.ts, date: when(i.ts), original: i.url, discussionUrl: i.discussionUrl || null,
+    reactions: { likes: i.likes >= 0 ? i.likes : null, replies: i.replies >= 0 ? i.replies : null, views: i.views >= 0 ? i.views : null }, reactionsText: c.reactions.join(', '),
+    why: { matched: c.why.matched, words: c.why.words, place: c.why.place, placeWords: c.why.placeWords, itemsInTopic: c.why.among }, copies: c.copies, before: near(c.before), after: near(c.after), alsoIn: c.alsoIn.map((o) => ({ ...o, url: origin + topicPath(o.slug, t.area) })) };
+  const who = [i.by ? (i.kind === 'x' ? '@' + i.by.replace(/^@/, '') : i.by) : '', i.source && i.source !== i.by && i.kind !== 'x' ? i.source : '', i.ts ? when(i.ts) : ''].filter(Boolean).join(', ');
+  const lead = [`**${link(i.title || i.url, i.url)}** (${KIND_LABEL[i.kind] ?? i.kind}${who ? ', ' + who : ''}) in ${link(t.label, topicUrl)}. ${link('Source card on the site', url)}.`,
+    c.reactions.length ? `Reactions, in this source's own unit: ${c.reactions.join(', ')}.` : i.kind === 'rss' ? 'Blogs and news have no reaction counts.' : 'No reaction counts were recorded for this item.'];
+  const secWhy = `## Why it is here\n${c.why.words}\n${c.why.placeWords}`;
+  const secCopies = c.copies === null ? '' : `## Said the same\n${c.copies ? `${plural(c.copies, 'later post')} saying nearly the same ${c.copies === 1 ? 'was' : 'were'} folded into this one.` : 'No later post saying the same was folded into this one.'}`;
+  const nl = (label: string, n: SourceCard['before']) => (n ? `- ${label} (${n.gap < 60_000 ? 'under a minute' : lagWords(n.gap)} ${label === 'Before' ? 'earlier' : 'later'}): ${link(n.title || n.id, origin + itemHref(t.slug, n.id, t.area))} ${code(n.id)}${n.by ? ` (${n.by})` : ''}` : `- ${label}: nothing ${label === 'Before' ? 'earlier' : 'later'} in this topic`);
+  const secNear = `## Before and after\n${nl('Before', c.before)}\n${nl('After', c.after)}`;
+  const secAlso = c.alsoIn.length ? `## Also in\n${c.alsoIn.map((o) => `- ${link(o.label, origin + topicPath(o.slug, t.area))} ${code(o.slug)}`).join('\n')}` : '';
+  const hints = [c.before ? `${code('get_item')} with ${code(`item: "${c.before.id}"`)} for the one before` : '', c.after ? `${code('get_item')} with ${code(`item: "${c.after.id}"`)} for the one after` : '', `${code('get_topic')} with ${code(`topic: "${t.slug}"`)} for the topic`].filter(Boolean);
+  return { text: assemble(lead, [secWhy, secCopies, secNear, secAlso, THIRD_PARTY], (full ? hints : hints.slice(0, 3)).join('; ') + '.', detail), data };
 }

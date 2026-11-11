@@ -3,6 +3,7 @@
 // src/apps/topichub.ts draws the same lists in the hub view. The data rides in TopicData (src/signal/topicpage.ts), so the page, /t/<slug>.json and the MCP tools say the same.
 import { QUIET_MS, TIE_MS, WAVE_MS, MIN_MENTIONS, isDateOnly } from './first.ts';
 import type { EvItem, EvKind } from './topicpage.ts';
+import { itemId } from './itemid.ts';
 
 const MIN = 60_000, HOUR = 3_600_000;
 export const KIND_ORDER: EvKind[] = ['x', 'hn', 'youtube', 'rss'];
@@ -17,7 +18,7 @@ export const KIND_MARK: Record<EvKind, { shape: 'circle' | 'square' | 'triangle'
 
 // ---- who had it first
 /** The item that opened a kind of source's part of the wave. Only on a Signal that shows its sources. */
-export interface FirstRef { title: string; url: string; by: string; source: string }
+export interface FirstRef { /** The id of its source card. */ id?: string; title: string; url: string; by: string; source: string }
 export interface KindArrival { kind: EvKind; /** When the kind first had it (ms). */ ts: number; /** How long after the start of the wave (ms). */ lag: number; /** Items of this kind in the wave. */ n: number; item?: FirstRef }
 export interface TopicFirst {
   /** The start of the latest wave of mentions: the first item after a quiet stretch. Null when there is nothing to order. */
@@ -122,7 +123,7 @@ export function timelineDots(items: EvItem[], o: TimelineOptions): TimelineDot[]
   }
   return [...cell.values()].sort((a, b) => a.slot - b.slot || KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind)).map((c) => ({
     kind: c.kind, ts: Math.round(o.from + ((c.slot + 0.5) / slots) * span), x: +((c.slot + 0.5) / slots).toFixed(4), n: c.n,
-    ...(o.hide ? {} : { item: { title: c.best.title, url: c.best.url, by: c.best.by, source: c.best.source, ts: c.best.ts } }),
+    ...(o.hide ? {} : { item: { ...(c.best.id ? { id: c.best.id } : {}), title: c.best.title, url: c.best.url, by: c.best.by, source: c.best.source, ts: c.best.ts } }),
   }));
 }
 /** The busiest slot of each kind, in words, as the text equivalent of the timeline ("Hacker News: busiest 7 Nov, 12 items"). */
@@ -138,7 +139,7 @@ export function timelineWords(dots: TimelineDot[]): string[] {
 }
 
 // ---- watch
-export interface TopicWatch { video: string; title: string; url: string; source: string; by: string; ts: number; views?: number; /** Where it was found: the Signal's own YouTube channels, or the title of a feed page. */ via: string }
+export interface TopicWatch { id?: string; video: string; title: string; url: string; source: string; by: string; ts: number; views?: number; /** Where it was found: the Signal's own YouTube channels, or the title of a feed page. */ via: string }
 /** The YouTube id in a watch or short link, or ''. */
 export function videoId(url: string): string {
   const m = /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/)|youtu\.be\/)([\w-]{11})(?![\w-])/i.exec(String(url ?? '').trim());
@@ -150,17 +151,18 @@ export function namesIn(title: string, names: string[]): boolean {
   const t = title.toLowerCase();
   return names.map((n) => n.toLowerCase().trim()).filter((n) => n.length >= 3).some((n) => new RegExp(`(^|[^\\p{L}\\p{N}])${esc(n)}($|[^\\p{L}\\p{N}])`, 'u').test(t));
 }
+const idOf = (url: string): { id?: string } => { const id = itemId(url); return id ? { id } : {}; };
 /**
  * Videos and talks on a topic: the Signal's own YouTube items for it, then matches from the public feed pages (a title that names the topic). One entry per video; the most viewed
  * (or reacted) first, then the newest. `via` says where each came from, so the page can say "from the channels we follow" and name the feed page.
  */
 export function pickWatch(own: Array<Omit<TopicWatch, 'video' | 'via'>>, feeds: Array<{ via: string; title: string; url: string; source: string; by: string; ts: number; reactions: number; video?: string }>, names: string[], max = 12): TopicWatch[] {
   const seen = new Map<string, TopicWatch>();
-  for (const i of own) { const video = videoId(i.url); if (video && !seen.has(video)) seen.set(video, { ...i, video, via: 'Signal' }); }
+  for (const i of own) { const video = videoId(i.url); if (video && !seen.has(video)) seen.set(video, { ...i, ...idOf(i.url), video, via: 'Signal' }); }
   for (const f of feeds) {
     const video = f.video || videoId(f.url);
     if (!video || seen.has(video) || !namesIn(f.title, names)) continue;
-    seen.set(video, { video, title: f.title, url: f.url, source: f.source, by: f.by, ts: f.ts, ...(f.reactions > 0 ? { views: f.reactions } : {}), via: f.via });
+    seen.set(video, { ...idOf(f.url), video, title: f.title, url: f.url, source: f.source, by: f.by, ts: f.ts, ...(f.reactions > 0 ? { views: f.reactions } : {}), via: f.via });
   }
   return [...seen.values()].sort((a, b) => (b.views ?? 0) - (a.views ?? 0) || b.ts - a.ts).slice(0, max);
 }

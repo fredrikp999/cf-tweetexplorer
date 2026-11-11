@@ -57,7 +57,18 @@ if (board) {
   await check(`/signal/${board}/first/9.json`, { status: 404 });
 }
 await check('/signal/method', { has: ['How Signal works'] });
+// A source card: the first item linked from a topic page (topics come from the landing page; none when no Signal shows its sources).
+for (const slug of [...today.matchAll(/href="\/t\/([a-z0-9-]+)"/g)].map((m) => m[1]).slice(0, 3)) {
+  const page = await check(`/t/${slug}`, { has: ['Angles on this topic'] }), id = first(page, new RegExp(`href="/t/${slug}/i/([a-z0-9]{11})"`));
+  if (!id) continue;
+  await check(`/t/${slug}/i/${id}`, { has: ['class="icard"', 'Why it is here', 'Before and after'] });
+  await check(`/t/${slug}/i/${id}.json`, { type: 'json', has: ['"why"', '"reactions"'] });
+  await check(`/t/${slug}/i/zzzzzzzzzzz`, { status: 404 });
+  break;
+}
+
 if (board) {   // the Depth chart: the page says it in words too, and the frame's data has a place for every topic on every day
+  await check('/overview.json', { type: 'json', has: ['"ladder"', '"landscape"'] });   // the Ladder comes with the overview (null until there are two days of topics)
   await check('/rising', { has: ['<h1>Rising from the deep</h1>', 'id="viz"', 'data-kind="depth"', 'Where every topic is today'] });
   await check('/rising.json', { type: 'json', has: ['"surfaceY"', '"watched"'] });
   await check('/rising.json?lens=..', { status: 404 });
