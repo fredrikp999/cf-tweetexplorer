@@ -115,3 +115,20 @@ describe('the host script, for the landscape', () => {
     h.say({ id: 1, method: 'ui/initialize' }); assert.equal(h.sent.at(-1).result.hostCapabilities.message, undefined);
   });
 });
+
+describe('the host script, for the Depth chart', () => {
+  test('gives the view the JSON of the page, and answers get_rising for a lens of the same area only', async () => {
+    const h = host('depth', '/rising.json?lens=security');
+    assert.equal(h.f.loaded, '/viz/depth.html');
+    h.say({ method: 'ui/notifications/initialized' }); await h.settle();
+    assert.deepEqual(h.fetched, ['/rising.json?lens=security']);
+    h.say({ id: 2, method: 'tools/call', params: { name: 'get_rising', arguments: {} } });
+    h.say({ id: 3, method: 'tools/call', params: { name: 'get_rising', arguments: { lens: 'data', area: 'politics' } } });
+    h.say({ id: 4, method: 'tools/call', params: { name: 'get_rising', arguments: { area: 'politics' } } });
+    assert.deepEqual(h.fetched.slice(1), ['/rising.json', '/rising.json?lens=data&area=politics', '/rising.json?area=politics']);
+    const before = h.fetched.length;
+    h.say({ id: 5, method: 'tools/call', params: { name: 'get_rising', arguments: { lens: '../admin' } } });
+    h.say({ id: 6, method: 'tools/call', params: { name: 'get_overview', arguments: {} } });
+    assert.equal(h.fetched.length, before);
+  });
+});

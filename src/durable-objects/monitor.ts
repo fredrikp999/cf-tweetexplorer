@@ -20,6 +20,7 @@ import { boostByEngagement, indexItems, mergeTopics, nestTopics, partsAfterParen
 import { QUIET_MS, findWaves, foldTerm, publicFirst, rankWaves, watchStartMs, scoreFirsts, type FirstItem } from '../signal/first';
 import { cleanTitle, isBait } from '../signal/clean';
 import { cleanLayout, coCounts, layoutKeys, layoutLandscape, replayFrames, type Layout, type ReplayFrame } from '../signal/landscape';
+import { DEPTH_DAYS, DEPTH_TOPICS, DEPTH_WINDOW, depthLayout, reachSeries, type DepthLayout } from '../signal/depth';
 import { firstByKind, pickWatch, timelineDots, type TopicWatch } from '../signal/topicview';
 import { evidenceSegments, fallbackSummary, topicSlug, topicState, usualLevel, type EvItem, type EvKind, type TopicData, type TopicPaper } from '../signal/topicpage';
 import { areaHint, areaOf, parseArea, rankByArea, type Area } from '../signal/area';
@@ -1222,6 +1223,36 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('DELETE FROM landscape WHERE day < ?', dayOf(now - 14 * 86_400_000));
     return layout;
   }
+  /**
+   * The Depth chart of a published Signal (src/signal/depth.ts): for each of the biggest topics of the week, which kinds of source, groups and sources mentioned it on each of the last 14 days,
+   * as breadth and a place in the picture. Sources that had nothing in those days are not counted as watched, and briefing posts are left out: they are written from the other sources.
+   * Counts only: no items, names of sources or handles. No model is involved.
+   */
+  private async depthPublic(slug: string): Promise<(DepthLayout & { days: string[]; baselineOk: boolean; meta: Array<{ key: string; term: string; members: string[]; isNew: boolean; change: number | null }> }) | null> {
+    const board = this.boards().find((b) => b.public && b.slug === slug);
+    if (!board) return null;
+    const c = await this.compute(7, new Set(board.groups)), shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
+    if (!shown.length) return null;
+    const { top } = this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), 30);
+    const seen = new Set<string>(), own = top.filter((t) => !t.parent).sort((a, b) => b.signal - a.signal).filter((t) => { const k = topicSlug(t.term); return seen.has(k) ? false : (seen.add(k), true); }).slice(0, DEPTH_TOPICS);
+    if (!own.length) return null;
+    const sql = this.ctx.storage.sql, T = this.tables(), now = Date.now(), all = Array.from({ length: DEPTH_DAYS + DEPTH_WINDOW - 1 }, (_, i) => dayOf(now - (DEPTH_DAYS + DEPTH_WINDOW - 2 - i) * 86_400_000)), at = new Map(all.map((d, i) => [d, i] as const));
+    // what is watched: the sources of the Signal's groups that had anything in these days
+    const on = new Set(shown.map((g) => g.key)), had = new Set(sql.exec<{ watch: string }>(`SELECT DISTINCT watch FROM ${T.items} WHERE day >= ?`, all[0]).toArray().map((r) => r.watch)), info = new Map<string, { kind: string; group: string }>();
+    for (const w of this.watches()) { const g = c.of.get(w.id); if (g && on.has(g) && !w.briefing && had.has(w.id)) info.set(w.id, { kind: sourceOf(w), group: g }); }
+    const kinds = (['x', 'hn', 'youtube', 'rss', 'arxiv'] as string[]).filter((k) => [...info.values()].some((x) => x.kind === k));
+    const owner = new Map<string, number[]>();
+    own.forEach((t, i) => { for (const name of new Set([t.term, ...t.members].flatMap((x) => this.namesOf(x)))) (owner.get(name) ?? owner.set(name, []).get(name)!).push(i); });
+    const daily = own.map(() => all.map(() => new Map<string, number>()));
+    for (const r of sql.exec<{ day: string; watch: string; term: string; n: number }>(`SELECT day, watch, term, n FROM ${T.terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify([...owner.keys()]), all[0])) {
+      const d = at.get(r.day);
+      if (d === undefined || !info.has(r.watch)) continue;
+      for (const i of owner.get(r.term) ?? []) daily[i][d].set(r.watch, (daily[i][d].get(r.watch) ?? 0) + r.n);
+    }
+    const layout = depthLayout(own.map((t, i) => ({ key: topicSlug(t.term), label: t.label, score: t.signal, reach: reachSeries(daily[i].map((m) => [...m]), info, kinds) })),
+      kinds, { kinds: kinds.length, groups: new Set([...info.values()].map((x) => x.group)).size, sources: info.size });
+    return { ...layout, days: all.slice(DEPTH_WINDOW - 1), baselineOk: c.baselineOk, meta: own.map((t) => ({ key: topicSlug(t.term), term: t.term, members: t.members, isNew: t.isNew, change: t.change })) };
+  }
   /** The layouts kept for the days before today (at most a week), for the landscape's replay. Read only: a day nobody opened the page has no layout and is simply missing. */
   private landscapeReplay(slug: string, daysIn: number): ReplayFrame[] {
     const board = this.boards().find((b) => b.public && b.slug === slug), win = daysIn === 3 || daysIn === 7 ? daysIn : 1;
@@ -1769,6 +1800,13 @@ export class MonitorDO extends DurableObject<Env> {
           const slug = url.searchParams.get('slug') ?? '', days = Number(url.searchParams.get('days')), k = `land|${slug}|${days}`, hit = this.pubCache.get(k);
           if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
           const v = await this.landscapePublic(slug, days);
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
+        if (name === 'depth-public') {   // the Depth chart of a published Signal: kept for two minutes
+          const slug = url.searchParams.get('slug') ?? '', k = `depth|${slug}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = await this.depthPublic(slug);
           this.pubCache.set(k, { at: Date.now(), v });
           return json(v);
         }

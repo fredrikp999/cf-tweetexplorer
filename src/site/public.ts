@@ -25,7 +25,7 @@ import { svgToPng } from '../media/png';
 import { PHASE_LABEL, PHASE_MARK, PHASE_TRACK, lifecycle, smooth, type Lifecycle } from '../signal/lifecycle';
 import { soften, streamLayout, type StreamLayer } from '../signal/stream';
 import { WEEKDAYS, calendar } from '../signal/calendar';
-import { STREAM_TOPICS, loadOverview } from './overview';
+import { STREAM_TOPICS, loadOverview, loadRising } from './overview';
 import { overviewOut } from './agentText';
 import type { Layout } from '../signal/landscape';
 import { AREA_BRIEFINGS, AREA_HOME, AREA_LABEL, areaHint, areaOfRequest, areaOf, boardsOfArea, parseArea, publishedAreas, topicHref, topicsOfArea, type Area } from '../signal/area';
@@ -35,6 +35,8 @@ import type { AskRow, ListBrief, ListView, Me } from '../durable-objects/users';
 import { FEATURES, MAX_FOLLOWS, MAX_OWN_LENSES, MAX_SAVED_ITEMS, MAX_SAVED_LISTS, VISIBILITIES, VISIBILITY_LABEL, canPublish, homeFor, type SavedList, type Visibility } from '../users/model';
 import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, plainLine, topicFor, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
 import { HOST_JS, VIZ_CSS, VIZ_VIEWS, vizFrame, viewCsp } from './viz';
+import { climbWords, climbs, inZone, pctOf, risingOut, type RisingData, type RisingTopic } from './rising';
+import { MIN_CLIMB, ZONE_LABEL, type Zone } from '../signal/depth';
 import { openrouterModelInfo } from '../summarize/openrouter.ts';
 import { aiModelInfo } from '../summarize/workers-ai.ts';
 
@@ -403,7 +405,7 @@ const THEME_INIT = '<script src="/viz/theme.js"></script>';
 const THEME_BTN = '<button type="button" class="themebtn" id="themebtn" aria-label="Colour theme">Theme</button>';
 
 /** Where a page sits in the More menu: the page kind, the feed page or Signal it is, or the briefing topic it shows. */
-type Here = { page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map' | 'briefings' | 'agent' | 'method' | 'me' | 'saved'; board?: string; slug?: string };
+type Here = { page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map' | 'rising' | 'briefings' | 'agent' | 'method' | 'me' | 'saved'; board?: string; slug?: string };
 
 /** The top bar for every page that is not the landing page or the search: no lens or window of its own, so a lens link goes to the landing page of the area unless the page says otherwise (`o.href`). */
 function bar(ctx: Ctx, active?: Active, page?: Here['page'], board?: string, o: { lens?: Lens; href?: (p: { lens?: string; window?: number }) => string } = {}): string {
@@ -469,6 +471,7 @@ export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: Land
   const grp = (label: string, items: string) => (items ? `<div class="grp">${label}</div>${items}` : '');
   const more = grp('Read', a(AREA_BRIEFINGS[area], ai ? "Today's briefings" : 'Briefings', h.page === 'briefings')
       + (ctx.boards.length ? a(`/signal${aq}`, `Signal${ctx.boards.length > 1 ? ` <small>${ctx.boards.length}</small>` : ''}`, h.page === 'signal' && (!h.board || ctx.boards.length === 1)) + a(`/topics${aq}`, 'All topics, A to Z', h.page === 'topics') : '')
+      + (ctx.boards.length ? a(`/rising${aq}`, 'Rising from the deep', h.page === 'rising') : '')
       + (firstBoard ? a(`/signal/${esc(firstBoard.slug)}/first`, 'Who said it first', h.page === 'first') : '')
       + (ai ? a('/research', 'Research pulse', h.page === 'research') + a('/research/map', 'Research map', h.page === 'map') : ''))
     + (ctx.boards.length > 1 ? grp('Signals', ctx.boards.map((b) => a(`/signal/${esc(b.slug)}`, esc(b.title), h.page === 'signal' && h.board === b.slug)).join('')) : '')
@@ -637,7 +640,7 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
 export function agentHtml(ctx: Ctx, origin: string): string {
   const mcp = `${origin}/agent/mcp`;
   const tools: Array<[string, string]> = [['list_lenses', 'The areas (AI and politics, kept apart) and their lenses, with a line each.'], ['get_overview', 'What is going on: in brief, new and rising topics, the top topics, research in short. Takes an area (AI, or politics), a lens and a window of 1, 3 or 7 days.'],
-    ['get_topic', 'One topic: summary, state, evidence per kind of source, top items, papers, briefings, related topics.'], ['get_topic_items', 'The posts, threads, articles and videos behind a topic, 25 a page, with links to the originals.'], ['search', 'Find topics, items, papers and briefings by words, grouped by kind with topics first, each with a link to the original.'],
+    ['get_rising', 'Topics by how widely they have spread (kinds of source, groups, sources) over 14 days, and which are rising from the deep.'], ['get_topic', 'One topic: summary, state, evidence per kind of source, top items, papers, briefings, related topics.'], ['get_topic_items', 'The posts, threads, articles and videos behind a topic, 25 a page, with links to the originals.'], ['search', 'Find topics, items, papers and briefings by words, grouped by kind with topics first, each with a link to the original.'],
     ['get_briefing', 'A published briefing with its themes and sources.'], ['get_papers', 'Papers of the last 30 days with their abstract and how many posts name them. Filter by topic, cluster, words or "being discussed".'], ['get_paper', 'One paper: abstract, links, every post that names it.']];
   return shell('For agents · Undercurrent', bar(ctx, undefined, 'agent'), `<header class="pagehead"><h1>For agents</h1><p class="lede">The same three levels as this site, as a server your own agent can ask: Claude Code while you work, the Claude app, or a scheduled routine. It answers in short Markdown with links to every original, and as JSON for programs.</p></header>
 <h2 class="sect">Connect</h2>
@@ -733,6 +736,26 @@ ${d.attention.length ? `<h2>Getting attention</h2><p class="meta">From the last 
 <h2>New papers</h2><p class="meta">${d.total ? `${n(d.total)} papers from the last ${d.keepDays} days at most, newest first.` : 'Reading the papers. This fills in by itself.'}</p>
 <ol class="papers">${d.papers.map((p) => paperHtml(p)).join('')}</ol>${pager}
 <p class="meta">Papers and abstracts from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>, where each paper is hosted. This site is not affiliated with or endorsed by arXiv. Upvotes from <a href="https://huggingface.co/papers" rel="noopener noreferrer">Hugging Face Daily Papers</a>; points from Hacker News.</p>`, { description: `New research papers on ${t.title}, and which of them are getting attention.` });
+}
+/** /rising: the Depth chart, and under it the same thing in words (the climbs, then every topic by zone), so the page says everything without the picture. */
+function risingHtml(ctx: Ctx, d: RisingData | null, lens: Lens | undefined, origin: string): string {
+  const aq = ctx.area === 'ai' ? '' : '?area=politics', q = (l?: string) => { const p = new URLSearchParams(); if (l) p.set('lens', l); if (ctx.area !== 'ai') p.set('area', ctx.area); const s = p.toString(); return '/rising' + (s ? '?' + s : ''); };
+  const top = bar(ctx, undefined, 'rising', undefined, { lens, href: (p) => q(p.lens) });
+  const head = `<header class="pagehead"><div class="eyebrow"><a href="${AREA_HOME[ctx.area]}">${esc(AREA_LABEL[ctx.area])}</a></div><h1>Rising from the deep</h1>
+<p class="lede">Every topic by how widely it has spread. At the surface a topic is everywhere: every kind of source, most groups. In the deep it lives in one place. What climbs from the deep is what may be news tomorrow.</p></header>`;
+  if (!d) return shell('Rising from the deep · Undercurrent', top, `${head}<p class="meta">There is nothing to place yet: no published Signal has topics for the last days.</p>`, { description: 'Topics by how widely they have spread, and which are rising.', canonical: origin + q() });
+  const up = climbs(d), tl = (t: RisingTopic) => `<a href="${esc(topicHref(t.slug, ctx.area))}">${esc(t.label)}</a>`;
+  const zone = (z: Zone) => { const l = inZone(d, z); return l.length ? `<h3>${esc(ZONE_LABEL[z])} <small class="meta">${n(l.length)}</small></h3><ul class="deep">${l.map((t) => `<li${d.lens && t.inLens === false ? ' class="out"' : ''}><b>${tl(t)}</b>${t.state ? ` <span class="k">${esc(t.state)}</span>` : ''} <span class="pc">${pctOf(t.b[t.b.length - 1] ?? 0)}</span><span class="meta">${esc(t.reach ?? '')}</span></li>`).join('')}</ul>` : ''; };
+  return shell('Rising from the deep · Undercurrent', top, `${head}
+${vizFrame('depth', q(lens?.key).replace('/rising', '/rising.json').replace(/&/g, '&amp;'), 'Topics as bubbles in water: the higher, the more widely spread; trails show where each was on the days before')}
+<h2>Rising from the deep</h2>
+${up.length ? `<ol class="deep up">${up.map((t) => `<li><b>${tl(t)}</b> <span class="pc">&#9650; +${Math.round(t.rise * 100)}</span><span class="meta">${esc(climbWords(t, d))}. Now ${esc(t.reach ?? '')}.</span></li>`).join('')}</ol>` : '<p class="meta">Nothing climbed much in the last days.</p>'}
+<h2>Where every topic is today</h2>
+<p class="meta">The percentage is breadth. With a lens chosen its topics come first; nothing is hidden.</p>
+${zone('surface')}${zone('mid')}${zone('deep')}
+<h2>How this is read</h2>
+<p>Depth is breadth, not loudness. For each of the biggest topics of the week, the site counts which sources mentioned it over three days: how many of the kinds of source that are watched (${esc(d.kindNames.join(', '))}), how many of the ${n(d.watched.groups)} groups of sources, and how many of the ${n(d.watched.sources)} sources that had anything to say. Breadth is the mean of those three shares, the sources on a log scale because the step from one source to five says more than from 100 to 105. Reactions are not in it: one viral post does not lift a topic, many separate voices do.</p>
+<p>A bubble's size is its share of the week's items, the same number as on <a href="/signal${aq}">Signal</a>. Left to right is how long a topic has been around, the newest to the right. A climb compares today with ${n(d.span)} days ago and is named from ${Math.round(MIN_CLIMB * 100)} points. Briefing posts are left out, because they are written from the other sources, and it is the breadth among the sources this site watches, not in the world.</p>`, { description: 'Topics by how widely they have spread across sources, and which are rising from the deep.', canonical: origin + q() });
 }
 function researchMapHtml(ctx: Ctx, lens?: Lens): string {
   return shell('Research map · Undercurrent', bar(ctx, undefined, 'map', undefined, { lens, href: (p) => '/research/map' + (p.lens ? '?lens=' + encodeURIComponent(p.lens) : '') }), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>Research map</h1>
@@ -1696,6 +1719,12 @@ async function vizData(env: Env, parts: string[], url: URL, me: Me | null = null
     const area = parseArea(url.searchParams.get('area')), d = await loadOverview(env, { window: windowOf(w), lens, area, own: ownLenses(me, area), replay: true });
     return new Response(JSON.stringify(overviewOut(d, url.origin, 'brief').data), { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } });
   }
+  if (parts[0] === 'rising.json' && parts.length === 1) {   // /rising.json?lens=&area=: what get_rising answers, for the Depth chart's frame on /rising
+    const lens = url.searchParams.get('lens');
+    if (lens !== null && !/^[a-z][a-z0-9-]{1,19}$/.test(lens)) return NOT_FOUND_JSON();
+    const area = parseArea(url.searchParams.get('area')), d = await loadRising(env, { area, lens, own: ownLenses(me, area), origin: url.origin });
+    return new Response(JSON.stringify(risingOut(d, url.origin, area).data), { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } });
+  }
   if (parts[0] === 'lenses.json' && parts.length === 1) return jsonOf(await env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/lenses-public?area=' + parseArea(url.searchParams.get('area')))));   // /lenses.json?area=: the lenses of an area (AI unless asked): key, name, one line, colour and terms
   if (parts[0] === 'research') {
     const mon = (p: string) => env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/${p}`));
@@ -1785,6 +1814,7 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
   }
   if (parts.length === 1 && parts[0] === 'agent') return html(agentHtml(ctx, url.origin));
   if (parts.length === 1 && parts[0] === 'lists') return listTotal(ctx) ? html(listsHtml(ctx)) : missing();
+  if (parts[0] === 'rising' && parts.length === 1) return vizPage(risingHtml(ctx, await loadRising(env, { area: ctx.area, lens: url.searchParams.get('lens'), boards: ctx.boards, own: ownLenses(ctx.me, ctx.area), origin: url.origin }), chosenLens(ctx.lenses ?? [], url.searchParams.get('lens')), url.origin));   // the Depth chart; ?lens= colours it
   if (parts[0] === 'research' && parts[1] === 'map' && parts.length === 2) return vizPage(researchMapHtml(ctx, chosenLens(ctx.lenses ?? [], url.searchParams.get('lens'))));   // ?lens= starts the map on that lens
   if (parts[0] === 'research' && parts.length === 2) {
     const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/research-page?slug=${encodeURIComponent(parts[1])}&page=${Number(url.searchParams.get('page')) || 1}`));

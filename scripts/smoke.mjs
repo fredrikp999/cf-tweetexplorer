@@ -57,6 +57,12 @@ if (board) {
   await check(`/signal/${board}/first/9.json`, { status: 404 });
 }
 await check('/signal/method', { has: ['How Signal works'] });
+if (board) {   // the Depth chart: the page says it in words too, and the frame's data has a place for every topic on every day
+  await check('/rising', { has: ['<h1>Rising from the deep</h1>', 'id="viz"', 'data-kind="depth"', 'Where every topic is today'] });
+  await check('/rising.json', { type: 'json', has: ['"surfaceY"', '"watched"'] });
+  await check('/rising.json?lens=..', { status: 404 });
+  await check('/viz/depth.html', { has: ['undercurrent-depth'] });
+}
 if (board) { await check('/topics', { has: ['<h1>Topics</h1>', 'All topics, A to Z'] }); await check('/topics?q=a', { has: ['Topics with'] }); }
 
 // Feed pages: the first one listed in the menu.

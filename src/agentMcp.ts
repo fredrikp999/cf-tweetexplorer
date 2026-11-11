@@ -12,10 +12,12 @@ import { areaOf, publishedAreas, type Area } from './signal/area';
 import { TOPIC_SLUG, topicSlug } from './signal/topicpage';
 import { loadTopic } from './site/topicData';
 import type { TopicData } from './signal/topicpage';
+import depthHtml from './apps/depth';
 import landscapeHtml from './apps/landscape';
 import mapHtml from './apps/map';
 import topicHubHtml from './apps/topichub';
-import { loadLenses, loadOverview } from './site/overview';
+import { loadLenses, loadOverview, loadRising } from './site/overview';
+import { risingOut } from './site/rising';
 import { SEARCH_KINDS, SEARCH_WINDOWS, cleanQuery, windowOfSearch } from './site/search';
 import { loadSearch } from './site/searchData';
 import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPrompt, digIntoPrompt, itemsOut, listLensesOut, overviewOut, paperMissing, paperOut, papersOut, searchOut, topicFirstOut, topicMissing, topicOut,
@@ -24,6 +26,8 @@ import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPromp
 /** The Landscape view of get_overview. Bump the suffix when the page changes: hosts keep the resource they were given. */
 /** v3: the view keeps the area of the data it was given (politics has its own lenses) and passes it back to get_overview. */
 export const LANDSCAPE_UI = 'ui://undercurrent/landscape-v5.html';
+/** The Depth chart, the view of get_rising. */
+export const DEPTH_UI = 'ui://undercurrent/depth-v1.html';
 /** The Topic hub, the view of get_topic. */
 export const TOPIC_UI = 'ui://undercurrent/topic-v3.html';
 /** The Research map, the view of get_papers (it reads its data with get_research_map). */
@@ -105,6 +109,18 @@ export function registerAgentTools(server: McpServer, env: Env, origin: string, 
 
   registerAppResource(server, 'Landscape', LANDSCAPE_UI, { mimeType: RESOURCE_MIME_TYPE },
     async () => ({ contents: [{ uri: LANDSCAPE_UI, mimeType: RESOURCE_MIME_TYPE, text: landscapeHtml }] }));
+
+  // The Depth chart: topics as bubbles in water, the surface being "everywhere" and the deep "one place"; the text answer says the same in words. The view reads `structuredContent` and asks again when the lens changes.
+  registerAppTool(server, 'get_rising', {
+    title: 'Rising from the deep: topics by how widely they have spread',
+    description: 'What may be news tomorrow: the biggest topics of the week by breadth (how many kinds of source, groups of sources and single sources have them, over the last 14 days), and which are climbing from one place towards everywhere. Breadth is reach, not reactions. Answers "what is rising?", "what is still niche?", "what has gone mainstream?". Topic addresses in the answer go to get_topic.',
+    inputSchema: { area: areaArg, lens: z.string().max(20).optional().describe('A lens key from list_lenses (of the same area); its topics come first and take its colour') },
+    annotations: READ_ONLY,
+    _meta: { ui: { resourceUri: DEPTH_UI } },
+  }, ({ area, lens }) => run('get_rising', { area, lens }, async () => risingOut(await loadRising(env, { area, lens, origin }), origin, area)));
+
+  registerAppResource(server, 'Depth chart', DEPTH_UI, { mimeType: RESOURCE_MIME_TYPE },
+    async () => ({ contents: [{ uri: DEPTH_UI, mimeType: RESOURCE_MIME_TYPE, text: depthHtml }] }));
 
   // The Topic hub is drawn under the text answer, which is unchanged. The hub reads `structuredContent` and pages through get_topic_items itself.
   registerAppTool(server, 'get_topic', {
@@ -254,7 +270,7 @@ export function registerAgentTools(server: McpServer, env: Env, origin: string, 
 // ---- the endpoint
 // A page in a browser may call this server (it holds nothing private and sets no cookies), so any origin is allowed and no credentials are: a website cannot ride on anyone's login here, because there is none.
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type, accept, mcp-protocol-version, mcp-session-id, last-event-id', 'access-control-max-age': '86400' };
-const INSTRUCTIONS = 'Undercurrent: what is rising and being talked about in AI (and, with area: "politics", in politics), as the public site shows it; the areas are kept apart. Start with get_overview (or the catch_up prompt), then get_topic for one topic, or search to find it by words (get_who_said_first for the order the sources had it in), get_topic_items for the originals, get_papers / get_paper for research and get_briefing for a briefing. Evidence is given per kind of source, each in its own unit. Read only.';
+const INSTRUCTIONS = 'Undercurrent: what is rising and being talked about in AI (and, with area: "politics", in politics), as the public site shows it; the areas are kept apart. Start with get_overview (or the catch_up prompt), get_rising for what is climbing from one place towards everywhere, then get_topic for one topic, or search to find it by words (get_who_said_first for the order the sources had it in), get_topic_items for the originals, get_papers / get_paper for research and get_briefing for a briefing. Evidence is given per kind of source, each in its own unit. Read only.';
 
 const rpcError = (status: number, message: string, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message }, id: null }), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store', ...CORS, ...headers } });

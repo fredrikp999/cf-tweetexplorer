@@ -5,6 +5,7 @@ import { chosenLens, type Lens } from '../signal/lens';
 import type { Layout, ReplayFrame } from '../signal/landscape';
 import { rankList, type BriefIn, type LandingWindow, type SigTopic } from './landing';
 import type { LandingExtras, PubBoard, PubSignal, PubTopic } from './public';
+import { risingOf, type DepthRaw, type RisingData } from './rising';
 
 export interface OverviewData {
   /** The area the numbers are from; the page and the tools of one area never take a board or a briefing from the other. */
@@ -53,4 +54,14 @@ export async function loadOverview(env: Env, o: { window: LandingWindow; lens?: 
   let extras = await monitor(env, `landing-public?spark=${encodeURIComponent(cardTerms.join('|'))}${board && area !== 'ai' ? '&board=' + encodeURIComponent(board.slug) : ''}`).then((r) => (r.ok ? (r.json() as Promise<LandingExtras>) : null)).catch(() => null);
   if (extras && area !== 'ai') extras = { ...extras, papers: [], risingResearch: [], reads: [] };
   return { area, window: win, lenses, lens, board, sig, sig7: win === 7 ? sig : sig7, extras, briefs, landscape: landscape ?? null, replay: replay ?? null };
+}
+
+/** The Depth chart of an area (the page /rising, /rising.json and the MCP tool `get_rising`): the first published Signal's topics by breadth over 14 days, with the lens applied. Null when there is nothing to draw. */
+export async function loadRising(env: Env, o: { area?: Area; lens?: string | null; boards?: PubBoard[]; own?: Lens[]; origin: string }): Promise<RisingData | null> {
+  const area = o.area ?? 'ai', [lenses, boards] = await Promise.all([loadLenses(env, area), o.boards ? Promise.resolve(o.boards) : loadBoards(env)]);
+  lenses.push(...(o.own ?? []));
+  const board = pickBoard(boards, area);
+  if (!board) return null;
+  const raw = await monitor(env, `depth-public?slug=${encodeURIComponent(board.slug)}`).then((r) => (r.ok ? (r.json() as Promise<DepthRaw | null>) : null)).catch(() => null);
+  return risingOf(raw, { area, lens: chosenLens(lenses, o.lens), lenses, origin: o.origin });
 }
