@@ -24,6 +24,7 @@ import { DEPTH_DAYS, DEPTH_TOPICS, DEPTH_WINDOW, depthLayout, reachSeries, type 
 import { LADDER_DAYS, LADDER_POOL, LADDER_WINDOW, dayScores, ladderOf, type Ladder } from '../signal/ladder';
 import { firstByKind, pickWatch, timelineDots, type TopicWatch } from '../signal/topicview';
 import { ITEM_ID, buildCard, inTimeOrder, itemId, type CardTopic, type SourceCard } from '../signal/sourcecard';
+import { brushItems, brushParams, parseBrush, recentDays, TALK_CAP, TALK_CAP_NARROW, type BrushAsk } from '../signal/brush';
 import { evidenceSegments, fallbackSummary, topicSlug, topicState, usualLevel, type EvItem, type EvKind, type TopicData, type TopicPaper } from '../signal/topicpage';
 import { areaHint, areaOf, parseArea, rankByArea, type Area } from '../signal/area';
 import { LENS_AREAS, LENS_PALETTE, MAX_LENSES, SUGGEST_TOPICS, cleanLens, lensMatch, lensesOfTopic, paperLensMask, parseSuggestions, seedLenses, suggestSystem, suggestUser, type Lens, type LensArea } from '../signal/lens';
@@ -447,13 +448,13 @@ export class MonitorDO extends DurableObject<Env> {
     if (!found) return { found: false as const };
     const { v, topic } = found, slug = topicSlug(topic.term), proof = v.board.proof === true;
     if (!proof) return { found: true as const, slug, label: topic.label, area: areaOf(v.board), proof, total: 0, items: [] as EvItem[] };
-    const kind = p.get('kind') ?? '', sort = p.get('sort') === 'top' ? 'top' : 'new', offset = Math.max(0, Math.min(5000, Number(p.get('offset')) || 0));
-    const { items } = await this.topicItems(v, [topic.term, ...topic.members]);
-    const weight = (i: EvItem) => Math.max(0, i.likes) + 2 * Math.max(0, i.replies) + Math.max(0, i.views) / 100;
-    const of = items.filter((i) => !kind || i.kind === kind).sort(sort === 'top' ? (a, b) => weight(b) - weight(a) || b.ts - a.ts : (a, b) => b.ts - a.ts);
+    const offset = Math.max(0, Math.min(5000, Number(p.get('offset')) || 0)), c = v.c, { items } = await this.topicItems(v, [topic.term, ...topic.members]);
+    // A5: the same day, kind and order as the topic page (src/signal/brush.ts); here newest is the default, and "reacted" without a kind is ordered within each kind, one kind after the other
+    const brush = parseBrush({ day: p.get('day'), kind: p.get('kind'), sort: p.get('sort') }, recentDays(Date.now(), 14).filter((d) => d >= c.from), 'newest');
     const counts: Record<string, number> = {};
     for (const i of items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
-    return { found: true as const, slug, label: topic.label, area: areaOf(v.board), proof, total: of.length, counts, items: of.slice(offset, offset + 25) };
+    const of = brushItems(items, brush).items;
+    return { found: true as const, slug, label: topic.label, area: areaOf(v.board), proof, total: of.length, counts, day: brush.day ?? null, kind: brush.kind ?? null, sort: brush.sort, items: of.slice(offset, offset + 25) };
   }
   /** Papers of the last 30 days for the public MCP server: filtered by words (all of them, in title or abstract), by a cluster of the Research map, or by "being discussed". Attention first, then newest. */
   private papersPublic(p: URLSearchParams) {
@@ -1634,7 +1635,7 @@ export class MonitorDO extends DurableObject<Env> {
     return { matched: hits.length, mentioned: hits.filter((h) => h.talked).length, list: hits.slice(0, 12).map((h) => h.paper) };
   }
   /** Everything the topic page shows, apart from the briefings (those live in the Publish object; src/site/topicData.ts adds them). Null when no published Signal has the topic. */
-  private async topicData(slug: string, hint: Area | null = null): Promise<TopicData | null> {
+  private async topicData(slug: string, hint: Area | null = null, brush: BrushAsk = {}): Promise<TopicData | null> {
     const found = await this.findTopic(slug, hint);
     if (!found) return null;
     const { v, topic, alsoIn } = found, { board, c } = v, proof = board.proof === true, names = [topic.term, ...topic.members], canonical = topicSlug(topic.term);
@@ -1646,9 +1647,10 @@ export class MonitorDO extends DurableObject<Env> {
     const heat = { days: heatDays, counts: this.dailyCounts([...new Set(names.flatMap((x) => this.namesOf(x)))], (w) => boardGroups.has(groupOf.get(w) ?? ''), heatDays) };
     const byKind: TopicData['counts'] = {};
     for (const i of items) byKind[i.kind] = (byKind[i.kind] ?? 0) + 1;
-    const weight = (i: EvItem) => Math.max(0, i.likes) + 2 * Math.max(0, i.replies) + Math.max(0, i.views) / 100;
-    const talk = !proof ? [] : (['x', 'hn', 'youtube', 'rss'] as EvKind[]).flatMap((k) => items.filter((i) => i.kind === k).sort((a, b) => weight(b) - weight(a) || b.ts - a.ts).slice(0, 8)
-      .map((i) => ({ ...(i.id ? { id: i.id } : {}), kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl, source: i.source, by: i.by, ts: i.ts, ...(i.likes >= 0 ? { likes: i.likes } : {}), ...(i.replies >= 0 ? { replies: i.replies } : {}), ...(i.views > 0 ? { views: i.views } : {}) })));
+    // A5: the Talk list narrowed to a day and a kind and ordered as asked, each kind within itself (src/signal/brush.ts). The day must be one the items cover (from the start of the window).
+    const view = parseBrush(brush, days.filter((d) => d >= c.from)), brushed = brushItems(items, view, view.day || view.kind ? TALK_CAP_NARROW : TALK_CAP);
+    const talk = !proof ? [] : brushed.items
+      .map((i) => ({ ...(i.id ? { id: i.id } : {}), kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl, source: i.source, by: i.by, ts: i.ts, ...(i.likes >= 0 ? { likes: i.likes } : {}), ...(i.replies >= 0 ? { replies: i.replies } : {}), ...(i.views > 0 ? { views: i.views } : {}) }));
     const sm = this.ctx.storage.sql.exec<{ day: string; text: string; items: string; n: number; model: string }>('SELECT day, text, items, n, model FROM topic_summary WHERE slug = ? ORDER BY day DESC LIMIT 1', canonical).toArray()[0];
     const summary = sm && summaryFresh(sm.day) ? { text: sm.text, day: sm.day, model: sm.model, itemCount: sm.n, items: proof ? (JSON.parse(sm.items) as NonNullable<TopicData['summary']>['items']) : [] } : null;
     const top = this.boardTop(v).top, seen = new Set([canonical]), related: TopicData['related'] = [];
@@ -1664,7 +1666,7 @@ export class MonitorDO extends DurableObject<Env> {
       state, signal: topic.signal, change: topic.change, isNew: topic.isNew, kind: topic.kind, breadth: topic.breadth, active: topic.active, reactions: topic.reactions,
       series: { days, counts, usual: usualLevel(counts) }, counts: byKind, total: items.length, evidence: segments,
       summary, fallback: fallbackSummary({ label: topic.label, state, total: items.length, days: c.days, segments, groups: v.shown.length }),
-      talk, papers, related,
+      talk, view: { ...view, counts: proof ? brushed.counts : {} }, papers, related,
       // Step 7: the order the kinds of source had it in, items over time, and videos. Titles and links only on a Signal that shows its sources.
       first: firstByKind(wide, { since: now - 14 * 86_400_000, hide: !proof }), timeline: timelineDots(wide, { from: now - 14 * 86_400_000, to: now, hide: !proof }),
       watch: this.topicWatch(wide, names, proof), heat,
@@ -1924,9 +1926,13 @@ export class MonitorDO extends DurableObject<Env> {
         }
         if (name === 'signal-public-boards') return json(await this.publicBoards());
         if (name === 'topic-public') {   // the topic page and /t/<slug>.json: kept for two minutes
-          const slug = (url.searchParams.get('slug') ?? '').toLowerCase().slice(0, 64), hint = areaHint(url.searchParams.get('area')), k = `topic|${slug}|${hint ?? ''}`, hit = this.pubCache.get(k);
+          const slug = (url.searchParams.get('slug') ?? '').toLowerCase().slice(0, 64), hint = areaHint(url.searchParams.get('area'));
+          // the day, kind and order of the Talk list (A5), checked before they become part of the cache key, so odd values share the plain list's entry
+          const bq = parseBrush({ day: url.searchParams.get('day'), kind: url.searchParams.get('kind'), sort: url.searchParams.get('sort') }, recentDays(Date.now(), 14)), bk = brushParams(bq).map(([a, b]) => `${a}=${b}`).join('&');
+          const k = `topic|${slug}|${hint ?? ''}|${bk}`, hit = this.pubCache.get(k);
           if (hit && Date.now() - hit.at < 120_000) return hit.v ? json(hit.v) : json({ error: 'not found' }, 404);
-          const v = await this.topicData(slug, hint);
+          const v = await this.topicData(slug, hint, bq);
+          if (bk && this.pubCache.size > 300) this.pubCache.delete(this.pubCache.keys().next().value as string);
           this.pubCache.set(k, { at: Date.now(), v });
           if (url.searchParams.get('quiet') !== '1' && this.summaryWake()) await this.reschedule();   // summaries are due: start writing them (a page never waits for one). `quiet`: the public MCP server only reads
           return v ? json(v) : json({ error: 'not found' }, 404);

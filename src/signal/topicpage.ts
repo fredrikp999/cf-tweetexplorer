@@ -3,6 +3,7 @@
 // and src/site/public.ts draws the page. The same data is public JSON at /t/<slug>.json, and later steps (the MCP `get_topic` tool, the topic hub view) read it too.
 
 import type { TimelineDot, TopicFirst, TopicWatch } from './topicview.ts';
+import type { Brush } from './brush.ts';
 
 // ---- the address
 /** FNV-1a, 32 bits, in base 36: a few letters that tell two odd names apart. */
@@ -146,7 +147,10 @@ export interface TopicData {
   /** Items in the window per kind of source, and the evidence strip. */
   counts: Partial<Record<EvKind, number>>; total: number; evidence: EvSegment[];
   summary: TopicSummary | null; fallback: string;
-  talk: TopicTalkItem[]; papers: { matched: number; mentioned: number; list: TopicPaper[] };
+  talk: TopicTalkItem[];
+  /** How `talk` was narrowed and ordered (A5: `?day=`, `?kind=`, `?sort=`), and how many items match per kind before the cut. Always the plain list in /t/<slug>.json. */
+  view?: Brush & { counts: Partial<Record<EvKind, number>> };
+  papers: { matched: number; mentioned: number; list: TopicPaper[] };
   /** Step 7 angles (src/signal/topicview.ts): the order the kinds of source had it in, items over time, and videos. Titles and links only when the Signal shows its sources (videos from feed pages are public anyway). */
   first: TopicFirst; timeline: TimelineDot[]; watch: TopicWatch[];
   related: Array<{ slug: string; label: string }>;

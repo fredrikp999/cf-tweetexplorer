@@ -60,6 +60,10 @@ await check('/signal/method', { has: ['How Signal works'] });
 // A source card: the first item linked from a topic page (topics come from the landing page; none when no Signal shows its sources).
 for (const slug of [...today.matchAll(/href="\/t\/([a-z0-9-]+)"/g)].map((m) => m[1]).slice(0, 3)) {
   const page = await check(`/t/${slug}`, { has: ['Angles on this topic'] }), id = first(page, new RegExp(`href="/t/${slug}/i/([a-z0-9]{11})"`));
+  // A5: a kind and a day narrow Talk by address; a wrong value gives the plain page, never an error.
+  await check(`/t/${slug}?kind=hn&sort=newest`, { has: ['Angles on this topic'] });
+  await check(`/t/${slug}?day=${new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)}`, { has: ['Angles on this topic'] });
+  await check(`/t/${slug}?day=2026-99-99&kind=zzz&sort=zzz`, { has: ['Angles on this topic'] });
   if (!id) continue;
   await check(`/t/${slug}/i/${id}`, { has: ['class="icard"', 'Why it is here', 'Before and after'] });
   await check(`/t/${slug}/i/${id}.json`, { type: 'json', has: ['"why"', '"reactions"'] });

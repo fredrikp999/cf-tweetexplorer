@@ -2,6 +2,7 @@
 // about 1,500 tokens by default and four times that with `detail: "full"`. Every claim carries the link to the original and to the topic page on the site; evidence is given
 // in the units of section 7, never added into one number; stable ids and a closing "Next:" line let an agent chain calls without guessing.
 // Pure functions (no Worker APIs), so Node can test them. src/agentMcp.ts reads the data and calls these; the same data is `structuredContent`.
+import { parseSort } from '../signal/brush.ts';
 import { PHASE_LABEL, lifecycle } from '../signal/lifecycle.ts';
 import { ARXIV_THANKS } from '../sources/arxiv.ts';
 import { anchorOf } from './brief.ts';
@@ -244,21 +245,24 @@ export function topicMissing(asked: string, origin: string): Answer {
 }
 
 // ---- get_topic_items
-export interface ItemsIn { found: boolean; area?: Area; slug?: string; label?: string; proof?: boolean; total?: number; counts?: Record<string, number>; items?: EvItem[] }
-export function itemsOut(r: ItemsIn, a: { topic: string; kind?: string; sort: 'new' | 'top'; offset: number }, origin: string, detail: Detail = 'brief'): Answer {
+export interface ItemsIn { found: boolean; area?: Area; slug?: string; label?: string; proof?: boolean; total?: number; counts?: Record<string, number>; /** What the Monitor applied: a day it did not know is null here. */ day?: string | null; items?: EvItem[] }
+export function itemsOut(r: ItemsIn, a0: { topic: string; kind?: string; /** `new` and `top` are the older names. */ sort: string; day?: string; offset: number }, origin: string, detail: Detail = 'brief'): Answer {
+  const a = { ...a0, sort: parseSort(a0.sort, 'newest') };
   if (!r.found) return topicMissing(a.topic, origin);
   const url = origin + topicPath(r.slug!, r.area), items = r.items ?? [], total = r.total ?? 0;
   const nextOffset = a.offset + items.length < total ? a.offset + items.length : null;
-  const data = { topic: r.slug, label: r.label, url, kind: a.kind ?? null, sort: a.sort, total, counts: r.counts ?? {}, offset: a.offset, nextCursor: nextOffset === null ? null : String(nextOffset),
+  const data = { topic: r.slug, label: r.label, url, kind: a.kind ?? null, day: r.day ?? null, sort: a.sort, total, counts: r.counts ?? {}, offset: a.offset, nextCursor: nextOffset === null ? null : String(nextOffset),
     items: items.map((i) => ({ id: i.id ?? null, ...(i.id ? { cardUrl: origin + itemHref(r.slug!, i.id, r.area) } : {}), kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl || null, source: i.source, by: i.by, ts: i.ts, date: day(i.ts), reactionsText: reactionText(i), reactions: { likes: i.likes >= 0 ? i.likes : null, replies: i.replies >= 0 ? i.replies : null, views: i.views >= 0 ? i.views : null } })) };
   if (!r.proof) return { text: `**${r.label}**: this topic's Signal does not show its sources, so its items are not public. ${link('The topic page', url)} has the summary and the numbers.\n\n**Next:** ${code('get_topic')} with ${code(`topic: "${r.slug}"`)}.`, data, error: false };
   const counts = Object.entries(r.counts ?? {}).map(([k, n]) => `${KIND_LABEL[k] ?? k} ${n}`).join(', ');
-  const lead = [`**${r.label}**: ${plural(total, 'item')}${a.kind ? ` from ${KIND_LABEL[a.kind] ?? a.kind}` : ''} in the last 7 days${counts ? ` (${counts})` : ''}, ${a.sort === 'new' ? 'newest first' : 'most reacted first'}. ${link('Topic page', url)}.`,
+  const lead = [`**${r.label}**: ${plural(total, 'item')}${a.kind ? ` from ${KIND_LABEL[a.kind] ?? a.kind}` : ''} ${r.day ? `on ${r.day}` : 'in the last 7 days'}${counts ? ` (${counts} in the 7 days)` : ''}, ${a.sort === 'newest' ? 'newest first' : a.sort === 'earliest' ? 'earliest first' : 'most reacted first'}. ${link('Topic page', url)}.`,
+    a.day && !r.day ? `${code(a.day)} is not one of the days this topic has items for (the last 7), so it was ignored.` : '',
     items.length ? `Showing ${a.offset + 1} to ${a.offset + items.length}.` : 'Nothing at this position.',
-    a.sort === 'top' ? '"Most reacted" weighs likes, replies and views; compare numbers only within one kind of source (use the kind filter).' : ''].filter(Boolean);
+    a.sort === 'reacted' ? `"Most reacted" weighs likes, replies and views, so it is ordered within each kind of source, one kind after the other${a.kind ? '' : ' (give a kind to see one list)'}; compare numbers only within one kind.` : '',
+    a.sort === 'earliest' ? 'Earliest first: the oldest items of the week, to see who was early. Not the same as who started it.' : ''].filter(Boolean);
   const body = items.map((i, n) => `${a.offset + n + 1}. **${KIND_LABEL[i.kind] ?? i.kind}** ${itemLine(i)}`).join('\n');
   const withId = items.find((i) => i.id), open = withId ? `${code('get_item')} with ${code(`topic: "${r.slug}"`)} and ${code(`item: "${withId.id}"`)} for one item in context (why it is in the topic, what came before and after). ` : '';
-  const next = open + (nextOffset !== null ? `${code('get_topic_items')} with ${code(`topic: "${r.slug}"`)}${a.kind ? `, ${code(`kind: "${a.kind}"`)}` : ''}, ${code(`sort: "${a.sort}"`)}, ${code(`cursor: "${nextOffset}"`)} for the next ${Math.min(PAGE, total - nextOffset)}.` : `${code('get_topic')} with ${code(`topic: "${r.slug}"`)} for the summary.`);
+  const next = open + (nextOffset !== null ? `${code('get_topic_items')} with ${code(`topic: "${r.slug}"`)}${a.kind ? `, ${code(`kind: "${a.kind}"`)}` : ''}${r.day ? `, ${code(`day: "${r.day}"`)}` : ''}, ${code(`sort: "${a.sort}"`)}, ${code(`cursor: "${nextOffset}"`)} for the next ${Math.min(PAGE, total - nextOffset)}.` : `${code('get_topic')} with ${code(`topic: "${r.slug}"`)} for the summary.`);
   return { text: assemble(lead, [body, THIRD_PARTY], next, detail), data };
 }
 
@@ -363,7 +367,7 @@ export function digIntoPrompt(a: { topic: string }): string {
   const t = flat(a.topic, 64);
   return [`Dig into "${t}" from summary down to the original sources, using the undercurrent tools. Do this in order:`,
     `1. Call ${code('get_topic')} with ${code(`topic: "${t}"`)} (an address like ${code('mcp-auth-bypass')}; if it is not found, call ${code('get_overview')} and pick the nearest topic).`,
-    `2. Call ${code('get_topic_items')} with ${code('sort: "new"')}, then again with ${code('sort: "top"')} and a ${code('kind')} (for example ${code('"hn"')} or ${code('"x"')}), to see who said what and when. Follow ${code('nextCursor')} if the first page is not enough.`,
+    `2. Call ${code('get_topic_items')} with ${code('sort: "newest"')}, then again with ${code('sort: "reacted"')} and a ${code('kind')} (for example ${code('"hn"')} or ${code('"x"')}), to see who said what and when. Follow ${code('nextCursor')} if the first page is not enough.`,
     `3. For papers on the topic, call ${code('get_papers')} with ${code(`topic: "${t}"`)}, then ${code('get_paper')} for the most relevant.`,
     `4. If a briefing covered it, call ${code('get_briefing')} for that briefing topic.`,
     'Then write what is known: what happened, how widely (per source kind, in that kind\'s own unit; breadth of distinct accounts counts more than one viral post), who seems to have had it first (say it is only the order seen in these sources), what the papers say, and what is not known. Link every claim to its original and to the topic page.'].join('\n');

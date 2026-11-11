@@ -24,6 +24,7 @@ import { ITEM_ID, itemHref, type CardTopic, type SourceCard } from '../signal/so
 import { CARD_FONT, CARD_W, shareCardSvg } from './shareCard';
 import { svgToPng } from '../media/png';
 import { PHASE_LABEL, PHASE_MARK, PHASE_TRACK, lifecycle, smooth, type Lifecycle } from '../signal/lifecycle';
+import { BRUSH_KINDS, DEFAULT_SORT, BRUSH_SORTS, SORT_LABEL, brushParams, sortNote, type Brush, type BrushSort } from '../signal/brush';
 import { soften, streamLayout, type StreamLayer } from '../signal/stream';
 import { WEEKDAYS, calendar } from '../signal/calendar';
 import { STREAM_TOPICS, loadOverview, loadRising } from './overview';
@@ -230,7 +231,7 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .angles a small{color:var(--muted)}
 .life{margin:6px 0 8px;padding:14px 16px 12px;border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:var(--sh1)}.lifehead{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}.lifehead .sect{margin:0}
 .lifeviz svg{display:block;width:100%;height:auto;overflow:visible}.lifeviz .axis{display:flex;justify-content:space-between;color:var(--muted);font-size:12.5px}
-.life .lbar{fill:var(--line)}.life .lbar:hover{fill:var(--muted)}.life .lcurve{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;vector-effect:non-scaling-stroke}.life .lus{stroke:var(--muted);stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+.life .lbar{fill:var(--line)}.life .lbar:hover,.life a:hover .lbar,.life a:focus .lbar{fill:var(--muted)}.life .lbar.on{fill:var(--accent)}.life .lhit{fill:transparent;cursor:pointer}.life .lcurve{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;vector-effect:non-scaling-stroke}.life .lus{stroke:var(--muted);stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
 .life .lpk{fill:var(--accent);stroke:var(--card);stroke-width:2;vector-effect:non-scaling-stroke}.life .lnow{fill:var(--card);stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}.life .lpt{fill:var(--text);font-size:12px;font-weight:700;paint-order:stroke;stroke:var(--card);stroke-width:3px}
 .lifesay{margin:8px 0 6px;font-size:15px}
 .ltrack{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px;font-size:13px;color:var(--muted)}.ltrack li{display:flex;align-items:center;gap:5px;padding:3px 10px;border:1px dashed var(--line);border-radius:999px}
@@ -261,7 +262,7 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .heat{display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center;margin:0 0 8px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:var(--sh1)}.heat svg{display:block;max-width:100%;height:auto}
 .heattext{flex:1 1 14rem;font-size:14px;color:var(--muted)}.heattext p{margin:0 0 6px}.heattext b{color:var(--text);font-size:22px}
 .hc.h0,.hkey .h0{fill:var(--line);background:var(--line)}.hc.h1,.hkey .h1{fill:color-mix(in srgb,var(--hc) 16%,var(--card));background:color-mix(in srgb,var(--hc) 16%,var(--card))}.hc.h2,.hkey .h2{fill:color-mix(in srgb,var(--hc) 38%,var(--card));background:color-mix(in srgb,var(--hc) 38%,var(--card))}
-.hc.h3,.hkey .h3{fill:color-mix(in srgb,var(--hc) 66%,var(--card));background:color-mix(in srgb,var(--hc) 66%,var(--card))}.hc.h4,.hkey .h4{fill:var(--hc);background:var(--hc)}.hc:hover{stroke:var(--text);stroke-width:1.5}
+.hc.h3,.hkey .h3{fill:color-mix(in srgb,var(--hc) 66%,var(--card));background:color-mix(in srgb,var(--hc) 66%,var(--card))}.hc.h4,.hkey .h4{fill:var(--hc);background:var(--hc)}.hc:hover{stroke:var(--text);stroke-width:1.5}.heat a:focus .hc{stroke:var(--text);stroke-width:1.5}.hc.on{stroke:var(--accent);stroke-width:2.5}.sb.on{stroke:var(--text);stroke-width:2}.brush{margin:0 0 12px}.brush .bchips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 8px}.brush .bchip{display:inline-flex;gap:6px;align-items:center;padding:4px 12px;border-radius:999px;border:1px solid var(--accent);background:var(--card);font-size:14px}.brush .bchip a{color:var(--muted)}.brush .bkinds{margin-bottom:8px}.brush .blabel{color:var(--muted);font-size:13px;margin:0 6px 0 0;align-self:center}
 .heat{--hc:var(--lc,var(--accent))}.hkey{display:inline-flex;align-items:center;gap:3px;font-size:12px}.hkey i{display:inline-block;width:11px;height:11px;border-radius:3px}
 .bimg{position:relative}.bmap{position:absolute;right:6px;bottom:6px;width:38%;max-width:96px;aspect-ratio:1.4;padding:4px;border-radius:9px;background:rgba(6,16,18,.62);backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,.3);display:flex}
 .bmap svg{width:100%;height:100%}.bmap circle{fill:rgba(255,255,255,.16);stroke:rgba(255,255,255,.28);stroke-width:3}.bmap circle.on{fill:#ff7aa1;stroke:#fff;stroke-width:5}
@@ -845,7 +846,7 @@ const phaseBadge = (lc: Lifecycle | null, small = false) => (lc ? `<span class="
  * The life of a topic (src/signal/lifecycle.ts): the daily counts as faint bars, the smoothed curve over them, the peak (and the earlier peak of a topic that is back again) marked and named,
  * and a track that lights the phase it is in. Inline SVG, no script; the sentence beside it says the same.
  */
-function lifeHtml(s: TopicData['series']): string {
+function lifeHtml(s: TopicData['series'], link?: (day: string) => string | null, on?: string): string {
   const c = s.counts, lc = lifecycle(c, s.days);
   if (c.length < 2) return '';
   const W = 560, H = 132, T = 22, B = 18, top = Math.max(1, ...c, s.usual) * 1.08, bw = W / c.length, x = (i: number) => (i + 0.5) * bw, y = (v: number) => H - B - (v / top) * (H - B - T);
@@ -857,7 +858,8 @@ function lifeHtml(s: TopicData['series']): string {
     d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)},${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)},${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
   }
   const area = `${d} L${pts[pts.length - 1][0].toFixed(1)},${H - B} L${pts[0][0].toFixed(1)},${H - B} Z`;
-  const bars = c.map((v, i) => `<rect class="lbar" x="${(i * bw + bw * 0.18).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw * 0.64).toFixed(1)}" height="${Math.max(0, H - B - y(v)).toFixed(1)}" rx="2"><title>${esc(shortDay(s.days[i]))}: ${c[i]} ${c[i] === 1 ? 'item' : 'items'}</title></rect>`).join('');
+  const bars = c.map((v, i) => { const href = link?.(s.days[i]), bar = `<rect class="lbar${s.days[i] === on ? ' on' : ''}" x="${(i * bw + bw * 0.18).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw * 0.64).toFixed(1)}" height="${Math.max(0, H - B - y(v)).toFixed(1)}" rx="2"><title>${esc(shortDay(s.days[i]))}: ${c[i]} ${c[i] === 1 ? 'item' : 'items'}${href ? ', show that day' : ''}</title></rect>`;
+    return href ? `<a href="${esc(href)}"><rect class="lhit" x="${(i * bw).toFixed(1)}" y="${T - 6}" width="${bw.toFixed(1)}" height="${H - B - T + 6}"/>${bar}</a>` : bar; }).join('');
   const mark = (i: number, text: string) => { const px = x(i), py = y(sm[i]), anchor = px < 40 ? 'start' : px > W - 40 ? 'end' : 'middle'; return `<circle class="lpk" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="5"/><text class="lpt" x="${px.toFixed(1)}" y="${Math.max(12, py - 10).toFixed(1)}" text-anchor="${anchor}">${esc(text)}</text>`; };
   const marks = lc ? (lc.firstPeak !== undefined ? mark(lc.firstPeak, 'first peak') : '') + (lc.phase === 'steady' ? '' : mark(lc.peak, lc.peak >= c.length - 3 ? 'now' : 'peak')) : '';
   const end = pts[pts.length - 1], now = lc && lc.peak !== c.length - 1 ? `<circle class="lnow" cx="${end[0].toFixed(1)}" cy="${end[1].toFixed(1)}" r="4"/>` : '';
@@ -932,7 +934,7 @@ const bandLabelAt = (l: StreamLayer, n: number, free: (i: number) => boolean = (
  * (Who said it first) is numbered on the stream and spelled out under it, with how long after the first each came; new papers on the subject sit on a rail above.
  * Inline SVG, no script. The bands are of different units of attention and are only drawn side by side, never added into one number.
  */
-function spreadHtml(d: TopicData): string {
+function spreadHtml(d: TopicData, link?: (kind: EvKind) => string | null, on?: EvKind): string {
   const dots: TimelineDot[] = d.timeline ?? [];
   if (dots.length < 2) return '';
   const S = 42, kinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).filter((k) => dots.some((t) => t.kind === k));
@@ -942,7 +944,8 @@ function spreadHtml(d: TopicData): string {
   const W = 720, H = 236, L = 8, R = 8, top = 40, bottom = 26, from = d.first.since, span = 14 * 86_400_000;
   const xs = Array.from({ length: S }, (_, i) => L + ((i + 0.5) / S) * (W - L - R)), tx = (ts: number) => L + Math.min(1, Math.max(0, (ts - from) / span)) * (W - L - R);
   const room = H - top - bottom, k = Math.min((room * 0.92) / Math.max(1e-9, lay.max - lay.min), 26), mid = top + room / 2, ty = (v: number) => mid - v * k;
-  const bands = lay.layers.map((l) => `<path class="sb k-${l.key}" d="${bandPath(xs, l.y1.map(ty), l.y0.map(ty))}"><title>${esc(KIND_NAME[l.key as EvKind])}: ${n(Math.round(l.total))} ${Math.round(l.total) === 1 ? 'item' : 'items'}</title></path>`).join('');
+  const bands = lay.layers.map((l) => { const href = link?.(l.key as EvKind), path = `<path class="sb k-${l.key}${l.key === on ? ' on' : ''}" d="${bandPath(xs, l.y1.map(ty), l.y0.map(ty))}"><title>${esc(KIND_NAME[l.key as EvKind])}: ${n(Math.round(l.total))} ${Math.round(l.total) === 1 ? 'item' : 'items'}${href ? ', show only these' : ''}</title></path>`;
+    return href ? `<a href="${esc(href)}">${path}</a>` : path; }).join('');
   // the order of the latest wave, numbered where each kind came in
   const arr = d.first.arrivals.filter((a) => a.ts >= from), at = (kind: EvKind) => lay.layers.find((l) => l.key === kind);
   const pins = arr.map((a, i) => { const l = at(a.kind); if (!l) return ''; const x = tx(a.ts), j = Math.min(S - 1, Math.max(0, Math.round(((a.ts - from) / span) * S - 0.5))), y = ty((l.y0[j] + l.y1[j]) / 2);
@@ -1026,12 +1029,13 @@ function topicStream(topics: Array<{ term: string; label: string; href: string; 
  * A heat calendar (src/signal/calendar.ts): a square per day, a column per week and a row per weekday, darker for busier days. Each square says its day and count on hover;
  * the sentences under it (busiest day, a weekday that stands out) are its text form. Inline SVG, no script.
  */
-function heatHtml(h: { days: string[]; counts: number[] } | undefined, what: string): string {
+function heatHtml(h: { days: string[]; counts: number[] } | undefined, what: string, link?: (day: string) => string | null, on?: string): string {
   if (!h?.days.length) return '';
   const c = calendar(h.days, h.counts);
   if (!c.total) return '';
   const S = 18, G = 4, L = 34, T = 18, W = L + c.weeks * (S + G), H = T + 7 * (S + G);
-  const cells = c.cells.map((x) => `<rect class="hc h${x.level}" x="${L + x.col * (S + G)}" y="${T + x.row * (S + G)}" width="${S}" height="${S}" rx="4"><title>${esc(shortDay(x.day))}: ${n(x.n)} ${x.n === 1 ? 'mention' : 'mentions'}</title></rect>`).join('');
+  const cells = c.cells.map((x) => { const href = link?.(x.day), rect = `<rect class="hc h${x.level}${x.day === on ? ' on' : ''}" x="${L + x.col * (S + G)}" y="${T + x.row * (S + G)}" width="${S}" height="${S}" rx="4"><title>${esc(shortDay(x.day))}: ${n(x.n)} ${x.n === 1 ? 'mention' : 'mentions'}${href ? ', show that day' : ''}</title></rect>`;
+    return href ? `<a href="${esc(href)}">${rect}</a>` : rect; }).join('');
   const rows = [0, 2, 4].map((r) => `<text class="sax" x="${L - 6}" y="${T + r * (S + G) + S - 5}" text-anchor="end">${WEEKDAYS[r].slice(0, 3)}</text>`).join('');
   let lastMonth = '';
   const months = c.cells.filter((x) => x.row === 0 || x === c.cells[0]).map((x) => { const m = shortDay(x.day).split(' ')[1]; if (m === lastMonth) return ''; lastMonth = m; return `<text class="sax" x="${L + x.col * (S + G)}" y="12">${esc(m)}</text>`; }).join('');
@@ -1092,6 +1096,20 @@ export function itemGoneHtml(g: { topic: CardTopic; original: string; discussion
 <p class="out"><a class="go" href="${esc(g.original)}" rel="noopener noreferrer nofollow" target="_blank">Open the original &#8599;</a> <a href="${esc(topicHref(t.slug, t.area))}">Back to ${esc(t.label)}</a></p></header></div>`);
 }
 
+/** The address of the Talk list with a day, a kind and an order chosen (the default order is left out), landing on the list. Every picture and chip that filters links here. */
+function brushHref(d: TopicData, b: Brush): string {
+  const base = topicHref(d.slug, d.area), q = brushParams(b).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  return base + (q ? (base.includes('?') ? '&' : '?') + q : '') + '#angle';
+}
+/** The controls above Talk: what is shown (day and kind, each with a way to clear it), the kinds to choose from, and the order. Plain links, so a filter is an address that can be shared. */
+function brushControls(d: TopicData, b: Brush): string {
+  const kinds = BRUSH_KINDS.filter((k) => (d.counts[k] ?? 0) > 0);
+  const chips = [b.day ? `Showing <b>${esc(shortDay(b.day))}</b> &middot; <a href="${esc(brushHref(d, { ...b, day: undefined }))}">clear</a>` : '', b.kind ? `Showing <b>${esc(KIND_NAME[b.kind])}</b> &middot; <a href="${esc(brushHref(d, { ...b, kind: undefined }))}">clear</a>` : '']
+    .filter(Boolean).map((c) => `<span class="bchip">${c}</span>`).join('');
+  const kindNav = kinds.length > 1 ? `<nav class="sgwin angles bkinds" aria-label="Kinds of source"><span class="blabel">Source</span><a href="${esc(brushHref(d, { ...b, kind: undefined }))}"${b.kind ? '' : ' aria-current="page"'}>All</a>${kinds.map((k) => `<a href="${esc(brushHref(d, { ...b, kind: k }))}"${b.kind === k ? ' aria-current="page"' : ''}>${esc(KIND_NAME[k])}${b.day ? '' : ` <small>${n(d.counts[k] ?? 0)}</small>`}</a>`).join('')}</nav>` : '';
+  const sortNav = `<nav class="sgwin angles bsort" aria-label="Order of the lists"><span class="blabel">Order</span>${BRUSH_SORTS.map((s) => `<a href="${esc(brushHref(d, { ...b, sort: s }))}"${b.sort === s ? ' aria-current="page"' : ''}>${SORT_LABEL[s]}</a>`).join('')}</nav>`;
+  return `<div class="brush">${chips ? `<div class="bchips">${chips}</div>` : ''}${kindNav}${sortNav}<p class="meta">${esc(sortNote(b.sort))}</p></div>`;
+}
 function topicPanel(d: TopicData, angle: Angle, ctx: Ctx): string {
   if (angle === 'first') return firstPanel(d);
   if (angle === 'watch') return watchPanel(d, ctx);
@@ -1107,8 +1125,12 @@ function topicPanel(d: TopicData, angle: Angle, ctx: Ctx): string {
       : '<p class="meta">No new paper of the last 30 days names this subject.</p>';
   }
   if (!d.board.proof) return '<p class="note">This Signal shows scores only, not the items behind them.</p>';
+  const b: Brush = d.view ?? { sort: DEFAULT_SORT }, narrow = !!(b.day || b.kind), total = d.view?.counts ?? d.counts;
   const kinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).map((k) => [k, d.talk.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
-  return kinds.length ? kinds.map(([k, list]) => `<h3 class="azh">${KIND_TITLE[k]} <small>${n(d.counts[k] ?? list.length)} in the last week${(d.counts[k] ?? 0) > list.length ? `, the ${list.length} most reacted to` : ''}</small></h3>
+  const how: Record<BrushSort, string> = { reacted: 'most reacted to', newest: 'newest', earliest: 'earliest', accounts: 'from the accounts with most items' };
+  const when = b.day ? `on ${shortDay(b.day)}` : 'in the last week', controls = brushControls(d, b);
+  if (narrow && !kinds.length) return `${controls}<p class="meta">Nothing${b.kind ? ` from ${esc(KIND_NAME[b.kind])}` : ''}${b.day ? ` on ${esc(shortDay(b.day))}` : ''} is logged for this topic. <a href="${esc(brushHref(d, { sort: b.sort }))}">Clear the filter</a>.</p>`;
+  return kinds.length ? controls + kinds.map(([k, list]) => `<h3 class="azh">${KIND_TITLE[k]} <small>${n(total[k] ?? list.length)} ${when}${(total[k] ?? 0) > list.length ? `, the ${list.length} ${how[b.sort]}` : b.sort !== 'reacted' ? `, ${how[b.sort]}` : ''}</small></h3>
 <ul class="sgitems">${list.map((i) => `<li><div class="by"><b>${esc(i.source)}</b>${i.by && i.by !== i.source ? ' &middot; ' + esc(i.by) : ''} &middot; ${i.ts ? date(i.ts) : ''}${metricOf(i) ? ` &middot; <span class="chip react">${esc(metricOf(i))}</span>` : ''}</div>
 ${i.id ? `<a href="${esc(itemHref(d.slug, i.id, d.area))}">${esc(i.title || i.url)}</a> <a class="dim" href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank" title="Open the original">original &#8599;</a>`
   : i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${esc(i.title || i.url)}</a>` : esc(i.title)}${i.discussionUrl ? ` <a class="dim" href="${esc(i.discussionUrl)}" rel="noopener noreferrer nofollow" target="_blank">discussion</a>` : ''}${saveCtl(ctx, d, 'talk', i.url)}</li>`).join('')}</ul>`).join('')
@@ -1130,14 +1152,18 @@ export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', len
   const also = (here.length ? `Also in: ${here.map((b) => `<a href="/signal/${esc(b.slug)}">${esc(b.title)}</a>`).join(', ')}. ` : '') + other.map((a) => `The same name is also a topic in <a href="${esc(topicHref(d.slug, a))}">${AREA_LABEL[a]}</a>. `).join('');
   const areaLink = d.area === 'politics' || ctx.areas.length > 1 ? `<a href="${AREA_HOME[d.area]}">${AREA_LABEL[d.area]}</a> &middot; ` : '';
   const summary = sm?.text ?? d.fallback;
+  // A5: the marks of the pictures filter the Talk list by address. Only days the list covers (from the start of the window, which the Monitor checks too) are links.
+  const view: Brush = d.view ?? { sort: DEFAULT_SORT }, shown = new Set(d.series.days.filter((x) => x >= d.from)), canBrush = d.board.proof && shown.size > 0;
+  const dayLink = canBrush ? (day: string) => (shown.has(day) ? brushHref(d, { ...view, day: view.day === day ? undefined : day }) : null) : undefined;
+  const kindLink = canBrush ? (kind: EvKind) => brushHref(d, { ...view, kind: view.kind === kind ? undefined : kind }) : undefined;
   return shell(`${d.label} · Topic · Undercurrent`, bar(ctx, undefined, 'topics'), `<header class="pagehead"><div class="eyebrow">${areaLink}Topic &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a></div><h1>${esc(d.label)} ${pill}</h1>
 <p class="lede">${esc(summary)}</p>${written}${lensLine}${topicActions(ctx, d)}</header>
-${lifeHtml(d.series)}
-<p class="meta">Items per day over the last 14 days: bars for each day, the curve their three-day average${d.series.usual ? ', the dashed line the usual level' : ''}. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p>
+${lifeHtml(d.series, dayLink, view.day)}
+<p class="meta">Items per day over the last 14 days: bars for each day${dayLink ? ' (a bar shows that day in Talk)' : ''}, the curve their three-day average${d.series.usual ? ', the dashed line the usual level' : ''}. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p>
 ${evidenceHtml(d)}
-${spreadHtml(d)}
+${spreadHtml(d, kindLink, view.kind)}
 ${timelineHtml(d)}
-${d.heat?.counts.some((v) => v > 0) ? `<h2 class="sect">The last ${d.heat.days.length} days</h2>${heatHtml(d.heat, `Mentions of ${d.label}`)}<p class="meta">Mentions per day as Signal counts them (the topic&rsquo;s names in the items of its sources), over all the days the counts are kept.</p>` : ''}
+${d.heat?.counts.some((v) => v > 0) ? `<h2 class="sect">The last ${d.heat.days.length} days</h2>${heatHtml(d.heat, `Mentions of ${d.label}`, dayLink, view.day)}<p class="meta">Mentions per day as Signal counts them (the topic&rsquo;s names in the items of its sources), over all the days the counts are kept.</p>` : ''}
 <h2 class="sect">The angles</h2>${tabs}
 <section id="angle">${topicPanel(d, angle, ctx)}</section>
 ${d.related.length ? `<h2 class="sect">Goes with</h2><p class="meta">${d.related.map((r) => `<a href="${esc(topicHref(r.slug, d.area))}">${esc(r.label)}</a>`).join(' &middot; ')}</p>` : ''}`,
@@ -1934,7 +1960,7 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
   if (parts[0] === 't') {   // /t/<slug>[?angle=]: one topic, with its angles
     const slug = parts.length === 2 ? parts[1] : '';
     if (!TOPIC_SLUG.test(slug)) return missing();
-    const r = await loadTopic(env, slug, { area: areaHint(url.searchParams.get('area')) });
+    const r = await loadTopic(env, slug, { area: areaHint(url.searchParams.get('area')), brush: { day: url.searchParams.get('day'), kind: url.searchParams.get('kind'), sort: url.searchParams.get('sort') } });   // ?day=&kind=&sort= narrow and order the Talk list (A5)
     if (!r) return missing();
     if ('redirect' in r) { const rest = new URLSearchParams(url.search); rest.delete('area'); const tail = rest.toString(); return new Response(null, { status: 301, headers: { location: r.redirect + (tail ? (r.redirect.includes('?') ? '&' : '?') + tail : ''), 'cache-control': 'public, max-age=3600' } }); }
     // A topic belongs to the area of its Signal, whatever the address said: a politics topic opened without a hint still gets the politics menu and leads back to /politics.
@@ -2113,7 +2139,7 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   // The key is the path plus the query parameters a page reads (Signal's sort and group, a topic's angle, the lens), so a sorted page is not served the default one.
   // The report form is never cached: it shows whether a report was sent.
   // A search's words (`q`, at most 80 letters) and kinds are kept whole: cut at 20 letters, two different searches would share one page.
-  const q = new URLSearchParams([...['sort', 'group', 'q', 'kinds', 'page', 'angle', 'lens', 'window', 'area'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, k === 'q' ? 80 : k === 'kinds' ? 40 : 20)]] : []))] as [string, string][]).toString();
+  const q = new URLSearchParams([...['sort', 'group', 'q', 'kinds', 'page', 'angle', 'lens', 'window', 'area', 'day', 'kind'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, k === 'q' ? 80 : k === 'kinds' ? 40 : 20)]] : []))] as [string, string][]).toString();
   // The deployed version is part of the key, so a deploy never serves pages (with an old menu) rendered by the version before.
   const ver = (env as { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? '';
   const key = new Request(url.origin + url.pathname + '?' + new URLSearchParams([...(q ? new URLSearchParams(q) : []), ['v', ver]]).toString(), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/') && !/^\/saved(\/|$)/.test(url.pathname);   // a list made private must be gone at once

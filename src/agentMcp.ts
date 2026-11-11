@@ -141,15 +141,16 @@ export function registerAgentTools(server: McpServer, env: Env, origin: string, 
 
   server.registerTool('get_topic_items', {
     title: 'Topic items: show me the sources',
-    description: 'Level 3: the items behind a topic (posts, threads, articles, videos) with author, time, reactions in the source\'s own unit and the link to the original, 25 a page. Newest first or most reacted first; filter by kind of source. Follow nextCursor for the next page. Only for Signals that show their sources.',
+    description: 'Level 3: the items behind a topic (posts, threads, articles, videos) with author, time, reactions in the source\'s own unit and the link to the original, 25 a page. Newest first, most reacted first, or earliest first (who was early in the wave); filter by kind of source and by one day (the same filters as the topic page). Reactions are ordered within each kind of source, never across kinds. Follow nextCursor for the next page. Only for Signals that show their sources.',
     inputSchema: { topic: topicArg, kind: z.enum(['x', 'hn', 'youtube', 'rss']).optional().describe('Only this kind of source: x, hn (Hacker News), youtube, rss (blogs and news)'),
-      sort: z.enum(['new', 'top']).default('new').describe('new: newest first; top: most reacted first'), area: areaHintArg, cursor: z.string().regex(/^\d{1,4}$/).optional().describe('nextCursor from the previous page'), detail: detailArg },
+      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Only items from this UTC day, YYYY-MM-DD, one of the days the topic page covers; a day outside them is ignored'),
+      sort: z.enum(['newest', 'reacted', 'earliest', 'new', 'top']).default('newest').describe('newest: newest first; reacted: most reacted first, within each kind of source (give a kind to see one list); earliest: oldest first, to see who was early; new and top are older names for newest and reacted'), area: areaHintArg, cursor: z.string().regex(/^\d{1,4}$/).optional().describe('nextCursor from the previous page'), detail: detailArg },
     annotations: READ_ONLY,
-  }, ({ topic, kind, sort, area, cursor, detail }) => run('get_topic_items', { topic: asSlug(topic), kind, sort, area, cursor, detail }, async () => {
+  }, ({ topic, kind, day, sort, area, cursor, detail }) => run('get_topic_items', { topic: asSlug(topic), kind, day, sort, area, cursor, detail }, async () => {
     const offset = cursor ? Number(cursor) : 0, slug = asSlug(topic);
-    const p = new URLSearchParams({ slug, sort, offset: String(offset), ...(kind ? { kind } : {}), ...(area ? { area } : {}) });
+    const p = new URLSearchParams({ slug, sort, offset: String(offset), ...(kind ? { kind } : {}), ...(day ? { day } : {}), ...(area ? { area } : {}) });
     const r = await json<ItemsIn>(await mon(env, `topic-items-public?${p}`));
-    return itemsOut(r ?? { found: false }, { topic, kind, sort, offset }, origin, detail as Detail);
+    return itemsOut(r ?? { found: false }, { topic, kind, sort, day, offset }, origin, detail as Detail);
   }));
 
   // The source card as text: one item in context. Ids come from get_topic_items and the talk lists of get_topic.
