@@ -5,11 +5,12 @@ import { Script } from 'node:vm';
 import hub from '../src/apps/topichub.ts';
 import map from '../src/apps/map.ts';
 import land from '../src/apps/landscape.ts';
+import depth from '../src/apps/depth.ts';
 
 const script = (html) => /<script>([\s\S]*)<\/script>/.exec(html)[1];
 
 describe('view scripts', () => {
-  for (const [name, html] of [['topic hub', hub], ['research map', map], ['landscape', land]]) {
+  for (const [name, html] of [['topic hub', hub], ['research map', map], ['landscape', land], ['depth chart', depth]]) {
     it(`${name}: one classic inline script that parses`, () => {
       assert.equal((html.match(/<script/g) ?? []).length, 1);
       assert.doesNotMatch(html, /type="module"/);
@@ -36,5 +37,9 @@ describe('view scripts', () => {
     const s = script(land);
     assert.match(s, /UC\.open\('topic'[\s\S]{0,120}return; \}[\s\S]{0,40}openPage\(b\)/);
     assert.ok(s.includes('Show me the topic'), 'the panel still offers the full view (it is in the shell)');
+  });
+  it('the depth chart opens a topic in place and falls back to the page', () => {
+    const s = script(depth);
+    assert.match(s, /UC\.open\('topic'[\s\S]{0,120}return; \}[\s\S]{0,40}openPage\(t\)/);
   });
 });

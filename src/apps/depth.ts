@@ -1,13 +1,15 @@
+import { SHELL_CSS, SHELL_JS } from './shell.ts';
 // The Depth chart: a cross-section of water with one bubble per topic. How high a bubble floats is its breadth (the surface: every kind of source and most groups have it; the deep: it lives
 // in one place), its size is its share of the week's items, and the trail under or over it is where it was on the days before. A slider and a Play button go through the 14 days.
 // It is the view of the get_rising tool on both MCP servers and the picture on the site's /rising page, in the sandboxed frame of src/site/viz.ts (there /viz/host.js answers get_rising from /rising.json).
-// A plain page like landscape.ts: classic inline script, the ui/* postMessage protocol directly, no SDK and no bundler. Keep it free of backticks and template placeholders.
+// A plain page like landscape.ts: classic inline script, the ui/* postMessage protocol directly, no SDK and no bundler. Keep it free of backticks; the only template placeholders are the shell's two (see shell.ts).
 // Data: the structuredContent of get_rising (or its JSON text, which is what the site gives), RisingData in src/site/rising.ts:
 //   { area, lens: {key,name}|null, lenses: [{key,name,color,light,dark}], days: [iso...], w, h, surfaceY, floorY, window, span, kinds, kindNames, watched: {kinds,groups,sources},
 //     topics: [{slug,label,url,state,score,r,first,lensColor,inLens,b[],x[],y[],k[],g[],s[],m[],rise,zone,reach}], rising: [slug...] }
 // The water is dark in both themes (it is a picture of depth); everything around it follows the host's theme.
 export default `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
+${SHELL_CSS}
 :root{color-scheme:light dark;--bg:#fff;--fg:#1c2b2d;--mut:#566a6d;--line:#d6dedb;--ac:#b0245f;--btn:#eef2f0;--w0:#2c8794;--w1:#0b3344;--w2:#061722}
 @media (prefers-color-scheme:dark){:root{--bg:#142224;--fg:#e8eeee;--mut:#9bb0b2;--line:#2c4144;--ac:#ff8fb8;--btn:#1d3033;--w0:#1c6470;--w1:#082634;--w2:#040e16}}
 :root[data-theme=light]{color-scheme:light;--bg:#fff;--fg:#1c2b2d;--mut:#566a6d;--line:#d6dedb;--ac:#b0245f;--btn:#eef2f0;--w0:#2c8794;--w1:#0b3344;--w2:#061722}
@@ -56,8 +58,9 @@ body.full #app{min-height:100vh}body.full svg{max-height:calc(100vh - 210px)}
 <p id="legend"></p><p id="note" aria-live="polite"></p>
 <details id="lbox"><summary>The topics as a list</summary><ol id="list"></ol></details></div>
 <script>
+${SHELL_JS}
 var NS = 'http://www.w3.org/2000/svg', MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], ZONES = { surface: 'at the surface', mid: 'mid-water', deep: 'in the deep' };
-var pending = {}, nextId = 2, host = {}, D = null, busy = false, theme = '', lens = '', area = 'ai', picking = false, sel = {}, ctxTimer = 0, scale = 1, ox = 0, oy = 0;
+var pending = {}, nextId = 2, host = {}, D = null, busy = false, theme = '', lens = '', area = 'ai', picking = false, sel = {}, scale = 1, ox = 0, oy = 0;
 var T = 0, playing = false, raf = 0, stepTimer = 0, hot = '', MIN_CLIMB = 0.08, TRAIL = 6, DAY_MS = 750;
 function el(id) { return document.getElementById(id); }
 function send(m) { m.jsonrpc = '2.0'; parent.postMessage(m, '*'); }
@@ -288,6 +291,7 @@ function show(d) {
   el('s').classList.add('hide'); el('app').classList.remove('hide');
   renderBar(); renderLegend(); renderLists(); renderPlay(); draw();
   el('note').textContent = '';
+  UC.suggest(D.questions); UC.refresh(); UC.tell();
 }
 function reload() {
   busy = true; renderBar(); el('note').textContent = 'Reading…';
@@ -322,17 +326,19 @@ el('day').oninput = function () { stop(); T = Number(el('day').value) || 0; draw
 // ---- clicking, picking, asking
 function act(t) {
   if (picking) { if (sel[t.slug]) delete sel[t.slug]; else sel[t.slug] = true; draw(); renderAsk(); sendContext(); return; }
-  // A view cannot swap itself for another tool's view: where the host lets a view message Claude, a click asks Claude to open the topic (get_topic, and the Topic hub is drawn). Elsewhere it opens the page.
-  if (host.message) {
-    request('ui/message', { role: 'user', content: [{ type: 'text', text: 'Show me the topic ' + t.slug + ' (' + t.label + ') from the Undercurrent depth chart.' }] }, 10000, function (err, res) {
-      var n = el('note'); n.textContent = err || (res && res.isError) ? 'Could not send that to Claude. ' : 'Asked Claude to open ' + t.label + '. ';
-      var o = mk('button', '', 'Open the page instead'); o.onclick = function () { openPage(t); }; n.appendChild(o);
-    });
-    return;
-  }
+  // In a host that can run this server's tools the topic opens in place, as a panel of the shell, and Back returns to the chart. On the site the shell declines and the page opens, as before.
+  if (UC.can.panels()) stop();
+  if (UC.open('topic', { topic: t.slug, area: area })) { hideTip(); return; }
   openPage(t);
 }
 function openPage(t) { request('ui/open-link', { url: t.url }, 8000, function (err) { if (err) el('note').textContent = 'This host did not open the page. It is at ' + t.url; }); }
+function siteUrl() {
+  var o = D && D.topics && D.topics[0] && D.topics[0].url ? D.topics[0].url.split('/').slice(0, 3).join('/') : '', q = [];
+  if (!o) return '';
+  if (lens) q.push('lens=' + lens);
+  if (area === 'politics') q.push('area=politics');
+  return o + '/rising' + (q.length ? '?' + q.join('&') : '');
+}
 function describe(t) {
   return '- ' + t.label + ' (topic ' + t.slug + ', ' + (t.zone ? ZONES[t.zone] : 'not there now') + ', breadth ' + pct(t.b[last()] || 0) + (t.rise >= MIN_CLIMB ? ', up ' + Math.round(t.rise * 100) + ' points in ' + D.span + ' days' : '') + (t.reach ? ', ' + t.reach : '') + ')';
 }
@@ -341,11 +347,7 @@ function contextText() {
   if (!list.length) return 'In the Undercurrent depth chart, no topics are picked.';
   return 'In the Undercurrent depth chart (breadth of topics over ' + D.days.length + ' days' + (area === 'politics' ? ', politics' : '') + (D.lens ? ', lens ' + D.lens.name : '') + '), the user picked these topics:\\n' + list.map(describe).join('\\n') + '\\nBreadth is reach (kinds of source, groups, sources), not reactions. Use get_topic with the topic address' + (area === 'politics' ? ' (area politics)' : '') + ' for the summary and evidence.';
 }
-function sendContext() {
-  if (!host.message) return;
-  clearTimeout(ctxTimer);
-  ctxTimer = setTimeout(function () { request('ui/update-model-context', { content: [{ type: 'text', text: contextText() }] }, 8000, function () {}); }, 400);
-}
+function sendContext() { UC.tell(); }
 function askClaude() {
   var list = chosen();
   if (!list.length) return;
@@ -366,6 +368,11 @@ window.addEventListener('message', function (e) {
     if (m.error) { el('s').textContent = 'initialize failed: ' + JSON.stringify(m.error); return; }
     var r = m.result || {}, hc = r.hostContext || {};
     host = r.hostCapabilities || {};
+    UC.init({ title: 'Rising from the deep', host: host, root: el('app'), size: reportSize,
+      note: function (t) { el('note').textContent = t; }, site: siteUrl,
+      context: function () { return D ? contextText() : ''; },
+      state: function () { return { area: area, lens: lens, window: 0 }; },
+      redraw: function () { if (D && !playing) draw(); } });
     setTheme(hc.theme);
     send({ method: 'ui/notifications/initialized' });
     reportSize();

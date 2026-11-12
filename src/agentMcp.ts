@@ -31,7 +31,7 @@ import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPromp
 /** v6: the Ladder as a second picture (the rank of the biggest topics per day, from `ladder` in structuredContent). */
 export const LANDSCAPE_UI = 'ui://undercurrent/landscape-v7.html';
 /** The Depth chart, the view of get_rising. */
-export const DEPTH_UI = 'ui://undercurrent/depth-v1.html';
+export const DEPTH_UI = 'ui://undercurrent/depth-v2.html';
 /** The Topic hub, the view of get_topic. */
 export const TOPIC_UI = 'ui://undercurrent/topic-v4.html';
 /** The Research map, the view of get_papers (it reads its data with get_research_map). */
