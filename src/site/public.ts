@@ -28,6 +28,7 @@ import { CARD_FONT, CARD_W, shareCardSvg } from './shareCard';
 import { svgToPng } from '../media/png';
 import { PHASE_LABEL, PHASE_MARK, PHASE_TRACK, lifecycle, smooth, type Lifecycle } from '../signal/lifecycle';
 import { BRUSH_KINDS, DEFAULT_SORT, BRUSH_SORTS, SORT_LABEL, brushParams, sortNote, type Brush, type BrushSort } from '../signal/brush';
+import { PRISM_H, PRISM_W, prismLayout, type PrismOut } from '../signal/prism';
 import { soften, streamLayout, type StreamLayer } from '../signal/stream';
 import { WEEKDAYS, calendar } from '../signal/calendar';
 import { STREAM_TOPICS, loadOverview, loadRising } from './overview';
@@ -251,6 +252,10 @@ article h3[id^="notable"]+ul{list-style:none;padding:0;display:grid;gap:8px}arti
 .smid{stroke:var(--line);stroke-dasharray:2 4}.sax{fill:var(--muted);font-size:12px}.srail{stroke:var(--line)}.spaper{fill:var(--k-arxiv);stroke:var(--card);stroke-width:1.5}
 .spin circle{fill:var(--card);stroke:var(--text);stroke-width:2}.spin text{fill:var(--text);font-size:11.5px;font-weight:800}
 .k-x{fill:var(--k-x);background:var(--k-x)}.k-hn{fill:var(--k-hn);background:var(--k-hn)}.k-youtube{fill:var(--k-youtube);background:var(--k-youtube)}.k-rss{fill:var(--k-rss);background:var(--k-rss)}
+.prism{max-width:520px;width:100%;height:auto;display:block;margin:0 0 6px}.prism text{font-size:12px;fill:var(--text)}.prism .pn{fill:var(--muted);font-size:11px}.prism .pt{font-size:10px;font-weight:600}
+.pp{fill:color-mix(in srgb,var(--pk,var(--muted)) 20%,var(--card));stroke:var(--pk,var(--muted));stroke-width:1.2}.pp.k-x{--pk:var(--k-x)}.pp.k-hn{--pk:var(--k-hn)}.pp.k-youtube{--pk:var(--k-youtube)}.pp.k-rss{--pk:var(--k-rss)}.pp.other{stroke-dasharray:3 3}
+.pp.on{stroke-width:2.6}.prism a:hover .pp,.prism a:focus-visible .pp{stroke-width:2.4}.prism a:focus-visible{outline:none}.pd{fill:var(--text);opacity:.55}.prism a:hover .pd,.prism a:focus-visible .pd{fill:var(--accent);opacity:1}.pc{fill:var(--card);stroke:var(--line)}
+.plist{list-style:none;margin:0 0 6px;padding:0;display:grid;gap:6px}.plist li{border-left:3px solid var(--line);padding-left:10px}.plist small{color:var(--muted)}
 .sflow{list-style:none;margin:10px 0 4px;padding:0;display:flex;flex-wrap:wrap;gap:6px 10px;font-size:14px}.sflow li{display:flex;align-items:center;gap:6px}.sflow li+li::before{content:"→";color:var(--muted);margin-right:4px}
 .sflow .sk{width:12px;height:12px;border-radius:3px;flex:none}.sflow small{color:var(--muted)}
 :root{--k-x:#1f7a8c;--k-hn:#d9480f;--k-youtube:#c2255c;--k-rss:#6741d9;--k-arxiv:#2b8a3e}
@@ -941,6 +946,43 @@ function timelineHtml(d: TopicData): string {
 <ul class="twords">${timelineWords(dots).map((l) => `<li>${esc(l)}</li>`).join('')}</ul><p class="meta">Each mark stands for the items of one kind of source in a slot of the period (a bigger mark: more items). The most reacted one is named when you hover or focus the mark${d.board.proof ? '' : ', and only on Signals that show their sources'}.</p>`;
 }
 
+/** Prism (B6): the conversations inside the topic as petals, each a link that narrows Talk to it. Inline SVG, no script; the list under it says the same. */
+function prismSvg(d: TopicData, p: PrismOut, b: Brush, from?: From | null): string {
+  const lay = prismLayout(p), f = (v: number) => v.toFixed(1), cut = (t: string, k: number) => (t.length > k ? t.slice(0, k - 1) + '…' : t);
+  const lines = (t: string, max: number): string[] => {
+    if (t.length <= max) return [t];
+    const mids = [...t.matchAll(/ /g)].map((m) => m.index!).sort((x, y) => Math.abs(x - t.length / 2) - Math.abs(y - t.length / 2));
+    return mids.length ? [t.slice(0, mids[0]), t.slice(mids[0] + 1)] : [t];
+  };
+  const body = lay.petals.map((pt) => {
+    const g = p.groups.find((x) => x.id === pt.id), other = !g, kind = g?.kind ?? 'mixed', name = g ? g.name : 'Other', n = g ? g.n : p.other;
+    const cls = `pp${other ? ' other' : kind === 'mixed' ? ' mixed' : ` k-${kind}`}${g && b.conv === g.id ? ' on' : ''}`;
+    const path = `<path class="${cls}" d="${pt.path}"><title>${esc(`${name}: ${n} ${n === 1 ? 'item' : 'items'}`)}</title></path>`;
+    const href = g ? esc(brushHref(d, { ...b, conv: b.conv === g.id ? undefined : g.id }, from)) : '';
+    const shape = g && kind !== 'mixed' ? kindShape(kind, pt.tip[0], pt.tip[1], 4, `k-${kind}`, KIND_NAME[kind]) : '';
+    const dots = d.board.proof ? pt.dots.map((dt) => `<a href="${esc(itemHref(d.slug, dt.id, d.area))}"><circle class="pd" cx="${f(dt.x)}" cy="${f(dt.y)}" r="2.4"><title>${esc(date(dt.ts))}</title></circle></a>`).join('') : '';
+    const ls = lines(name, 16), up = Math.abs(Math.cos(((pt.angle - 90) * Math.PI) / 180)) < 0.3 && pt.label[1] < lay.cy ? ls.length : 0;
+    const [lx, ly] = pt.label, label = `<text x="${f(lx)}" y="${f(ly - up * 13 + 4)}" text-anchor="${pt.anchor}">${ls.map((l, i) => `<tspan x="${f(lx)}"${i ? ' dy="13"' : ''}>${esc(l)}</tspan>`).join('')}<tspan class="pn" x="${f(lx)}" dy="13">${n}</tspan></text>`;
+    return `${href ? `<a href="${href}">${path}</a>` : path}${shape}${dots}${label}`;
+  }).join('');
+  const nm = d.label ? cut(d.label, 22) : '', cl = lines(nm, 11);
+  const centre = `<circle class="pc" cx="${lay.cx}" cy="${lay.cy}" r="${lay.r0}"/><text class="pt" x="${lay.cx}" y="${f(lay.cy + 3 - (cl.length - 1) * 6)}" text-anchor="middle">${cl.map((l, i) => `<tspan x="${lay.cx}"${i ? ' dy="12"' : ''}>${esc(l)}</tspan>`).join('')}</text>`;
+  const aria = `${d.label}: ${p.groups.length} conversations. ${p.groups.map((g) => `${g.name}, ${g.n} ${g.n === 1 ? 'item' : 'items'}`).join('. ')}.`;
+  return `<svg class="prism" viewBox="0 0 ${PRISM_W} ${PRISM_H}" role="img" aria-label="${esc(aria)}">${body}${centre}</svg>`;
+}
+/** Prism (B6): the heading, the picture and the list that says the same in words. '' for a topic without conversations. */
+function prismHtml(d: TopicData, b: Brush, from?: From | null): string {
+  const p = d.prism;
+  if (!p) return '';
+  const items = p.groups.map((g) => {
+    const top = g.typical[0], who = g.kind === 'mixed' ? 'several kinds of source' : `mostly ${KIND_NAME[g.kind]}`;
+    return `<li><a href="${esc(brushHref(d, { ...b, conv: g.id }, from))}"><b>${esc(g.name)}</b></a> <small>${n(g.n)} ${g.n === 1 ? 'item' : 'items'} &middot; ${esc(who)} &middot; from ${esc(shortDay(new Date(g.began).toISOString().slice(0, 10)))}</small>${top ? `<div><a href="${esc(itemHref(d.slug, top.id, d.area))}">Most typical: ${esc(top.title || top.url)}</a></div>` : ''}</li>`;
+  }).join('');
+  return `<div class="prismbox"><h3 class="azh">Conversations inside it</h3>${prismSvg(d, p, b, from)}<ol class="plist">${items}</ol>`
+    + (p.other > 0 ? `<p class="meta">${n(p.other)} more ${p.other === 1 ? 'item is' : 'items are'} in none of these.</p>` : '')
+    + `<p class="meta">The items are grouped by what they say, by a model, and each name was written by a model from the most typical items.${p.groups.some((g) => g.by === 'rule') ? ' A name in quotation marks is the title of the most typical item.' : ''} It can get things wrong.</p></div>`;
+}
+
 /** A smooth band between two edges of a stream: along the top from left to right, back along the bottom (Catmull-Rom as cubic Béziers). */
 function bandPath(xs: number[], top: number[], bottom: number[]): string {
   const seg = (px: number[], py: number[], move: boolean) => {
@@ -1133,7 +1175,8 @@ function brushHref(d: TopicData, b: Brush, from?: From | null): string {
 function brushControls(d: TopicData, b: Brush, from?: From | null): string {
   const bh = (x: Brush) => brushHref(d, x, from);
   const kinds = BRUSH_KINDS.filter((k) => (d.counts[k] ?? 0) > 0);
-  const chips = [b.day ? `Showing <b>${esc(shortDay(b.day))}</b> &middot; <a href="${esc(bh({ ...b, day: undefined }))}">clear</a>` : '', b.kind ? `Showing <b>${esc(KIND_NAME[b.kind])}</b> &middot; <a href="${esc(bh({ ...b, kind: undefined }))}">clear</a>` : '']
+  const chips = [b.day ? `Showing <b>${esc(shortDay(b.day))}</b> &middot; <a href="${esc(bh({ ...b, day: undefined }))}">clear</a>` : '', b.kind ? `Showing <b>${esc(KIND_NAME[b.kind])}</b> &middot; <a href="${esc(bh({ ...b, kind: undefined }))}">clear</a>` : '',
+    b.conv && d.prism?.groups.some((g) => g.id === b.conv) ? `Showing <b>${esc(d.prism.groups.find((g) => g.id === b.conv)!.name)}</b> &middot; <a href="${esc(bh({ ...b, conv: undefined }))}">clear</a>` : '']
     .filter(Boolean).map((c) => `<span class="bchip">${c}</span>`).join('');
   const kindNav = kinds.length > 1 ? `<nav class="sgwin angles bkinds" aria-label="Kinds of source"><span class="blabel">Source</span><a href="${esc(bh({ ...b, kind: undefined }))}"${b.kind ? '' : ' aria-current="page"'}>All</a>${kinds.map((k) => `<a href="${esc(bh({ ...b, kind: k }))}"${b.kind === k ? ' aria-current="page"' : ''}>${esc(KIND_NAME[k])}${b.day ? '' : ` <small>${n(d.counts[k] ?? 0)}</small>`}</a>`).join('')}</nav>` : '';
   const sortNav = `<nav class="sgwin angles bsort" aria-label="Order of the lists"><span class="blabel">Order</span>${BRUSH_SORTS.map((s) => `<a href="${esc(bh({ ...b, sort: s }))}"${b.sort === s ? ' aria-current="page"' : ''}>${SORT_LABEL[s]}</a>`).join('')}</nav>`;
@@ -1153,13 +1196,14 @@ function topicPanel(d: TopicData, angle: Angle, ctx: Ctx, from?: From | null): s
 <ol class="papers">${p.list.map((x) => paperHtml(x, saveCtl(ctx, d, 'papers', x.absUrl))).join('')}</ol><p class="meta">Papers and abstracts from <a href="https://arxiv.org/" rel="noopener noreferrer">arXiv</a>, where each paper is hosted. Upvotes from <a href="https://huggingface.co/papers" rel="noopener noreferrer">Hugging Face Daily Papers</a>; points from Hacker News.</p>`
       : '<p class="meta">No new paper of the last 30 days names this subject.</p>';
   }
-  if (!d.board.proof) return '<p class="note">This Signal shows scores only, not the items behind them.</p>';
-  const b: Brush = d.view ?? { sort: DEFAULT_SORT }, narrow = !!(b.day || b.kind), total = d.view?.counts ?? d.counts;
+  const b: Brush = d.view ?? { sort: DEFAULT_SORT }, pr = prismHtml(d, b, from), convName = b.conv ? d.prism?.groups.find((g) => g.id === b.conv)?.name : undefined;
+  if (!d.board.proof) return pr + '<p class="note">This Signal shows scores only, not the items behind them.</p>';
+  const narrow = !!(b.day || b.kind || b.conv), total = d.view?.counts ?? d.counts;
   const kinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).map((k) => [k, d.talk.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
   const how: Record<BrushSort, string> = { reacted: 'most reacted to', newest: 'newest', earliest: 'earliest', accounts: 'from the accounts with most items' };
   const when = b.day ? `on ${shortDay(b.day)}` : 'in the last week', controls = brushControls(d, b, from);
-  if (narrow && !kinds.length) return `${controls}<p class="meta">Nothing${b.kind ? ` from ${esc(KIND_NAME[b.kind])}` : ''}${b.day ? ` on ${esc(shortDay(b.day))}` : ''} is logged for this topic. <a href="${esc(brushHref(d, { sort: b.sort }, from))}">Clear the filter</a>.</p>`;
-  return kinds.length ? controls + kinds.map(([k, list]) => `<h3 class="azh">${KIND_TITLE[k]} <small>${n(total[k] ?? list.length)} ${when}${(total[k] ?? 0) > list.length ? `, the ${list.length} ${how[b.sort]}` : b.sort !== 'reacted' ? `, ${how[b.sort]}` : ''}</small></h3>
+  if (narrow && !kinds.length) return `${pr}${controls}<p class="meta">Nothing${convName ? ` in ${esc(convName)}` : ''}${b.kind ? ` from ${esc(KIND_NAME[b.kind])}` : ''}${b.day ? ` on ${esc(shortDay(b.day))}` : ''} is logged for this topic. <a href="${esc(brushHref(d, { sort: b.sort }, from))}">Clear the filter</a>.</p>`;
+  return kinds.length ? pr + controls + kinds.map(([k, list]) => `<h3 class="azh">${KIND_TITLE[k]} <small>${n(total[k] ?? list.length)} ${when}${(total[k] ?? 0) > list.length ? `, the ${list.length} ${how[b.sort]}` : b.sort !== 'reacted' ? `, ${how[b.sort]}` : ''}</small></h3>
 <ul class="sgitems">${list.map((i) => `<li><div class="by"><b>${esc(i.source)}</b>${i.by && i.by !== i.source ? ' &middot; ' + esc(i.by) : ''} &middot; ${i.ts ? date(i.ts) : ''}${metricOf(i) ? ` &middot; <span class="chip react">${esc(metricOf(i))}</span>` : ''}</div>
 ${i.id ? `<a href="${esc(itemHref(d.slug, i.id, d.area))}">${esc(i.title || i.url)}</a> <a class="dim" href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank" title="Open the original">original &#8599;</a>`
   : i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${esc(i.title || i.url)}</a>` : esc(i.title)}${i.discussionUrl ? ` <a class="dim" href="${esc(i.discussionUrl)}" rel="noopener noreferrer nofollow" target="_blank">discussion</a>` : ''}${saveCtl(ctx, d, 'talk', i.url)}</li>`).join('')}</ul>`).join('')
@@ -2026,7 +2070,7 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
   if (parts[0] === 't') {   // /t/<slug>[?angle=]: one topic, with its angles
     const slug = parts.length === 2 ? parts[1] : '';
     if (!TOPIC_SLUG.test(slug)) return missing();
-    const r = await loadTopic(env, slug, { area: areaHint(url.searchParams.get('area')), brush: { day: url.searchParams.get('day'), kind: url.searchParams.get('kind'), sort: url.searchParams.get('sort') } });   // ?day=&kind=&sort= narrow and order the Talk list (A5)
+    const r = await loadTopic(env, slug, { area: areaHint(url.searchParams.get('area')), brush: { day: url.searchParams.get('day'), kind: url.searchParams.get('kind'), conv: url.searchParams.get('conv'), sort: url.searchParams.get('sort') } });   // ?day=&kind=&sort= narrow and order the Talk list (A5)
     if (!r) return missing();
     if ('redirect' in r) { const rest = new URLSearchParams(url.search); rest.delete('area'); const tail = rest.toString(); return new Response(null, { status: 301, headers: { location: r.redirect + (tail ? (r.redirect.includes('?') ? '&' : '?') + tail : ''), 'cache-control': 'public, max-age=3600' } }); }
     // A topic belongs to the area of its Signal, whatever the address said: a politics topic opened without a hint still gets the politics menu and leads back to /politics.
@@ -2207,7 +2251,7 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   // The key is the path plus the query parameters a page reads (Signal's sort and group, a topic's angle, the lens), so a sorted page is not served the default one.
   // The report form is never cached: it shows whether a report was sent.
   // A search's words (`q`, at most 80 letters) and kinds are kept whole: cut at 20 letters, two different searches would share one page.
-  const q = new URLSearchParams([...['sort', 'group', 'q', 'kinds', 'page', 'angle', 'lens', 'window', 'area', 'day', 'kind', 'from'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, k === 'q' ? 80 : k === 'from' ? FROM_MAX : k === 'kinds' ? 40 : 20)]] : []))] as [string, string][]).toString();
+  const q = new URLSearchParams([...['sort', 'group', 'q', 'kinds', 'page', 'angle', 'lens', 'window', 'area', 'day', 'kind', 'conv', 'from'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, k === 'q' ? 80 : k === 'from' ? FROM_MAX : k === 'kinds' ? 40 : 20)]] : []))] as [string, string][]).toString();
   // The deployed version is part of the key, so a deploy never serves pages (with an old menu) rendered by the version before.
   const ver = (env as { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? '';
   const key = new Request(url.origin + url.pathname + '?' + new URLSearchParams([...(q ? new URLSearchParams(q) : []), ['v', ver]]).toString(), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/') && !/^\/saved(\/|$)/.test(url.pathname);   // a list made private must be gone at once
