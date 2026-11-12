@@ -25,6 +25,7 @@ import { LADDER_DAYS, LADDER_POOL, LADDER_WINDOW, dayScores, ladderOf, type Ladd
 import { firstByKind, pickWatch, timelineDots, type TopicWatch } from '../signal/topicview';
 import { ITEM_ID, buildCard, inTimeOrder, itemId, type CardTopic, type SourceCard } from '../signal/sourcecard';
 import { brushItems, brushParams, parseBrush, recentDays, TALK_CAP, TALK_CAP_NARROW, type BrushAsk } from '../signal/brush';
+import { numbersLine, oneLine, type TopicBrief } from '../signal/trail';
 import { evidenceSegments, fallbackSummary, topicSlug, topicState, usualLevel, type EvItem, type EvKind, type TopicData, type TopicPaper } from '../signal/topicpage';
 import { areaHint, areaOf, parseArea, rankByArea, type Area } from '../signal/area';
 import { LENS_AREAS, LENS_PALETTE, MAX_LENSES, SUGGEST_TOPICS, cleanLens, lensMatch, lensesOfTopic, paperLensMask, parseSuggestions, seedLenses, suggestSystem, suggestUser, type Lens, type LensArea } from '../signal/lens';
@@ -1658,7 +1659,11 @@ export class MonitorDO extends DurableObject<Env> {
       if (!v.bySlug.has(topicSlug(r))) continue;
       const lead = top.find((t) => t.term === r || t.members.includes(r)), rs = topicSlug(lead?.term ?? r);
       if (seen.has(rs)) continue;
-      seen.add(rs); related.push({ slug: rs, label: lead?.label ?? r });
+      seen.add(rs);
+      // A4, the neighbours strip: state, 14 days of mentions and one line, from the same tables (a cheap count and the stored summary, no item scan).
+      const brief = lead ? await this.topicBrief(v, lead, rs, areaOf(board), groupOf) : null;
+      related.push({ slug: rs, label: lead?.label ?? r, ...(brief ? { state: brief.state, days: brief.days, counts: brief.counts, line: brief.line } : {}) });
+      if (related.length >= 6) break;
     }
     return {
       slug: canonical, term: topic.term, label: topic.label, members: topic.members, board: { slug: board.slug, title: board.title, proof }, area: areaOf(board), alsoIn,
@@ -1671,6 +1676,19 @@ export class MonitorDO extends DurableObject<Env> {
       first: firstByKind(wide, { since: now - 14 * 86_400_000, hide: !proof }), timeline: timelineDots(wide, { from: now - 14 * 86_400_000, to: now, hide: !proof }),
       watch: this.topicWatch(wide, names, proof), heat,
     };
+  }
+  /** The small card of a topic (state, 14 days of mentions, one line): for the related topics of a page and for /t/<slug>/peek. Counts are the terms table's (as the heat calendar's), the line the stored summary's first sentence or one made from the numbers. */
+  private async topicBrief(v: BoardView, t: { term: string; label: string; members: string[]; change: number | null; isNew: boolean }, slug: string, area: Area, groups?: Map<string, string>): Promise<TopicBrief> {
+    const now = Date.now(), days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), boardGroups = new Set(v.board.groups), groupOf = groups ?? (await this.groups()).of;
+    const counts = this.dailyCounts([...new Set([t.term, ...t.members].flatMap((x) => this.namesOf(x)))], (w) => boardGroups.has(groupOf.get(w) ?? ''), days), state = topicState(t);
+    const sm = this.ctx.storage.sql.exec<{ day: string; text: string }>('SELECT day, text FROM topic_summary WHERE slug = ? ORDER BY day DESC LIMIT 1', slug).toArray()[0];
+    const line = (sm && summaryFresh(sm.day) ? oneLine(sm.text) : '') || numbersLine(t.label, state, counts);
+    return { slug, label: t.label, area, state, days, counts, line };
+  }
+  /** One topic's small card by address, for /t/<slug>/peek. Null when no published Signal has it. */
+  private async topicPeek(slug: string, hint: Area | null): Promise<TopicBrief | null> {
+    const found = await this.findTopic(slug, hint);
+    return found ? this.topicBrief(found.v, found.topic, topicSlug(found.topic.term), areaOf(found.v.board)) : null;
   }
   /** Videos and talks on a topic: the Signal's YouTube items (when it shows its sources) and matches from the public feed pages, which are public whatever the Signal shows. */
   private topicWatch(wide: EvItem[], names: string[], proof: boolean): TopicWatch[] {
@@ -1935,6 +1953,14 @@ export class MonitorDO extends DurableObject<Env> {
           if (bk && this.pubCache.size > 300) this.pubCache.delete(this.pubCache.keys().next().value as string);
           this.pubCache.set(k, { at: Date.now(), v });
           if (url.searchParams.get('quiet') !== '1' && this.summaryWake()) await this.reschedule();   // summaries are due: start writing them (a page never waits for one). `quiet`: the public MCP server only reads
+          return v ? json(v) : json({ error: 'not found' }, 404);
+        }
+        if (name === 'topic-peek') {   // the small card of a topic, for /t/<slug>/peek: kept for two minutes
+          const slug = (url.searchParams.get('slug') ?? '').toLowerCase().slice(0, 64), hint = areaHint(url.searchParams.get('area')), k = `peek|${slug}|${hint ?? ''}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return hit.v ? json(hit.v) : json({ error: 'not found' }, 404);
+          const v = await this.topicPeek(slug, hint);
+          if (this.pubCache.size > 300) this.pubCache.delete(this.pubCache.keys().next().value as string);
+          this.pubCache.set(k, { at: Date.now(), v });
           return v ? json(v) : json({ error: 'not found' }, 404);
         }
         if (name === 'topic-item-public') {   // the source card /t/<slug>/i/<id> and the get_item tool: kept for two minutes

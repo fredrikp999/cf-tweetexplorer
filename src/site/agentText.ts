@@ -13,6 +13,7 @@ import type { Layout, ReplayFrame } from '../signal/landscape.ts';
 import { KIND_TITLE, KIND_WORDS, firstCaveat, firstSentence, lagWords, stampUtc, startedWithin, timelineWords, type TopicFirst } from '../signal/topicview.ts';
 import { SEARCH_KINDS, KIND_TITLE as SEARCH_TITLE, type SearchAnswer } from './search.ts';
 import { itemHref, type SourceCard } from '../signal/sourcecard.ts';
+import { fromValue, neighbours, type From } from '../signal/trail.ts';
 import { roughly, STATE_LABEL, topicSlug, type EvItem, type EvKind, type TopicData, type TopicState } from '../signal/topicpage.ts';
 
 export type Detail = 'brief' | 'full';
@@ -167,11 +168,14 @@ const uptakeText = (a: { hf?: { upvotes: number } | null; hn?: { points: number;
   return bits.length ? bits.join('; ') : 'not discussed yet';
 };
 
-export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief', windowDays = 7): Answer {
+/** The list a topic was reached through (the `from` argument of get_topic, A4) and what it holds, in order. */
+export interface Walk { from: From; list: Array<{ slug: string; label: string }> }
+export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief', windowDays = 7, walk?: Walk): Answer {
   const url = origin + topicPath(t.slug, t.area), sep = url.includes('?') ? '&' : '?', full = detail === 'full', st = t.state ? STATE_LABEL[t.state].toLowerCase() : null;
   const recent = t.series.counts.slice(-Math.max(1, Math.min(14, windowDays))).reduce((a, b) => a + b, 0), wd = Math.max(1, Math.min(14, windowDays));
   const talkKinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).filter((k) => t.talk.some((i) => i.kind === k));
   const life = lifecycle(t.series.counts, t.series.days);
+  const nb = walk ? neighbours(walk.list, t.slug) : null;
   const data = {
     slug: t.slug, label: t.label, area: t.area ?? 'ai', url, state: t.state, change: t.change, signal: { score: t.signal, kind: t.kind, groups: t.breadth, signalTitle: t.board.title, url: `${origin}/signal/${t.board.slug}` },
     window: { days: wd, mentions: recent }, period: { from: t.from, to: t.to, days: t.days },
@@ -180,6 +184,7 @@ export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief',
     lifecycle: life ? { phase: life.phase, label: PHASE_LABEL[life.phase], words: life.words, peakDay: t.series.days[life.peak] ?? null, level: life.level } : null,
     talk: t.talk.map((i) => ({ ...i, reactionsText: reactionText(i) })), papers: { matched: t.papers.matched, mentioned: t.papers.mentioned, thanks: ARXIV_THANKS, list: t.papers.list.map((p) => ({ id: p.id, title: p.title, published: p.published, url: p.absUrl, uptake: { discussed: !!(p.attention.hf || p.attention.hn || p.attention.accounts), accounts: p.attention.accounts, hf: p.attention.hf ?? null, hn: p.attention.hn ?? null } })) },
     briefings: (t.briefings ?? []).map((b) => ({ ...b, url: `${origin}/${b.slug}/${b.id}${b.anchor ? '#' + b.anchor : ''}` })), related: t.related.map((r) => ({ ...r, url: origin + topicPath(r.slug, t.area) })), alsoIn: t.alsoIn,
+    list: nb && walk ? { from: fromValue(walk.from), position: nb.index, total: nb.total, previous: nb.prev ?? null, next: nb.next ?? null } : null,
     sourcesShown: t.board.proof,
     first: firstData(t.first), timeline: t.timeline, watch: t.watch.map((v) => ({ ...v, thumbnail: `https://i.ytimg.com/vi/${v.video}/mqdefault.jpg` })),
   };
@@ -195,8 +200,11 @@ export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief',
   const secPap = t.papers.matched ? `## Papers\n${plural(t.papers.matched, 'paper')} on the subject in the last 30 days; ${t.papers.mentioned ? `${t.papers.mentioned} named in posts or on Hacker News` : 'none discussed yet'}. ${link('Papers on the site', url + sep + 'angle=papers')}.\n${t.papers.list.slice(0, full ? 8 : 3).map((p) => `- ${link(p.title, p.absUrl)} ${code(p.id)}, ${day(p.published)}: ${uptakeText(p.attention)}`).join('\n')}\n_${ARXIV_THANKS}_` : '';
   const brs = t.briefings ?? [];
   const secBr = brs.length ? `## In briefings\n${brs.slice(0, full ? 6 : 3).map((b) => `- ${link(`${b.title}${b.theme ? ': ' + b.theme : ''}`, `${origin}/${b.slug}/${b.id}${b.anchor ? '#' + b.anchor : ''}`)} ${code(b.slug)}, ${day(b.publishedAt)}${b.tldr ? ` — ${firstLine(b.tldr, 120)}` : ''}`).join('\n')}` : '';
-  const secRel = t.related.length ? `## Talked about together with\n${t.related.slice(0, 6).map((r) => `- ${link(r.label, origin + topicPath(r.slug, t.area))} ${code(r.slug)}`).join('\n')}` : '';
-  const hints = [t.board.proof && talkKinds.length ? `${code('get_topic_items')} with ${code(`topic: "${t.slug}"`)} for the items behind it` : '', t.papers.list[0] ? `${code('get_paper')} with ${code(`id: "${t.papers.list[0].id}"`)}` : '', brs[0] ? `${code('get_briefing')} with ${code(`topic: "${brs[0].slug}"`)}` : ''].filter(Boolean);
+  const secRel = t.related.length ? `## Talked about together with\n${t.related.slice(0, 6).map((r) => `- ${link(r.label, origin + topicPath(r.slug, t.area))} ${code(r.slug)}${r.state ? ` (${STATE_LABEL[r.state].toLowerCase()})` : ''}${r.line ? `: ${r.line}` : ''}`).join('\n')}` : '';
+  const arg = (slug: string) => `${code('get_topic')} with ${code(`topic: "${slug}"`)}${walk ? ` and ${code(`from: "${fromValue(walk.from)}"`)}` : ''}${(t.area ?? 'ai') === 'ai' ? '' : ` and ${code('area: "politics"')}`}`;
+  const walkHint = nb ? `${nb.next ? `${arg(nb.next.slug)} for the next topic in the list (${nb.index} of ${nb.total}: ${nb.next.label})` : `this is the last of ${nb.total} in the list`}${nb.prev ? `; ${arg(nb.prev.slug)} for the one before (${nb.prev.label})` : ''}` : '';
+  const near = t.related[0] ? `${code('get_topic')} with ${code(`topic: "${t.related[0].slug}"`)} for a neighbour (${t.related[0].label})` : '';
+  const hints = [walkHint, t.board.proof && talkKinds.length ? `${code('get_topic_items')} with ${code(`topic: "${t.slug}"`)} for the items behind it` : '', t.papers.list[0] ? `${code('get_paper')} with ${code(`id: "${t.papers.list[0].id}"`)}` : '', brs[0] ? `${code('get_briefing')} with ${code(`topic: "${brs[0].slug}"`)}` : '', near].filter(Boolean);
   return { text: assemble(lead, [secEv, secFirst, secTalk, secPap, secWatch, secBr, secRel], (hints.join('; ') || `${code('get_overview')} for the landscape`) + '.', detail), data };
 }
 

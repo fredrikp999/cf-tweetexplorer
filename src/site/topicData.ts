@@ -4,6 +4,7 @@ import { topicHref, type Area } from '../signal/area';
 import { ITEM_ID, type CardTopic, type SourceCard } from '../signal/sourcecard';
 import type { BrushAsk } from '../signal/brush';
 import { TOPIC_SLUG, type TopicBriefing, type TopicData } from '../signal/topicpage';
+import type { TopicBrief } from '../signal/trail';
 
 export type TopicLoad = { data: TopicData } | { redirect: string } | null;
 
@@ -44,4 +45,13 @@ export async function loadItemCard(env: Env, slug: string, id: string, area?: Ar
   if (d.redirect) return { redirect: d.redirect };
   if (d.gone && d.topic && d.original) return { gone: { topic: d.topic, original: d.original, discussionUrl: d.discussionUrl ?? '' } };
   return d.card ? { card: d.card } : null;
+}
+
+/** The small card of one topic (state, 14 days, one line) for /t/<slug>/peek: much lighter than the whole topic. Null when no published Signal has it. */
+export async function loadPeek(env: Env, slug: string, area?: Area | null): Promise<TopicBrief | null> {
+  if (!TOPIC_SLUG.test(slug)) return null;
+  const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/topic-peek?slug=${encodeURIComponent(slug)}${area ? '&area=' + area : ''}`));
+  if (!r.ok) { await r.body?.cancel(); return null; }
+  const d = (await r.json().catch(() => null)) as TopicBrief | null;
+  return d?.slug ? d : null;
 }

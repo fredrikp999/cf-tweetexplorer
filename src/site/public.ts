@@ -16,10 +16,13 @@ import type { Stats } from '../history/stats.ts';
 import type { Results, Subject, Theme } from '../history/analysis.ts';
 import { GALAXY_PAGE, MAX_GALAXY_POINTS } from '../history/galaxy.ts';
 import { partsAfterParents } from '../signal/topics';
-import { STATE_LABEL, STATE_MARK, topicSlug, TOPIC_SLUG, roughly, type EvKind, type TopicData, type TopicTalkItem } from '../signal/topicpage';
+import { STATE_LABEL, STATE_MARK, topicSlug, TOPIC_SLUG, roughly, type EvKind, type TopicData, type TopicState, type TopicTalkItem } from '../signal/topicpage';
 import { TIE_MS } from '../signal/first';
 import { KIND_MARK, KIND_TITLE as KIND_NAME, firstCaveat, firstSentence, lagWords, stampUtc, timelineWords, type TimelineDot } from '../signal/topicview';
-import { loadItemCard, loadTopic } from './topicData';
+import { loadItemCard, loadPeek, loadTopic } from './topicData';
+import { KEYS_JS, TRAIL_CSS } from './keys';
+import { FROM_MAX, lensFrom, neighbours, trailJsonLd, trailParts, withFrom, parseFrom, type From, type Neighbours, type TopicBrief, type TrailPart } from '../signal/trail';
+import { resolveFrom, type TrailTopic } from './trailData';
 import { ITEM_ID, itemHref, type CardTopic, type SourceCard } from '../signal/sourcecard';
 import { CARD_FONT, CARD_W, shareCardSvg } from './shareCard';
 import { svgToPng } from '../media/png';
@@ -424,15 +427,38 @@ function bar(ctx: Ctx, active?: Active, page?: Here['page'], board?: string, o: 
 /** Cloudflare Web Analytics for the public pages, from the CF_ANALYTICS_TOKEN secret: page views without cookies. Empty: no script at all. */
 let analyticsToken = '';
 
-function shell(title: string, top: string, body: string, opts: { description?: string; canonical?: string; image?: string; lang?: string; feed?: string; feedTitle?: string; /** The wider column of the landing page and the search. */ wide?: boolean; /** The landing page: its masthead runs up to the top bar. */ home?: boolean } = {}): string {
+function shell(title: string, top: string, body: string, opts: { description?: string; canonical?: string; image?: string; lang?: string; feed?: string; feedTitle?: string; /** A schema.org BreadcrumbList (JSON), for pages that show a trail. */ jsonLd?: string; /** The wider column of the landing page and the search. */ wide?: boolean; /** The landing page: its masthead runs up to the top bar. */ home?: boolean } = {}): string {
   return `<!doctype html><html lang="${opts.lang === 'sv' ? 'sv' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>${opts.description ? `<meta name="description" content="${esc(opts.description.slice(0, 200))}">` : ''}
 <meta property="og:title" content="${esc(title)}">${opts.description ? `<meta property="og:description" content="${esc(opts.description.slice(0, 200))}">` : ''}
 ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}${opts.feed ? `<link rel="alternate" type="application/rss+xml" title="${esc(opts.feedTitle ?? title)}" href="${esc(opts.feed)}">` : ''}${opts.image ? `<meta property="og:image" content="${esc(opts.image)}"><meta name="twitter:card" content="summary_large_image">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Newsreader:opsz,wght@6..72,400..600&display=swap" rel="stylesheet">
-${THEME_INIT}<style>${CSS}${VIZ_CSS}</style>${analyticsToken ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${esc(analyticsToken)}"}'></script>` : ''}</head><body>
+${THEME_INIT}<script src="/viz/keys.js" defer></script>${opts.jsonLd ? `<script type="application/ld+json">${opts.jsonLd}</script>` : ''}<style>${CSS}${VIZ_CSS}${TRAIL_CSS}</style>${analyticsToken ? `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${esc(analyticsToken)}"}'></script>` : ''}</head><body>
 ${top}<div class="app"><main class="page${opts.wide ? ' wide' : ''}${opts.home ? ' home' : ''}">${body}${WAVE}<p class="credit">${ARXIV_THANKS}</p></main></div></body></html>`;
+}
+
+
+// ---- Trails (A4, src/signal/trail.ts): the trail line, previous/next topic, the small topic card (neighbours strip and /t/<slug>/peek).
+/** The trail under the top bar: every part but the page itself is a link; the lens part says it is a lens. */
+function trailHtml(parts: TrailPart[]): string {
+  return `<nav class="trail" aria-label="Trail"><ol>${parts.map((p) => `<li class="tl-${p.kind}">${p.href ? `<a href="${esc(p.href)}">${esc(p.label)}</a>` : `<span aria-current="page">${esc(p.label)}</span>`}${p.kind === 'lens' ? ' <small>(lens)</small>' : ''}</li>`).join('')}</ol></nav>`;
+}
+/** What a trail line adds to a page: the line itself and its JSON-LD for the head. */
+function trailOf(parts: TrailPart[], origin: string): { html: string; jsonLd: string } { return { html: trailHtml(parts), jsonLd: origin ? trailJsonLd(parts, origin) : '' }; }
+const FROM_WORDS = (f: From, lensName?: string) => (f.kind === 'lens' ? (f.key === 'all' ? 'in the ranking' : `in ${lensName ?? 'the lens'}`) : f.kind === 'search' ? `in the search for “${f.q.length > 24 ? f.q.slice(0, 23) + '…' : f.q}”` : 'in the briefing');
+/** "‹ before · 3 of 12 · after ›", with the origin kept on both links. The keys [ and ] follow rel=prev and rel=next. */
+function prevNextHtml(nb: Neighbours<TrailTopic>, from: From, area: Area, lensName?: string): string {
+  const link = (t: TrailTopic | undefined, rel: 'prev' | 'next') => (t ? `<a rel="${rel}" href="${esc(withFrom(topicHref(t.slug, area), from))}">${rel === 'prev' ? '&lsaquo; ' : ''}${esc(t.label)}${rel === 'next' ? ' &rsaquo;' : ''}</a>` : `<span class="none">${rel === 'prev' ? '&lsaquo; start' : 'end &rsaquo;'}</span>`);
+  return `<nav class="trailnav" aria-label="Previous and next topic">${link(nb.prev, 'prev')}<span class="pos">${nb.index} of ${nb.total} ${esc(FROM_WORDS(from, lensName))}</span>${link(nb.next, 'next')}</nav>`;
+}
+type CardIn = { slug: string; label: string; state?: TopicState | null; days?: string[]; counts?: number[]; line?: string };
+/** The small card of a topic: state, one line, 14 days. In the neighbours strip its name is a link (`link`); in the peek it is plain, because the card is only to read. */
+function briefCard(b: CardIn, area: Area, o: { link: boolean; from?: From | null; tag: 'li' | 'div' }): string {
+  const st = b.state ?? null, pill = st ? `<span class="pstate ${st}">${STATE_MARK[st]} ${STATE_LABEL[st]}</span>` : '';
+  const name = o.link ? `<a href="${esc(withFrom(topicHref(b.slug, area), o.from))}">${esc(b.label)}</a>` : `<b>${esc(b.label)}</b>`;
+  const spark = b.counts && b.days && b.counts.length > 1 && b.counts.some((v) => v > 0) ? topicSpark({ days: b.days, counts: b.counts, usual: 0 }) : '';
+  return `<${o.tag} class="${o.link ? 'ncard' : 'peekcard'}${st ? ' st-' + st : ''}"><h3>${name} ${pill}</h3>${b.line ? `<p>${esc(b.line)}</p>` : ''}${spark}</${o.tag}>`;
 }
 
 const NOTE = '<p class="note">Written by an AI from public posts and articles. It can get things wrong: follow the links to read the originals.</p>';
@@ -507,7 +533,7 @@ const riseMark = { new: ['&#9679;', 'New'], rising: ['&#9650;', 'Rising'], falli
 
 export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
   const { window: win, lens, lenses, sig, sig7, extras } = d, area = d.area ?? ctx.area, ai = area === 'ai';
-  const groups = sig?.groups.map((g) => g.name) ?? [];
+  const groups = sig?.groups.map((g) => g.name) ?? [], from = lensFrom(lens?.key, win), tl = (term: string) => esc(withFrom(topicUrl(term, area), from));   // A4: topic links carry the lens ranking they came from, for previous and next
   const topics = (sig?.top ?? []) as SigTopic[];
   const lensName = lens ? lens.name : AREA_LABEL[area];
   const wlabel = win === 1 ? 'Today' : `Last ${win} days`;
@@ -533,7 +559,7 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
     const lines = inBrief(ctx.topics.map((t) => ({ slug: t.slug, title: t.title, publishedAt: t.latest.publishedAt, tldr: t.latest.tldr, themes: t.latest.themes, position: t.position })), top7, lens ? 30 : 5, Date.now(), area)
       .filter((l) => !lens || (l.label ? mine!.has(l.label) : lensMatch(lens, { term: l.text }))).slice(0, 5);
     if (!lines.length) return lens ? `<section aria-labelledby="h-brief"><h2 class="lh" id="h-brief">In brief: ${esc(lens.name)} <a href="${AREA_BRIEFINGS[area]}">Full briefings &rarr;</a></h2><p class="meta">No briefing line today is about ${esc(lens.name)}.</p></section>` : '';
-    return `<section aria-labelledby="h-brief"><h2 class="lh" id="h-brief">In brief${lens ? ': ' + esc(lens.name) : ''} <a href="${AREA_BRIEFINGS[area]}">Full briefings &rarr;</a></h2><ul class="brief">${lines.map((l) => `<li><a href="${esc(l.href)}">${esc(l.text)}</a>${l.topic ? '' : `<small>from the ${esc(l.briefing.title)} briefing</small>`}</li>`).join('')}</ul></section>`;
+    return `<section aria-labelledby="h-brief"><h2 class="lh" id="h-brief">In brief${lens ? ': ' + esc(lens.name) : ''} <a href="${AREA_BRIEFINGS[area]}">Full briefings &rarr;</a></h2><ul class="brief">${lines.map((l) => `<li><a href="${esc(l.topic ? withFrom(l.href, from) : l.href)}">${esc(l.text)}</a>${l.topic ? '' : `<small>from the ${esc(l.briefing.title)} briefing</small>`}</li>`).join('')}</ul></section>`;
   });
 
   // A small map on each briefing card: today's landscape in miniature, with the topics the briefing covers (its themes and TL;DR matched to topic names) lit and the rest faint.
@@ -565,14 +591,14 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
     const max = Math.max(1e-9, ...rank.rows.map((r) => r.topic.signal));
     return `<section aria-labelledby="h-land"><h2 class="lh" id="h-land">The landscape <a href="/signal/${esc(sig!.slug)}${win === 1 ? '/1' : win === 3 ? '/3' : ''}">Signal &rarr;</a></h2>
 <ol class="lrows" aria-label="Topics by Signal score">${rank.rows.map((r, i) => { const t = r.topic, mix = mixText(t.parts, groups);
-      return `<li class="lrow st-${pop(t) || 'steady'}${r.part ? ' part' : ''}${lens ? (r.inLens ? ` lensin lc-${lens.color}` : ' lensout') : ''}" title="${sourceTitle(t)}" style="--i:${i}"><span class="t"><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a></span><span class="lb" aria-hidden="true"><i style="width:${Math.max(2, (100 * t.signal) / max).toFixed(1)}%"></i></span><b>${sigPct(t.signal)}</b><span class="tags">${pill(t)}${lens && r.inLens ? lensTag(lens) : lens ? '' : lensTags(t)}${mix ? `${mixBar(t.parts)}<small class="meta">${esc(mix)}</small>` : ''}</span></li>`; }).join('')}</ol>
+      return `<li class="lrow st-${pop(t) || 'steady'}${r.part ? ' part' : ''}${lens ? (r.inLens ? ` lensin lc-${lens.color}` : ' lensout') : ''}" title="${sourceTitle(t)}" style="--i:${i}"><span class="t"><a href="${tl(t.term)}">${esc(t.label)}</a></span><span class="lb" aria-hidden="true"><i style="width:${Math.max(2, (100 * t.signal) / max).toFixed(1)}%"></i></span><b>${sigPct(t.signal)}</b><span class="tags">${pill(t)}${lens && r.inLens ? lensTag(lens) : lens ? '' : lensTags(t)}${mix ? `${mixBar(t.parts)}<small class="meta">${esc(mix)}</small>` : ''}</span></li>`; }).join('')}</ol>
 ${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in ${esc(lens.name)} come first; the others are dimmed, not removed.` : `No topic in ${esc(lens.name)} is big enough today.`}</p>` : ''}</section>`;
   });
 
   const rising = guard(() => {
     const items = risingStrip(topics, !!sig?.baselineOk);
     if (!items.length) return '';
-    return `<p class="rise" aria-label="Rising and falling"><b>Rising</b>${items.map((r) => `<a href="${topicUrl(r.term, area)}" class="${r.state}"><span aria-hidden="true">${riseMark[r.state][0]}</span> ${esc(r.label)} <small>${r.state === 'new' ? 'new' : r.state === 'rising' ? `rising${r.change ? ` &times;${r.change.toFixed(1)}` : ''}` : 'falling'}</small></a>`).join('')}</p>`;
+    return `<p class="rise" aria-label="Rising and falling"><b>Rising</b>${items.map((r) => `<a href="${tl(r.term)}" class="${r.state}"><span aria-hidden="true">${riseMark[r.state][0]}</span> ${esc(r.label)} <small>${r.state === 'new' ? 'new' : r.state === 'rising' ? `rising${r.change ? ` &times;${r.change.toFixed(1)}` : ''}` : 'falling'}</small></a>`).join('')}</p>`;
   });
 
   const cards = guard(() => {
@@ -583,7 +609,7 @@ ${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in
     if (!list.length) return lens ? `<section aria-labelledby="h-cards"><h2 class="lh" id="h-cards">${head}</h2><p class="meta">No topic in ${esc(lens.name)} is big enough ${win === 1 ? 'today' : 'in this period'}.</p>${out}</section>` : '';
     return `<section aria-labelledby="h-cards"><h2 class="lh" id="h-cards">${head}</h2><ul class="lcards">${list.map(({ topic: t }) => {
       const sp = extras?.series[t.term.toLowerCase()];
-      return `<li class="lcard${lens ? ` lc-${lens.color}` : ''} st-${pop(t) || 'steady'}"><h3><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a> ${pill(t)}</h3><p>${esc(cardLine(t, extras?.lines[topicSlug(t.term)], groups))}</p>${sp && extras ? topicSpark({ days: extras.days, counts: sp, usual: 0 }) + phaseBadge(lifecycle(sp, extras.days), true) : ''}<small>${esc(mixText(t.parts, groups) || (t.kind === 'single' ? 'one group of sources' : ''))}</small></li>`;
+      return `<li class="lcard${lens ? ` lc-${lens.color}` : ''} st-${pop(t) || 'steady'}"><h3><a href="${tl(t.term)}">${esc(t.label)}</a> ${pill(t)}</h3><p>${esc(cardLine(t, extras?.lines[topicSlug(t.term)], groups))}</p>${sp && extras ? topicSpark({ days: extras.days, counts: sp, usual: 0 }) + phaseBadge(lifecycle(sp, extras.days), true) : ''}<small>${esc(mixText(t.parts, groups) || (t.kind === 'single' ? 'one group of sources' : ''))}</small></li>`;
     }).join('')}</ul>${out}</section>`;
   });
 
@@ -595,7 +621,7 @@ ${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in
     // The same two weeks as order instead of volume (the Ladder): a switch when there are both pictures. Radio buttons and CSS, so it works without script and the page stays one cached copy.
     const lad = ladderData(d.ladder, { area, lens, lenses, origin: '' }), ladder = lad ? topicLadder(lad) : '';
     if (rows.length < 2 && !ladder) return '';
-    const vol = rows.length < 2 ? '' : topicStream(rows.map((t) => ({ term: t.term, label: t.label, href: topicUrl(t.term, area), values: ex.series[t.term.toLowerCase()] })), ex.days, lens?.color);
+    const vol = rows.length < 2 ? '' : topicStream(rows.map((t) => ({ term: t.term, label: t.label, href: withFrom(topicUrl(t.term, area), from), values: ex.series[t.term.toLowerCase()] })), ex.days, lens?.color);
     const pics = vol && ladder ? `<div class="vsw"><input type="radio" name="vsw" id="vsw-v" checked><input type="radio" name="vsw" id="vsw-r"><div class="vswt"><span class="lenslbl">Show</span><label for="vsw-v">Volume</label><label for="vsw-r">Rank</label></div><div class="vsv">${vol}</div><div class="vsr">${ladder}</div></div>` : vol || ladder;
     if (rows.length < 2) return `<section aria-labelledby="h-stream"><h2 class="lh" id="h-stream">Two weeks of talk</h2>${pics}</section>`;
     const hm = ex.heat?.counts.some((v) => v > 0) ? `<h3 class="azh">The last ${ex.heat.days.length} days</h3>${heatHtml(ex.heat, `Mentions of these ${rows.length} topics`)}` : '';
@@ -626,14 +652,14 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
     const top = own[0];
     if (!top) return '';
     const riser = risingStrip(lens ? own : topics, !!sig?.baselineOk).find((r) => r.state !== 'falling' && r.term !== top.term);
-    const l = (term: string, label: string) => `<a href="${topicUrl(term, area)}">${esc(label)}</a>`;
+    const l = (term: string, label: string) => `<a href="${tl(term)}">${esc(label)}</a>`;
     // What rises comes first: that is what the name promises. Without a riser, what leads.
     return riser ? `Beneath ${l(top.term, top.label)}, ${l(riser.term, riser.label)} is ${riser.state === 'new' ? 'surfacing' : 'rising'}`
       : `${l(top.term, top.label)} leads the conversation${win === 1 ? ' today' : ` over ${win} days`}`;
   });
   const mini = guard(() => {
     const big = own.slice(0, 6), mx = Math.max(1e-9, big[0]?.signal ?? 0);
-    return big.length ? `<ol class="minibub" aria-label="Biggest topics">${big.map((t, i) => `<li class="${pop(t) || 'steady'}" style="--s:${Math.round(52 + 50 * Math.sqrt(t.signal / mx))}px;animation-delay:${i * 60}ms"><a href="${topicUrl(t.term, area)}">${esc(t.label)}</a></li>`).join('')}</ol>` : '';
+    return big.length ? `<ol class="minibub" aria-label="Biggest topics">${big.map((t, i) => `<li class="${pop(t) || 'steady'}" style="--s:${Math.round(52 + 50 * Math.sqrt(t.signal / mx))}px;animation-delay:${i * 60}ms"><a href="${tl(t.term)}">${esc(t.label)}</a></li>`).join('')}</ol>` : '';
   });
   const bubbles = !!(d.landscape?.bubbles.length && rank.rows.length);
   const graphic = bubbles ? `<div class="mastviz landscape-graphic" id="landscape-graphic">${vizFrame('landscape', `/overview.json?window=${win}${lens ? '&amp;lens=' + encodeURIComponent(lens.key) : ''}${ai ? '' : '&amp;area=politics'}`, 'The landscape: a bubble for each topic, sized by its score, grouped by topics talked about together. The ranked list on this page says the same.')}</div>` : '';
@@ -743,7 +769,7 @@ export function researchTopicHtml(d: PubResearchPage, ctx: Ctx): string {
   const t = d.topic, base = `/research/${esc(t.slug)}`;
   const facts = t.state === 'building' ? 'Collecting past weeks to compare with.' : `${n(t.n)} new papers, ${esc(t.from)} to ${esc(t.end)}: ${pct1(t.share)} of AI papers, against a usual ${pct1(t.baseline)}.`;
   const pager = d.pages > 1 ? `<nav class="pager" aria-label="Pages">${d.page > 1 ? `<a href="${base}${d.page > 2 ? `?page=${d.page - 1}` : ''}" rel="prev">&larr; Newer</a>` : '<span></span>'}<span>Page ${n(d.page)} of ${n(d.pages)}</span>${d.page < d.pages ? `<a href="${base}?page=${d.page + 1}" rel="next">Older &rarr;</a>` : '<span></span>'}</nav>` : '';
-  return shell(`${t.title} · Research pulse · Undercurrent`, bar(ctx, undefined, 'research'), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h1>
+  return shell(`${t.title} · Research pulse · Undercurrent`, bar(ctx, undefined, 'research'), `${trailHtml(trailParts({ area: 'ai', section: [{ label: 'Research pulse', href: '/research' }, { label: t.title }] }))}<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>${esc(t.title)} <span class="pstate ${t.state}">${PULSE_LABEL[t.state]}${t.sustained ? ', second week' : ''}</span></h1>
 ${t.blurb ? `<p class="lede">${esc(t.blurb)}</p>` : ''}<p class="meta">${facts}${d.others.length ? ` Other topics: ${d.others.map((x) => `<a href="/research/${esc(x.slug)}">${esc(x.title)}</a>`).join(', ')}.` : ''}</p></header>
 ${skyHtml(d.sky)}
 ${d.attention.length ? `<h2>Getting attention</h2><p class="meta">From the last ${d.topDays} days: upvotes on Hugging Face, points on Hacker News, and posts collected on this site that link to a paper. Attention is not quality, and most new papers have not had time to get any.</p><ol class="papers">${d.attention.map((p) => paperHtml(p)).join('')}</ol>` : ''}
@@ -1065,18 +1091,19 @@ function watchPanel(d: TopicData, ctx: Ctx): string {
 // ---- The source card /t/<slug>/i/<id> (src/signal/sourcecard.ts): level 3. One item, with what only this site knows. Plain HTML, no script.
 const OPEN_LABEL: Record<EvKind, string> = { x: 'Open the post on X', hn: 'Open the article', youtube: 'Watch on YouTube', rss: 'Read the original', arxiv: 'Open the paper' };
 const gapWords = (ms: number) => (ms < 60_000 ? 'under a minute' : lagWords(ms));
-export function itemCardHtml(c: SourceCard, ctx: Ctx, origin = ''): string {
-  const i = c.item, t = c.topic, here = topicHref(t.slug, t.area), link = (u: string) => `href="${esc(u)}" rel="noopener noreferrer nofollow" target="_blank"`;
+export function itemCardHtml(c: SourceCard, ctx: Ctx, origin = '', from: From | null = null): string {
+  const i = c.item, t = c.topic, here = withFrom(topicHref(t.slug, t.area), from), link = (u: string) => `href="${esc(u)}" rel="noopener noreferrer nofollow" target="_blank"`;
   const who = [i.by && i.kind === 'x' ? '@' + i.by.replace(/^@/, '') : i.by, i.source && i.source !== i.by ? i.source : '', i.ts ? stampUtc(i.ts) : ''].filter(Boolean);
   const disc = i.discussionUrl && i.discussionUrl !== i.url ? `<a href="${esc(i.discussionUrl)}" rel="noopener noreferrer nofollow" target="_blank">${i.kind === 'hn' ? 'Discussion on Hacker News' : 'The discussion'} &#8599;</a>` : '';
   const nums = c.reactions.length ? `<ul class="nums" aria-label="Reactions, in the unit this source uses">${c.reactions.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : i.kind === 'rss' ? '<p class="meta">Blogs and news give no reaction counts.</p>' : '<p class="meta">No reaction counts were recorded for this item.</p>';
   const near = (n: SourceCard['before'], dir: 'before' | 'after') => n
-    ? `<li><small>${dir === 'before' ? 'Before' : 'After'}, ${esc(gapWords(n.gap))} ${dir === 'before' ? 'earlier' : 'later'} &middot; ${esc(KIND_NAME[n.kind])}</small><a href="${esc(itemHref(t.slug, n.id, t.area))}">${esc(n.title || 'Untitled')}</a>${n.by ? ` <small>${esc(n.by)}</small>` : ''}</li>`
+    ? `<li><small>${dir === 'before' ? 'Before' : 'After'}, ${esc(gapWords(n.gap))} ${dir === 'before' ? 'earlier' : 'later'} &middot; ${esc(KIND_NAME[n.kind])}</small><a href="${esc(withFrom(itemHref(t.slug, n.id, t.area), from))}">${esc(n.title || 'Untitled')}</a>${n.by ? ` <small>${esc(n.by)}</small>` : ''}</li>`
     : `<li class="none"><small>${dir === 'before' ? 'Before' : 'After'}</small>${dir === 'before' ? 'Nothing earlier in this topic' : 'Nothing later in this topic'}</li>`;
   const copies = c.copies === null ? '' : `<h2 class="sect">Said the same</h2><p>${c.copies ? `${n(c.copies)} later ${c.copies === 1 ? 'post' : 'posts'} saying nearly the same ${c.copies === 1 ? 'was' : 'were'} folded into this one, so ${c.copies === 1 ? 'it is' : 'they are'} not counted again.` : 'No later post saying the same was folded into this one.'}</p>`;
   const also = c.alsoIn.length ? `<h2 class="sect">Also in</h2><p>${c.alsoIn.map((o) => `<a href="${esc(topicHref(o.slug, t.area))}">${esc(o.label)}</a>`).join(' &middot; ')}</p>` : '';
   const title = i.title || i.url;
-  return shell(`${title.length > 70 ? title.slice(0, 69) + '…' : title} · ${t.label} · Undercurrent`, bar(ctx, undefined, 'topics'), `<div class="icard"><header class="pagehead"><div class="eyebrow"><a href="${esc(here)}">&larr; ${esc(t.label)}</a> &middot; ${esc(KIND_NAME[i.kind])}</div><h1>${esc(title)}</h1>
+  const tr = trailOf(trailParts({ area: t.area, from, lenses: ctx.lenses, briefingTitle: from?.kind === 'briefing' ? ctx.topics.find((x) => x.slug === from.slug)?.title : undefined, topic: { slug: t.slug, label: t.label }, item: title }), origin);
+  return shell(`${title.length > 70 ? title.slice(0, 69) + '…' : title} · ${t.label} · Undercurrent`, bar(ctx, undefined, 'topics'), `${tr.html}<div class="icard"><header class="pagehead"><div class="eyebrow"><a href="${esc(here)}">&larr; ${esc(t.label)}</a> &middot; ${esc(KIND_NAME[i.kind])}</div><h1>${esc(title)}</h1>
 <p class="who">${esc(who.join(' · '))}</p>
 <p class="out"><a class="go" ${link(i.url)}>${esc(OPEN_LABEL[i.kind])} &#8599;</a>${disc}</p></header>
 ${nums}
@@ -1086,7 +1113,7 @@ ${copies}
 <p class="meta">In the order of this topic&rsquo;s items over the last two weeks (${n(c.why.among)} with an address), across all kinds of source.</p>
 ${also}
 <p class="note">As on the topic page, only the title and the link of an item are shown; both are the original publisher&rsquo;s. Reactions are in the unit each source gives and are never added together.</p></div>`,
-  { description: `${title}${who.length ? ' (' + who.join(', ') + ')' : ''}: where it stands in the talk about ${t.label}.`, canonical: origin ? origin + itemHref(t.slug, c.id, t.area) : undefined });
+  { jsonLd: tr.jsonLd, description: `${title}${who.length ? ' (' + who.join(', ') + ')' : ''}: where it stands in the talk about ${t.label}.`, canonical: origin ? origin + itemHref(t.slug, c.id, t.area) : undefined });
 }
 /** The 410 page: the card is gone (the item has left the topic), the original is not. */
 export function itemGoneHtml(g: { topic: CardTopic; original: string; discussionUrl: string }, ctx: Ctx): string {
@@ -1097,20 +1124,21 @@ export function itemGoneHtml(g: { topic: CardTopic; original: string; discussion
 }
 
 /** The address of the Talk list with a day, a kind and an order chosen (the default order is left out), landing on the list. Every picture and chip that filters links here. */
-function brushHref(d: TopicData, b: Brush): string {
+function brushHref(d: TopicData, b: Brush, from?: From | null): string {
   const base = topicHref(d.slug, d.area), q = brushParams(b).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
-  return base + (q ? (base.includes('?') ? '&' : '?') + q : '') + '#angle';
+  return withFrom(base + (q ? (base.includes('?') ? '&' : '?') + q : '') + '#angle', from);
 }
 /** The controls above Talk: what is shown (day and kind, each with a way to clear it), the kinds to choose from, and the order. Plain links, so a filter is an address that can be shared. */
-function brushControls(d: TopicData, b: Brush): string {
+function brushControls(d: TopicData, b: Brush, from?: From | null): string {
+  const bh = (x: Brush) => brushHref(d, x, from);
   const kinds = BRUSH_KINDS.filter((k) => (d.counts[k] ?? 0) > 0);
-  const chips = [b.day ? `Showing <b>${esc(shortDay(b.day))}</b> &middot; <a href="${esc(brushHref(d, { ...b, day: undefined }))}">clear</a>` : '', b.kind ? `Showing <b>${esc(KIND_NAME[b.kind])}</b> &middot; <a href="${esc(brushHref(d, { ...b, kind: undefined }))}">clear</a>` : '']
+  const chips = [b.day ? `Showing <b>${esc(shortDay(b.day))}</b> &middot; <a href="${esc(bh({ ...b, day: undefined }))}">clear</a>` : '', b.kind ? `Showing <b>${esc(KIND_NAME[b.kind])}</b> &middot; <a href="${esc(bh({ ...b, kind: undefined }))}">clear</a>` : '']
     .filter(Boolean).map((c) => `<span class="bchip">${c}</span>`).join('');
-  const kindNav = kinds.length > 1 ? `<nav class="sgwin angles bkinds" aria-label="Kinds of source"><span class="blabel">Source</span><a href="${esc(brushHref(d, { ...b, kind: undefined }))}"${b.kind ? '' : ' aria-current="page"'}>All</a>${kinds.map((k) => `<a href="${esc(brushHref(d, { ...b, kind: k }))}"${b.kind === k ? ' aria-current="page"' : ''}>${esc(KIND_NAME[k])}${b.day ? '' : ` <small>${n(d.counts[k] ?? 0)}</small>`}</a>`).join('')}</nav>` : '';
-  const sortNav = `<nav class="sgwin angles bsort" aria-label="Order of the lists"><span class="blabel">Order</span>${BRUSH_SORTS.map((s) => `<a href="${esc(brushHref(d, { ...b, sort: s }))}"${b.sort === s ? ' aria-current="page"' : ''}>${SORT_LABEL[s]}</a>`).join('')}</nav>`;
+  const kindNav = kinds.length > 1 ? `<nav class="sgwin angles bkinds" aria-label="Kinds of source"><span class="blabel">Source</span><a href="${esc(bh({ ...b, kind: undefined }))}"${b.kind ? '' : ' aria-current="page"'}>All</a>${kinds.map((k) => `<a href="${esc(bh({ ...b, kind: k }))}"${b.kind === k ? ' aria-current="page"' : ''}>${esc(KIND_NAME[k])}${b.day ? '' : ` <small>${n(d.counts[k] ?? 0)}</small>`}</a>`).join('')}</nav>` : '';
+  const sortNav = `<nav class="sgwin angles bsort" aria-label="Order of the lists"><span class="blabel">Order</span>${BRUSH_SORTS.map((s) => `<a href="${esc(bh({ ...b, sort: s }))}"${b.sort === s ? ' aria-current="page"' : ''}>${SORT_LABEL[s]}</a>`).join('')}</nav>`;
   return `<div class="brush">${chips ? `<div class="bchips">${chips}</div>` : ''}${kindNav}${sortNav}<p class="meta">${esc(sortNote(b.sort))}</p></div>`;
 }
-function topicPanel(d: TopicData, angle: Angle, ctx: Ctx): string {
+function topicPanel(d: TopicData, angle: Angle, ctx: Ctx, from?: From | null): string {
   if (angle === 'first') return firstPanel(d);
   if (angle === 'watch') return watchPanel(d, ctx);
   if (angle === 'briefings') {
@@ -1128,8 +1156,8 @@ function topicPanel(d: TopicData, angle: Angle, ctx: Ctx): string {
   const b: Brush = d.view ?? { sort: DEFAULT_SORT }, narrow = !!(b.day || b.kind), total = d.view?.counts ?? d.counts;
   const kinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).map((k) => [k, d.talk.filter((i) => i.kind === k)] as const).filter(([, l]) => l.length);
   const how: Record<BrushSort, string> = { reacted: 'most reacted to', newest: 'newest', earliest: 'earliest', accounts: 'from the accounts with most items' };
-  const when = b.day ? `on ${shortDay(b.day)}` : 'in the last week', controls = brushControls(d, b);
-  if (narrow && !kinds.length) return `${controls}<p class="meta">Nothing${b.kind ? ` from ${esc(KIND_NAME[b.kind])}` : ''}${b.day ? ` on ${esc(shortDay(b.day))}` : ''} is logged for this topic. <a href="${esc(brushHref(d, { sort: b.sort }))}">Clear the filter</a>.</p>`;
+  const when = b.day ? `on ${shortDay(b.day)}` : 'in the last week', controls = brushControls(d, b, from);
+  if (narrow && !kinds.length) return `${controls}<p class="meta">Nothing${b.kind ? ` from ${esc(KIND_NAME[b.kind])}` : ''}${b.day ? ` on ${esc(shortDay(b.day))}` : ''} is logged for this topic. <a href="${esc(brushHref(d, { sort: b.sort }, from))}">Clear the filter</a>.</p>`;
   return kinds.length ? controls + kinds.map(([k, list]) => `<h3 class="azh">${KIND_TITLE[k]} <small>${n(total[k] ?? list.length)} ${when}${(total[k] ?? 0) > list.length ? `, the ${list.length} ${how[b.sort]}` : b.sort !== 'reacted' ? `, ${how[b.sort]}` : ''}</small></h3>
 <ul class="sgitems">${list.map((i) => `<li><div class="by"><b>${esc(i.source)}</b>${i.by && i.by !== i.source ? ' &middot; ' + esc(i.by) : ''} &middot; ${i.ts ? date(i.ts) : ''}${metricOf(i) ? ` &middot; <span class="chip react">${esc(metricOf(i))}</span>` : ''}</div>
 ${i.id ? `<a href="${esc(itemHref(d.slug, i.id, d.area))}">${esc(i.title || i.url)}</a> <a class="dim" href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank" title="Open the original">original &#8599;</a>`
@@ -1137,15 +1165,16 @@ ${i.id ? `<a href="${esc(itemHref(d.slug, i.id, d.area))}">${esc(i.title || i.ur
     + '<p class="note">Titles and links are those of the original publishers. A title opens its card here, with the context only this site has; <em>original</em> opens the source itself.</p>' : '<p class="meta">Nothing is logged for the last week.</p>';
 }
 
-export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', lenses: Lens[] = []): string {
-  const st = d.state, sm = d.summary, inLenses = lensesOfTopic(lenses, d);
+/** `trail`: where the reader came from (`from=`) and the topic's place in that list (A4); both absent on a plain visit. */
+export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', lenses: Lens[] = [], trail: { from: From | null; nav: Neighbours<TrailTopic> | null } = { from: null, nav: null }): string {
+  const from = trail.from, st = d.state, sm = d.summary, inLenses = lensesOfTopic(lenses, d);
   const lensLine = inLenses.length ? `<p class="meta">In ${inLenses.length === 1 ? 'the lens' : 'the lenses'}: ${inLenses.map((l) => `<a class="lenstag lc-${l.color}" href="/topics?lens=${esc(l.key)}${d.area === 'politics' ? '&amp;area=politics' : ''}" data-lens="${esc(l.key)}" title="See the topics of this lens">${esc(l.name)}</a>`).join(' ')}</p>` : '';
   const pill = st ? `<span class="pstate ${st}">${STATE_MARK[st]} ${STATE_LABEL[st]}</span>` : '';
   const written = sm ? `<details class="sumfrom"><summary>Written by an AI on ${esc(sm.day)} from ${n(sm.itemCount)} item${sm.itemCount === 1 ? '' : 's'}. It can get things wrong.</summary>${sm.items.length ? `<ul>${sm.items.map((i) => `<li>${i.url ? `<a href="${esc(i.url)}" rel="noopener noreferrer nofollow" target="_blank">${esc(i.title || i.url)}</a>` : esc(i.title)}${i.by ? ` <small>${esc(i.by)}</small>` : ''}</li>`).join('')}</ul>` : '<p class="meta">This Signal does not list the items.</p>'}</details>`
     : '<p class="meta">No written summary yet: this line is made from the numbers.</p>';
   const counts = (Object.entries(d.counts) as Array<[EvKind, number]>).map(([k, v]) => `${n(v)} on ${esc({ x: 'X', hn: 'Hacker News', youtube: 'YouTube', rss: 'blogs and news', arxiv: 'papers' }[k])}`).join(' &middot; ');
   const count = (a: Angle) => (a === 'talk' ? d.total : a === 'first' ? d.first.arrivals.length : a === 'watch' ? d.watch.length : a === 'briefings' ? d.briefings?.length ?? 0 : d.papers.matched);
-  const tabs = `<nav class="sgwin angles" aria-label="Angles on this topic">${ANGLES.map(([k, label]) => `<a href="${esc(topicHref(d.slug, d.area, k === 'talk' ? undefined : k))}"${angle === k ? ' aria-current="page"' : ''}>${label} <small>${n(count(k))}</small></a>`).join('')}</nav>`;
+  const tabs = `<nav class="sgwin angles" aria-label="Angles on this topic">${ANGLES.map(([k, label]) => `<a href="${esc(withFrom(topicHref(d.slug, d.area, k === 'talk' ? undefined : k), from))}"${angle === k ? ' aria-current="page"' : ''}>${label} <small>${n(count(k))}</small></a>`).join('')}</nav>`;
   const names = d.members.length ? `Also counted under: ${esc(d.members.join(', '))}. ` : '';
   // The same name can be a topic in the other area too: it has its own page there (?area=), and is not mixed into this one.
   const here = d.alsoIn.filter((b) => (b.area ?? 'ai') === d.area), other = [...new Set(d.alsoIn.filter((b) => (b.area ?? 'ai') !== d.area).map((b) => b.area ?? 'ai'))];
@@ -1154,9 +1183,11 @@ export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', len
   const summary = sm?.text ?? d.fallback;
   // A5: the marks of the pictures filter the Talk list by address. Only days the list covers (from the start of the window, which the Monitor checks too) are links.
   const view: Brush = d.view ?? { sort: DEFAULT_SORT }, shown = new Set(d.series.days.filter((x) => x >= d.from)), canBrush = d.board.proof && shown.size > 0;
-  const dayLink = canBrush ? (day: string) => (shown.has(day) ? brushHref(d, { ...view, day: view.day === day ? undefined : day }) : null) : undefined;
-  const kindLink = canBrush ? (kind: EvKind) => brushHref(d, { ...view, kind: view.kind === kind ? undefined : kind }) : undefined;
-  return shell(`${d.label} · Topic · Undercurrent`, bar(ctx, undefined, 'topics'), `<header class="pagehead"><div class="eyebrow">${areaLink}Topic &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a></div><h1>${esc(d.label)} ${pill}</h1>
+  const dayLink = canBrush ? (day: string) => (shown.has(day) ? brushHref(d, { ...view, day: view.day === day ? undefined : day }, from) : null) : undefined;
+  const kindLink = canBrush ? (kind: EvKind) => brushHref(d, { ...view, kind: view.kind === kind ? undefined : kind }, from) : undefined;
+  const lensName = from?.kind === 'lens' ? lenses.find((l) => l.key === from.key)?.name : undefined, briefing = from?.kind === 'briefing' ? ctx.topics.find((t) => t.slug === from.slug)?.title : undefined;
+  const tr = trailOf(trailParts({ area: d.area, from, lenses, briefingTitle: briefing, topic: { slug: d.slug, label: d.label }, angle: angle === 'talk' ? null : { key: angle, label: ANGLES.find(([k]) => k === angle)?.[1] ?? angle } }), origin);
+  return shell(`${d.label} · Topic · Undercurrent`, bar(ctx, undefined, 'topics'), `${tr.html}${from && trail.nav ? prevNextHtml(trail.nav, from, d.area, lensName) : ''}<header class="pagehead"><div class="eyebrow">${areaLink}Topic &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a></div><h1>${esc(d.label)} ${pill}</h1>
 <p class="lede">${esc(summary)}</p>${written}${lensLine}${topicActions(ctx, d)}</header>
 ${lifeHtml(d.series, dayLink, view.day)}
 <p class="meta">Items per day over the last 14 days: bars for each day${dayLink ? ' (a bar shows that day in Talk)' : ''}, the curve their three-day average${d.series.usual ? ', the dashed line the usual level' : ''}. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p>
@@ -1165,9 +1196,9 @@ ${spreadHtml(d, kindLink, view.kind)}
 ${timelineHtml(d)}
 ${d.heat?.counts.some((v) => v > 0) ? `<h2 class="sect">The last ${d.heat.days.length} days</h2>${heatHtml(d.heat, `Mentions of ${d.label}`, dayLink, view.day)}<p class="meta">Mentions per day as Signal counts them (the topic&rsquo;s names in the items of its sources), over all the days the counts are kept.</p>` : ''}
 <h2 class="sect">The angles</h2>${tabs}
-<section id="angle">${topicPanel(d, angle, ctx)}</section>
-${d.related.length ? `<h2 class="sect">Goes with</h2><p class="meta">${d.related.map((r) => `<a href="${esc(topicHref(r.slug, d.area))}">${esc(r.label)}</a>`).join(' &middot; ')}</p>` : ''}`,
-  { description: summary, canonical: origin ? origin + topicHref(d.slug, d.area) : undefined, image: origin ? origin + cardHref(d.slug, d.area) : undefined });
+<section id="angle">${topicPanel(d, angle, ctx, from)}</section>
+${d.related.length ? `<h2 class="sect">Goes with</h2><ul class="ncards">${d.related.map((r) => briefCard(r, d.area, { link: true, from, tag: 'li' })).join('')}</ul>` : ''}`,
+  { description: summary, jsonLd: tr.jsonLd, canonical: origin ? origin + topicHref(d.slug, d.area) : undefined, image: origin ? origin + cardHref(d.slug, d.area) : undefined });
 }
 
 // ---- The signed-in reader (src/site/me.ts): their topics on the front page, Follow and Ask Claude on a topic page, and /me. Only on pages made for them.
@@ -1555,7 +1586,7 @@ const mentioned = (strip: SigStrip | undefined, text: string) => {
   const low = text.toLowerCase();
   return (strip?.topics ?? []).filter((t) => [t.label, t.term].some((x) => x.length >= 3 && new RegExp(`(^|[^\\p{L}\\p{N}])${x.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u').test(low)));
 };
-const sigChip = (strip: SigStrip, t: SigStrip['topics'][number]) => `<a class="chip sig" href="${topicUrl(t.term, strip.area)}">${esc(t.label)}</a>`;
+const sigChip = (strip: SigStrip, t: SigStrip['topics'][number], from?: From) => `<a class="chip sig" href="${esc(withFrom(topicUrl(t.term, strip.area), from))}">${esc(t.label)}</a>`;
 
 /**
  * A briefing as a page: the TL;DR, "In brief" (its themes, linked), then each theme under its heading with whether it is new or carries on from the
@@ -1564,6 +1595,7 @@ const sigChip = (strip: SigStrip, t: SigStrip['topics'][number]) => `<a class="c
 export function issueHtml(p: PubPage, origin: string, ctx: Ctx, strip?: SigStrip): string {
   const { topic, issue, archive } = p;
   const idx = archive.findIndex((a) => a.id === issue.id), isLatest = idx === 0, older = idx >= 0 ? archive[idx + 1] : undefined, newer = idx > 0 ? archive[idx - 1] : undefined;
+  const from: From = { kind: 'briefing', slug: topic.slug, id: issue.id };   // A4: a topic opened from a theme leads on to the next topic of the briefing
   const lang = langOf(issue.markdown), L = LABELS[lang];
   const secs = sectionsOf(issue.markdown), themes = secs.filter((x) => !isMeta(x.title));
   const marks = continuity(themes.map((x) => x.title), older?.themes);
@@ -1578,7 +1610,7 @@ export function issueHtml(p: PubPage, origin: string, ctx: Ctx, strip?: SigStrip
     const m = mark.get(anchor), topics = strip ? mentioned(strip, `${sec.title}\n${sec.body}`) : [];
     topics.forEach((t) => used.add(t.term));
     const handles = [...new Set([...sec.body.matchAll(/\[@?([A-Za-z0-9_]{1,15})\]\(https:\/\/(?:x|twitter)\.com\//g)].map((x) => '@' + x[1]))];
-    const tags = (m ? `<span class="chip ${m === 'new' ? 'up' : ''}">${m === 'new' ? L.isNew : L.cont}</span>` : '') + (strip ? topics.map((t) => sigChip(strip, t)).join('') : '');
+    const tags = (m ? `<span class="chip ${m === 'new' ? 'up' : ''}">${m === 'new' ? L.isNew : L.cont}</span>` : '') + (strip ? topics.map((t) => sigChip(strip, t, from)).join('') : '');
     const report = `<a class="rep" href="/report/${esc(topic.slug)}/${esc(issue.id)}?theme=${encodeURIComponent(sec.title)}" rel="nofollow">${L.report}</a>`;
     return `${head}${tags ? `<div class="thm">${tags}</div>` : ''}${rest}<p class="cites">${handles.length ? `${L.sources}: ${handles.map(esc).join(' &middot; ')} &middot; ` : ''}${report}</p>`;
   });
@@ -1590,7 +1622,7 @@ export function issueHtml(p: PubPage, origin: string, ctx: Ctx, strip?: SigStrip
   const day = (b: Brief | undefined, label: string, cls: string) => (b ? `<a class="${cls}" href="/${esc(topic.slug)}/${esc(b.id)}"><small>${label}</small>${date(b.publishedAt)}</a>` : '<span></span>');
   const others = ctx.topics.filter((t) => t.slug !== topic.slug && Date.now() - t.latest.publishedAt < 36 * 3600_000).sort((a, b) => b.latest.publishedAt - a.latest.publishedAt);
   return topicPage(topic, isLatest ? 'latest' : 'issue', Math.max(0, archive.length - 1), `<p class="meta">${stamp(issue.publishedAt)} · ${readingMinutes(issue.markdown)} ${L.read} · ${L.based} ${issue.tweets} ${unit(issue)} ${L.from} ${span(issue.windowHours)}${isLatest ? '' : ` · <a href="/${esc(topic.slug)}">${L.seeLatest}</a>`}</p>
-${listenHtml(topic.slug, issue)}${imageHtml(topic.slug, issue)}<article lang="${lang}">${body}</article>${strip && rest.length ? `<p class="thm">${L.signal}: ${rest.map((t) => sigChip(strip, t)).join('')}</p>` : ''}${sourcesHtml(issue)}
+${listenHtml(topic.slug, issue)}${imageHtml(topic.slug, issue)}<article lang="${lang}">${body}</article>${strip && rest.length ? `<p class="thm">${L.signal}: ${rest.map((t) => sigChip(strip, t, from)).join('')}</p>` : ''}${sourcesHtml(issue)}
 <nav class="daynav" aria-label="Days">${day(older, L.older, 'prev')}${day(newer, L.newer, 'next')}</nav>
 ${others.length ? `<h2 class="sect">${L.others}</h2><ul class="others">${others.map((t) => `<li><a href="/${esc(t.slug)}">${esc(t.title)}</a>${t.latest.tldr ? `<span>${inline(t.latest.tldr)}</span>` : ''}</li>`).join('')}</ul>` : ''}
 ${NOTE}<p class="note"><a href="/report/${esc(topic.slug)}/${esc(issue.id)}" rel="nofollow">${L.report}</a>${listTotal(ctx) ? ` &middot; <a href="/lists">${L.listAll} &rarr;</a>` : ''}</p>`,
@@ -1697,7 +1729,7 @@ export function searchHtml(ctx: Ctx, a: SearchAnswer, lenses: Lens[] = [], lens?
     const tags = t.lenses.map((key) => lensBy.get(key)).filter((l): l is Lens => !!l).slice(0, 2).map(lensTag).join(' ');
     const st = t.state ? `<span class="pstate ${t.state}">${STATE_MARK[t.state]} ${STATE_LABEL[t.state]}</span>` : '';
     const why = t.field === 'member' ? `Also counted as “${esc(t.because ?? '')}”` : t.field === 'summary' ? `In its summary: ${esc(t.because ?? '')}` : '';
-    return `<li${lens ? (t.inLens ? ` class="lensin lc-${lens.color}"` : ' class="lensout"') : ''}><div class="by">${st}${st && tags ? ' ' : ''}${tags}</div><a href="${esc(topicHref(t.slug, area))}">${esc(t.label)}</a>${why ? `<p class="meta">${why}</p>` : ''}</li>`;
+    return `<li${lens ? (t.inLens ? ` class="lensin lc-${lens.color}"` : ' class="lensout"') : ''}><div class="by">${st}${st && tags ? ' ' : ''}${tags}</div><a href="${esc(withFrom(topicHref(t.slug, area), q ? { kind: 'search', q } : null))}">${esc(t.label)}</a>${why ? `<p class="meta">${why}</p>` : ''}</li>`;
   }).join('')}</ul>`;
   const items = (): string => `<ul class="sgitems">${a.items.list.map((i) => {
     const react = reactionText(i);
@@ -1787,11 +1819,11 @@ export const notFoundHtml = (ctx: Ctx) => shell('Not found', bar(ctx), '<header 
 // ---- routing
 const NO_STORE = { 'cache-control': 'no-store' };
 const NOT_FOUND_JSON = () => new Response('{"error":"not found"}', { status: 404, headers: { 'content-type': 'application/json', ...NO_STORE } });
-// The only scripts a public page may load are this site's own theme script and Cloudflare Web Analytics (no cookies), and only when its token is set. Forms post only to this site (the error report).
+// The only scripts a public page may load are this site's own theme and keys scripts (the keys script fetches the peek cards from this site, hence connect-src 'self') and Cloudflare Web Analytics (no cookies), and only when its token is set. Forms post only to this site (the error report).
 // The picture pages (viz: site/viz.ts) may also load this site's own script, read its JSON and show its sandboxed frames.
 export const PUBLIC_HEADERS_FOR = (analytics: boolean, viz = false) => ({
   'content-type': 'text/html; charset=utf-8',
-  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self' https://i.ytimg.com; frame-src ${viz ? "'self'" : 'https://www.youtube-nocookie.com'}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'${analytics ? ' https://static.cloudflareinsights.com' : ''}${viz || analytics ? `; connect-src${viz ? " 'self'" : ''}${analytics ? ' https://cloudflareinsights.com' : ''}` : ''}`,
+  'content-security-policy': `default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; img-src 'self' https://i.ytimg.com; frame-src ${viz ? "'self'" : 'https://www.youtube-nocookie.com'}; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; script-src 'self'${analytics ? ' https://static.cloudflareinsights.com' : ''}; connect-src 'self'${analytics ? ' https://cloudflareinsights.com' : ''}`,
   'x-content-type-options': 'nosniff', 'referrer-policy': 'strict-origin-when-cross-origin',
 });
 let PUBLIC_HEADERS = PUBLIC_HEADERS_FOR(false);
@@ -1819,6 +1851,7 @@ async function vizData(env: Env, parts: string[], url: URL, me: Me | null = null
   const jsonOf = async (r: Response) => { if (!r.ok) { await r.body?.cancel(); return NOT_FOUND_JSON(); } return new Response(r.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } }); };
   if (parts[0] === 'viz' && parts.length === 2) {
     if (parts[1] === 'theme.js') return new Response(THEME_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
+    if (parts[1] === 'keys.js') return new Response(KEYS_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
     if (parts[1] === 'visit.js') return new Response(VISIT_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
     if (parts[1] === 'lens.js') return new Response(LENS_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
     if (parts[1] === 'host.js') return new Response(HOST_JS, { headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
@@ -1946,6 +1979,11 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
     if (!r.ok) { await r.body?.cancel(); return missing(); }
     return html(researchHtml((await r.json()) as PubPulse, ctx));
   }
+  if (parts[0] === 't' && parts.length === 3 && parts[2] === 'peek') {   // /t/<slug>/peek: the small card of a topic as an HTML fragment, for the hover card (keys.js); 404 when there is no such topic
+    const b = await loadPeek(env, parts[1], areaHint(url.searchParams.get('area')));
+    if (!b) return new Response('Not found', { status: 404, headers: NO_STORE });
+    return new Response(briefCard(b, b.area, { link: false, tag: 'div' }), { headers: { 'content-type': 'text/html; charset=utf-8', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'", 'cache-control': 'public, max-age=120', 'x-content-type-options': 'nosniff' } });
+  }
   if (parts[0] === 't' && parts.length === 4 && parts[2] === 'i') {   // /t/<slug>/i/<id>: the source card of one item of a topic; 410 when the item has left the topic
     const slug = parts[1], id = parts[3], hint = areaHint(url.searchParams.get('area'));
     if (!TOPIC_SLUG.test(slug) || !ITEM_ID.test(id)) return missing();
@@ -1955,7 +1993,7 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
     const area = 'gone' in r ? r.gone.topic.area : r.card.topic.area;
     lensBy[area] ??= [...await lensesOf(env, area), ...ownLenses(viewer.me, area)];
     const cctx = area === ctx.area ? ctx : ctxFor(area);
-    return 'gone' in r ? html(itemGoneHtml(r.gone, cctx), 410) : html(itemCardHtml(r.card, cctx, url.origin));
+    return 'gone' in r ? html(itemGoneHtml(r.gone, cctx), 410) : html(itemCardHtml(r.card, cctx, url.origin, parseFrom(url.searchParams.get('from'))));
   }
   if (parts[0] === 't') {   // /t/<slug>[?angle=]: one topic, with its angles
     const slug = parts.length === 2 ? parts[1] : '';
@@ -1970,7 +2008,9 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
       const urls = [...r.data.talk.map((i) => i.url), ...(r.data.watch ?? []).map((w) => w.url), ...r.data.papers.list.map((p) => p.absUrl)].filter(Boolean);
       tctx.saved = await env.USERS.getByName('main').savedAmong(viewer.me.email, urls).catch(() => ({}));
     }
-    return html(topicHtml(r.data, tctx, topicAngle(url.searchParams.get('angle')), url.origin, lensBy[r.data.area]));
+    // A4: where the reader came from (?from=lens:…, search:…, briefing:…) gives the list the topic is previous/next in; a list that cannot be made gives no bar, never an error
+    const from = parseFrom(url.searchParams.get('from')), nav = from ? neighbours(await resolveFrom(env, from, { area: r.data.area, boards: tctx.boards, lenses: lensBy[r.data.area] }), r.data.slug) : null;
+    return html(topicHtml(r.data, tctx, topicAngle(url.searchParams.get('angle')), url.origin, lensBy[r.data.area], { from, nav }));
   }
   if (parts[0] === 'search' && parts.length === 1) {   // /search?q=&kinds=&lens=&window=&page=: everything, topics first
     const lenses = ctx.lenses ?? [], lens = chosenLens(lenses, url.searchParams.get('lens')), kinds = parseKinds(url.searchParams.get('kinds'));
@@ -2139,7 +2179,7 @@ export async function handlePublic(request: Request, env: Env, url: URL): Promis
   // The key is the path plus the query parameters a page reads (Signal's sort and group, a topic's angle, the lens), so a sorted page is not served the default one.
   // The report form is never cached: it shows whether a report was sent.
   // A search's words (`q`, at most 80 letters) and kinds are kept whole: cut at 20 letters, two different searches would share one page.
-  const q = new URLSearchParams([...['sort', 'group', 'q', 'kinds', 'page', 'angle', 'lens', 'window', 'area', 'day', 'kind'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, k === 'q' ? 80 : k === 'kinds' ? 40 : 20)]] : []))] as [string, string][]).toString();
+  const q = new URLSearchParams([...['sort', 'group', 'q', 'kinds', 'page', 'angle', 'lens', 'window', 'area', 'day', 'kind', 'from'].flatMap((k) => (url.searchParams.has(k) ? [[k, url.searchParams.get(k)!.slice(0, k === 'q' ? 80 : k === 'from' ? FROM_MAX : k === 'kinds' ? 40 : 20)]] : []))] as [string, string][]).toString();
   // The deployed version is part of the key, so a deploy never serves pages (with an old menu) rendered by the version before.
   const ver = (env as { CF_VERSION_METADATA?: { id?: string } }).CF_VERSION_METADATA?.id ?? '';
   const key = new Request(url.origin + url.pathname + '?' + new URLSearchParams([...(q ? new URLSearchParams(q) : []), ['v', ver]]).toString(), { method: 'GET' }), cacheable = !url.pathname.startsWith('/report/') && !/^\/saved(\/|$)/.test(url.pathname);   // a list made private must be gone at once

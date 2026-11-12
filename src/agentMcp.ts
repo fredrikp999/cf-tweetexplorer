@@ -21,6 +21,8 @@ import { loadLenses, loadOverview, loadRising } from './site/overview';
 import { risingOut } from './site/rising';
 import { SEARCH_KINDS, SEARCH_WINDOWS, cleanQuery, windowOfSearch } from './site/search';
 import { loadSearch } from './site/searchData';
+import { resolveFrom } from './site/trailData';
+import { parseFrom } from './signal/trail';
 import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPrompt, digIntoPrompt, itemGoneOut, itemMissing, itemOut, itemsOut, listLensesOut, overviewOut, paperMissing, paperOut, papersOut, searchOut, topicFirstOut, topicMissing, topicOut,
   type Answer, type BoardFirstIn, type BriefingIn, type Detail, type ItemsIn, type PaperIn } from './site/agentText';
 
@@ -128,12 +130,13 @@ export function registerAgentTools(server: McpServer, env: Env, origin: string, 
   registerAppTool(server, 'get_topic', {
     title: 'Topic: what is this about',
     description: 'Level 2: one topic. The written summary, its state (new, rising, steady, falling), the evidence per kind of source (each in its own unit, never added together), top items, papers on the subject, briefings that covered it and related topics. Every line links to the original and to the topic page.',
-    inputSchema: { topic: topicArg, area: areaHintArg, window: z.number().int().min(1).max(14).default(7).describe('Days for the count of mentions (the evidence always covers the last 7 days)'), detail: detailArg },
+    inputSchema: { topic: topicArg, area: areaHintArg, window: z.number().int().min(1).max(14).default(7).describe('Days for the count of mentions (the evidence always covers the last 7 days)'), from: z.string().max(100).optional().describe('Where you came from, as on the site: "lens:<key>" (or "lens:all"; add "@3" or "@7" for the 3 or 7 day ranking), "search:<words>" or "briefing:<slug>/<id>". The answer then names the topic before and after in that list. Unknown values are ignored.'), detail: detailArg },
     annotations: READ_ONLY,
     _meta: { ui: { resourceUri: TOPIC_UI } },
-  }, ({ topic, area, window, detail }) => run('get_topic', { topic: asSlug(topic), area, window, detail }, async () => {
+  }, ({ topic, area, window, from, detail }) => run('get_topic', { topic: asSlug(topic), area, window, from, detail }, async () => {
     const d = await findTopic(env, topic, area);   // a name counted under a bigger topic opens that topic's own page; the answer says which area the topic is in
-    return d ? topicOut(d, origin, detail as Detail, window) : topicMissing(topic, origin);
+    const f = parseFrom(from), walk = d && f ? { from: f, list: await resolveFrom(env, f, { area: d.area ?? 'ai' }) } : undefined;   // A4: the list the agent is walking through
+    return d ? topicOut(d, origin, detail as Detail, window, walk) : topicMissing(topic, origin);
   }));
 
   registerAppResource(server, 'Topic hub', TOPIC_UI, { mimeType: RESOURCE_MIME_TYPE },
