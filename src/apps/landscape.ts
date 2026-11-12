@@ -1,8 +1,9 @@
+import { SHELL_CSS, SHELL_JS } from './shell.ts';
 // The Landscape: one bubble per topic of the Signal, drawn from the layout the server keeps steady from day to day. Size is the topic's score, colour is the lens (grey outside the chosen lens),
 // a tag in words on the top edge says new, rising or falling, and a dashed circle with a name groups topics that are talked about together. It is the view of the get_overview tool on both MCP servers and the picture
 // on the landing page, in the sandboxed frame of src/site/viz.ts (there /viz/host.js answers get_overview from /overview.json).
-// A plain page like first.ts and map.ts: classic inline script, the ui/* postMessage protocol directly, no SDK and no bundler. Keep it free of backticks and template placeholders.
-// A click on a bubble: ask Claude to show the topic where the host allows messages (see act), else open its page.
+// A plain page like first.ts and map.ts: classic inline script, the ui/* postMessage protocol directly, no SDK and no bundler. Keep it free of backticks; the only template placeholders are the shell's two (see shell.ts).
+// A click on a bubble opens the topic in place as a panel of the shell (src/apps/shell.ts) where the host can run tools; on the site it opens the topic's page (see act).
 // Data: the structuredContent of get_overview (or its JSON text, which is what the site gives): { window, lens: {key,name}|null, landscape: { w, h, clusters: [{id,name,x,y,r,members}],
 //   bubbles: [{slug,label,url,x,y,r,cluster,state,change,score,lensColor,inLens,mix}], lens, lenses: [{key,name,color,light,dark}] } | null, topics: [...], since, rising }.
 // ladder: { days, top, span, window, lens, topics: [{slug,label,url,state,lensColor,inLens,rank[],score[],best,first,move}] } | null: the rank of the biggest topics per day (src/signal/ladder.ts),
@@ -10,6 +11,7 @@
 // On the site only (no lens): replay: { today, frames: [{ day, bubbles: [{k,x,y,r,l}] }] }, the layouts of the days before today, for the Replay button.
 export default `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
+${SHELL_CSS}
 :root{color-scheme:light dark;--bg:#fff;--fg:#1c2b2d;--mut:#566a6d;--line:#d6dedb;--grey:#7d8d90;--ac:#b0245f;--btn:#eef2f0;--halo:rgba(255,255,255,.55)}
 @media (prefers-color-scheme:dark){:root{--bg:#142224;--fg:#e8eeee;--mut:#9bb0b2;--line:#2c4144;--grey:#8fa4a7;--ac:#ff8fb8;--btn:#1d3033;--halo:rgba(0,0,0,.25)}}
 :root[data-theme=light]{color-scheme:light;--bg:#fff;--fg:#1c2b2d;--mut:#566a6d;--line:#d6dedb;--grey:#7d8d90;--ac:#b0245f;--btn:#eef2f0;--halo:rgba(255,255,255,.55)}
@@ -59,8 +61,9 @@ body.hero #bar,body.hero #lbox,body.hero #note:empty{display:none!important}body
 <p id="legend"></p><p id="note" aria-live="polite"></p>
 <details id="lbox"><summary>The topics as a list</summary><ol id="list"></ol></details></div>
 <script>
+${SHELL_JS}
 var NS = 'http://www.w3.org/2000/svg', WINS = [[1, 'Today'], [3, '3 days'], [7, '7 days']];
-var pending = {}, nextId = 2, host = {}, D = null, L = null, busy = false, theme = '', win = 1, lens = '', area = 'ai', picking = false, sel = {}, ctxTimer = 0, scale = 1, tipFor = '', ox = 0, oy = 0;
+var pending = {}, nextId = 2, host = {}, D = null, L = null, busy = false, theme = '', win = 1, lens = '', area = 'ai', picking = false, sel = {}, scale = 1, tipFor = '', ox = 0, oy = 0;
 // Hero: the picture on the site's landing page (the host says so in hostContext.embed). The page has the lens, the window and the list already, so the view shows only the bubbles, zoomed to fit them.
 var hero = false, lastVisit = 0, fresh = {};
 // The second picture: the Ladder (D.ladder). pins: the lines kept lit; ladT: how much of it is drawn (1: all).
@@ -521,6 +524,7 @@ function show(data) {
   renderBar(); renderLegend(); renderList(); draw(); setupReplay();
   if (mode === 'ladder') { el('rp').classList.add('hide'); el('since').classList.add('hide'); }
   el('note').textContent = '';
+  UC.suggest(D.questions); UC.refresh(); UC.tell();
 }
 function reload() {
   busy = true; renderBar(); el('note').textContent = 'Reading\\u2026';
@@ -535,21 +539,17 @@ el('lens').onchange = function () { lens = el('lens').value; reload(); };
 // ---- clicking, picking, asking
 function act(b) {
   if (picking) { if (sel[b.slug]) delete sel[b.slug]; else sel[b.slug] = true; var g = el('svg').querySelector('[data-k="' + b.slug + '"]'); if (g) { g.classList.toggle('sel', !!sel[b.slug]); g.setAttribute('aria-checked', sel[b.slug] ? 'true' : 'false'); } renderAsk(); sendContext(); return; }
-  // A view cannot swap itself for another tool's view, so in a host that lets a view message Claude, a click asks Claude to open the topic: it calls get_topic and the Topic hub is drawn in the chat.
-  // Where the host cannot message (the site's host lists only openLinks), a click opens the topic page, as before.
-  if (host.message) {
-    request('ui/message', { role: 'user', content: [{ type: 'text', text: 'Show me the topic ' + b.slug + ' (' + b.label + ') from the Undercurrent landscape.' }] }, 10000, function (err, res) {
-      var n = el('note'); n.textContent = '';
-      if (err || (res && res.isError)) { n.textContent = 'Could not send that to Claude. '; }
-      else n.textContent = 'Asked Claude to open ' + b.label + '. ';
-      var o = mk('button', '', 'Open the page instead'); o.onclick = function () { openPage(b); }; n.appendChild(o);
-    });
-    return;
-  }
+  // In a host that can run this server's tools the topic opens in place, as a panel of the shell, and Back returns to the map. On the site the shell declines and the page opens, as before.
+  if (UC.open('topic', { topic: b.slug, area: area })) { hideTip(); return; }
   openPage(b);
 }
 function openPage(b) {
   request('ui/open-link', { url: b.url }, 8000, function (err) { if (err) el('note').textContent = 'This host did not open the page. It is at ' + b.url; });
+}
+function siteUrl() {
+  var o = L && L.bubbles && L.bubbles[0] && L.bubbles[0].url ? L.bubbles[0].url.split('/').slice(0, 3).join('/') : '';
+  if (!o) return '';
+  return o + (area === 'politics' ? '/politics' : '/') + '?window=' + win + (lens ? '&lens=' + lens : '');
 }
 function describe(b) {
   var t = togetherWith(b), st = stateText(b);
@@ -565,10 +565,7 @@ function contextText() {
   if (!list.length) return 'In the Undercurrent landscape, no topics are picked.';
   return 'In the Undercurrent landscape (' + (WINS.filter(function (p) { return p[0] === win; })[0][1].toLowerCase()) + (area === 'politics' ? ', politics' : '') + (L.lens ? ', lens ' + L.lens.name : '') + '), the user picked these topics:\\n' + list.map(describe).join('\\n') + '\\nUse get_topic with the topic address' + (area === 'politics' ? ' (area politics)' : '') + ' for the summary and evidence.';
 }
-function sendContext() {
-  clearTimeout(ctxTimer);
-  ctxTimer = setTimeout(function () { request('ui/update-model-context', { content: [{ type: 'text', text: contextText() }] }, 8000, function () {}); }, 400);
-}
+function sendContext() { UC.tell(); }
 function askClaude() {
   if (mode === 'ladder') {
     var pl = pinned(); if (!pl.length) return;
@@ -594,6 +591,11 @@ window.addEventListener('message', function (e) {
     if (m.error) { el('s').textContent = 'initialize failed: ' + JSON.stringify(m.error); return; }
     var r = m.result || {}, hc = r.hostContext || {};
     host = r.hostCapabilities || {};
+    UC.init({ title: 'Landscape', host: host, root: el('app'), size: reportSize,
+      note: function (t) { el('note').textContent = t; }, site: siteUrl,
+      context: function () { return L ? contextText() : ''; },
+      state: function () { return { area: area, lens: lens, window: win }; },
+      redraw: function () { if (L) draw(); } });
     hero = hc.embed === 'hero'; document.body.classList.toggle('hero', hero);
     lastVisit = Number(hc.lastVisit) || 0;
     setTheme(hc.theme);

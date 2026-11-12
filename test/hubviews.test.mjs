@@ -32,7 +32,9 @@ describe('view scripts', () => {
     for (const call of ['UC.init(', 'UC.step(', 'UC.pick(', 'UC.tell()', "UC.open('item'", "UC.open('paper'"]) assert.ok(s.includes(call), call);
     assert.doesNotMatch(hub, /id="back"|id="site"|id="ask"/);
   });
-  it('the landscape asks Claude to show a topic where the host can message', () => {
-    assert.match(script(land), /host\.message[\s\S]{0,200}ui\/message[\s\S]*Show me the topic/);
+  it('the landscape opens a topic in place and falls back to the page', () => {
+    const s = script(land);
+    assert.match(s, /UC\.open\('topic'[\s\S]{0,120}return; \}[\s\S]{0,40}openPage\(b\)/);
+    assert.ok(s.includes('Show me the topic'), 'the panel still offers the full view (it is in the shell)');
   });
 });

@@ -29,7 +29,7 @@ import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPromp
 /** The Landscape view of get_overview. Bump the suffix when the page changes: hosts keep the resource they were given. */
 /** v3: the view keeps the area of the data it was given (politics has its own lenses) and passes it back to get_overview. */
 /** v6: the Ladder as a second picture (the rank of the biggest topics per day, from `ladder` in structuredContent). */
-export const LANDSCAPE_UI = 'ui://undercurrent/landscape-v6.html';
+export const LANDSCAPE_UI = 'ui://undercurrent/landscape-v7.html';
 /** The Depth chart, the view of get_rising. */
 export const DEPTH_UI = 'ui://undercurrent/depth-v1.html';
 /** The Topic hub, the view of get_topic. */
