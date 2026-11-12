@@ -35,7 +35,7 @@ export const DEPTH_UI = 'ui://undercurrent/depth-v2.html';
 /** The Topic hub, the view of get_topic. */
 export const TOPIC_UI = 'ui://undercurrent/topic-v4.html';
 /** The Research map, the view of get_papers (it reads its data with get_research_map). */
-export const MAP_UI = 'ui://undercurrent/research-map-v3.html';
+export const MAP_UI = 'ui://undercurrent/research-map-v4.html';
 const READ_ONLY = { readOnlyHint: true, openWorldHint: false };
 const ISSUE_ID = /^\d{4}-\d{2}-\d{2}(-\d+)?$/;
 const PAPER_ID = /^\d{4}\.\d{4,5}$/;

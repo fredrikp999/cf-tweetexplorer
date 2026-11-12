@@ -27,6 +27,7 @@ describe('view scripts', () => {
     const s = script(map);
     assert.ok(s.includes("name: 'get_research_map'"));
     assert.ok(s.includes('d.thanks'));
+    assert.ok(s.includes('UC.init(')); assert.ok(s.includes('UC.tell()'));
   });
   it('the hub uses the shell for Back, picks and telling the model', () => {
     const s = script(hub);

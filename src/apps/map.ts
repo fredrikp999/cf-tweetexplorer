@@ -1,7 +1,8 @@
+import { SHELL_CSS, SHELL_JS } from './shell.ts';
 // The Research map on the public site (/research/map): the papers of the last 30 days grouped by subject, with sliders for the dates, the level of detail and the smallest group shown,
 // a lens filter (papers whose title or abstract use a lens's words) and uptake marks (a diamond and the counts where a paper is being discussed: named in posts, on Hacker News or upvoted on Hugging Face;
 // "not discussed yet" is shown too, as a neutral state, not a weakness). Light and dark follow hostContext.theme (and on the site the page's theme, which host.js passes the same way).
-// A plain page like first.ts: classic inline script, the ui/* postMessage protocol directly, no SDK and no bundler. Keep it free of backticks and template placeholders.
+// A plain page like first.ts: classic inline script, the ui/* postMessage protocol directly, no SDK and no bundler. Keep it free of backticks; the only template placeholders are the shell's two (see shell.ts).
 // Everything recalculates in the browser from one read of Monitor.mapView, so the controls answer at once:
 //   { state: 'ready', built, from, days, lagDays, topics: [{ id, slug, title }], leaves: [{ name, summary, terms }], joins: [[a, b]], lenses: [{ key, name }], lens?: 'key to start on',
 //     papers: [[id, title, day, topicMask, leaf, top, score, hfUpvotes, hnPoints, accounts, lensMask]] }, or { state: 'building', progress: { read, total, toEmbed }, error }.
@@ -9,6 +10,7 @@
 // which is only a few papers; the view then asks the app-only tool get_research_map for the JSON above (same data, plus `thanks`) and starts with the filters of the call's scope.
 export default `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
+${SHELL_CSS}
 :root{color-scheme:dark;--bg:#07090f;--fg:#eef0f5;--mut:#9aa1b2;--line:#262b38;--card:#11141d;--ac:#8fb8f2;--up:#7fd1a8;--down:#e6a57e;--on:#1b2130;--hbar:#3a4256;--hlate:#55708f;--sep:#1a1e29;--abs:#cdd2de}
 @media (prefers-color-scheme:light){:root:not([data-theme=dark]){color-scheme:light;--bg:#fff;--fg:#1a2230;--mut:#576274;--line:#d5dbe3;--card:#f4f6f9;--ac:#1d5fa8;--up:#1a7a4c;--down:#a34f00;--on:#e3edf9;--hbar:#c3cbd8;--hlate:#8fa6c4;--sep:#e6eaf0;--abs:#2f3a4b}}
 :root[data-theme=light]{color-scheme:light;--bg:#fff;--fg:#1a2230;--mut:#576274;--line:#d5dbe3;--card:#f4f6f9;--ac:#1d5fa8;--up:#1a7a4c;--down:#a34f00;--on:#e3edf9;--hbar:#c3cbd8;--hlate:#8fa6c4;--sep:#e6eaf0;--abs:#2f3a4b}
@@ -53,8 +55,9 @@ svg{display:block;width:92px;height:30px}svg rect{fill:var(--ac);opacity:.75}
 <div id="lenses" class="hide" role="group" aria-label="Lens"></div><div id="filters"></div><div id="sum"><b id="total"></b><span id="hidden"></span></div><div id="list"></div><div id="none" class="hide">No papers match. Widen the dates or clear a filter.</div><p id="thanks" class="lab"></p>
 </div></div>
 <script>
+${SHELL_JS}
 var d, seq = 10, pending = {}, S = { from: 0, to: 0, detail: 16, min: 1, sort: 'n', q: '', off: 0, att: false, talk: false, lens: -1, open: {}, shown: {}, abs: {} };
-var ready = false, scope = null, siteUrl = '';
+var ready = false, scope = null, siteUrl = '', host = {}, asked = null;
 var PID = 0, PTITLE = 1, PDAY = 2, PMASK = 3, PLEAF = 4, PTOP = 5, PSCORE = 6, PHF = 7, PHN = 8, PACC = 9, PLENS = 10;
 // Being discussed: named in posts, on Hacker News or upvoted on Hugging Face (the same rule as the uptake in get_papers and the topic pages).
 function talked(p) { return !!(p[PHF] || p[PHN] || p[PACC]); }
@@ -64,6 +67,16 @@ function send(m) { m.jsonrpc = '2.0'; parent.postMessage(m, '*'); }
 function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function fmt(n) { return Number(n).toLocaleString('en-US'); }
 function dayText(i) { return new Date(Date.parse(d.from) + i * 86400000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }); }
+function mapContext() {
+  var b = [];
+  if (!d) return '';
+  b.push('dates ' + dayText(S.from) + ' to ' + dayText(S.to));
+  if (S.q) b.push('searching for "' + String(S.q).slice(0, 80) + '"');
+  if (S.talk) b.push('only papers being discussed');
+  if (S.att) b.push('only papers getting attention');
+  if (S.lens >= 0 && d.lenses && d.lenses[S.lens]) b.push('lens ' + d.lenses[S.lens].name);
+  return 'In the Undercurrent research map (papers of the last 30 days, abstracts only): ' + b.join(', ') + '. get_papers lists papers; get_paper gives an abstract.';
+}
 function size() { if (!ready) return; send({ method: 'ui/notifications/size-changed', params: { width: Math.ceil(window.innerWidth), height: Math.ceil(el('app').getBoundingClientRect().height) + 2 } }); }
 function open_(url) { send({ id: ++seq, method: 'ui/open-link', params: { url: url } }); }
 
@@ -166,6 +179,7 @@ function draw() {
   el('none').classList.toggle('hide', list.length > 0);
   el('list').innerHTML = list.map(function (g) { return clusterHtml(g, biggest); }).join('');
   size();
+  UC.tell();
 }
 function spark(g) {
   var W = 92, H = 30, n = S.to - S.from + 1, per = Math.max(1, Math.round(n / 12)), vals = [], top = 1;
@@ -251,7 +265,7 @@ function take(r, second) {
   try {
     if (r.isError) throw 0;
     if (!second && sc && !sc.state && sc.scope && sc.papers) {   // the answer of get_papers: ask for the map itself
-      scope = sc.scope; siteUrl = /^https:[/][/]/.test(String(sc.mapUrl)) ? sc.mapUrl : '';
+      scope = sc.scope; asked = sc.questions || null; siteUrl = /^https:[/][/]/.test(String(sc.mapUrl)) ? sc.mapUrl : '';
       var m = ++seq;
       status('Reading the map…');
       pending[m] = function (r2) { take(r2 || { isError: true }, true); };
@@ -263,11 +277,16 @@ function take(r, second) {
   if (v.state !== 'ready') { building(v); return; }
   d = v; setup();
   el('thanks').textContent = d.thanks || '';
+  UC.suggest(asked); UC.refresh();
 }
 window.addEventListener('message', function (e) {
   if (e.source !== parent || !e.data) return;
   var m = e.data;
-  if (m.id === 1) { applyTheme(m.result && m.result.hostContext && m.result.hostContext.theme); send({ method: 'ui/notifications/initialized' }); ready = true; size(); return; }
+  if (m.id === 1) {
+    host = (m.result && m.result.hostCapabilities) || {};
+    UC.init({ title: 'Research map', host: host, root: el('app'), size: size, site: function () { return siteUrl; }, context: mapContext, state: function () { return {}; }, redraw: draw });
+    applyTheme(m.result && m.result.hostContext && m.result.hostContext.theme); send({ method: 'ui/notifications/initialized' }); ready = true; size(); return;
+  }
   if (m.id && pending[m.id]) { var f = pending[m.id]; delete pending[m.id]; f(m.result || { isError: true }); return; }
   if (m.method === 'ui/notifications/tool-result') take(m.params || {});
   else if (m.method === 'ui/notifications/host-context-changed' && m.params) applyTheme(m.params.theme);
