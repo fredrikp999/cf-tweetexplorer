@@ -1,7 +1,7 @@
 // Readers: addresses, roles and what they give, settings, own lenses, followed topics, questions, and the links an answer may keep.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { DEFAULT_ROLES, EXTRA_ASK_PER_DAY, LIST_ID, MAX_OWN_LENSES, NO_PREFS, accessOf, canPublish, cleanEmail, cleanFollow, cleanListForm, cleanNote, cleanOwnLens, cleanPrefs, cleanQuestion, cleanRoles, findItem, homeFor, keepLinks, mayView, newListId, visibilityFor } from '../src/users/model.ts';
+import { DEFAULT_ROLES, EXTRA_ASK_PER_DAY, LIST_ID, MAX_OWN_LENSES, NO_PREFS, accessOf, canPublish, cleanEmail, cleanFollow, cleanListForm, cleanNote, cleanOwnLens, cleanPrefs, cleanQuestion, cleanRoles, findItem, homeFor, keepLinks, mayView, newListId, savePairs, visibilityFor } from '../src/users/model.ts';
 
 describe('addresses', () => {
   test('lowercased and trimmed', () => assert.equal(cleanEmail('  Anna.B@Gmail.com '), 'anna.b@gmail.com'));
@@ -146,5 +146,22 @@ describe('the item a Save takes from the topic', () => {
   test('an address not on the page, or posts of a Signal that hides its sources: nothing', () => {
     assert.equal(findItem(d, 'https://evil.example/'), null);
     assert.equal(findItem({ ...d, board: { proof: false } }, 'https://ex.com/a'), null);
+  });
+});
+
+describe('savePairs (the address /me/save opens)', () => {
+  const P = (q) => savePairs(new URLSearchParams(q));
+  test('pairs the nth t with the nth u', () => assert.deepEqual(P('t=a-b&u=https://x.com/1&t=c&u=https://x.com/2'), [{ slug: 'a-b', url: 'https://x.com/1' }, { slug: 'c', url: 'https://x.com/2' }]));
+  test('at most ten pairs', () => {
+    const q = new URLSearchParams(); for (let i = 0; i < 14; i++) { q.append('t', 'topic' + i); q.append('u', 'https://x.com/' + i); }
+    const r = savePairs(q); assert.equal(r.length, 10); assert.equal(r[9].slug, 'topic9');
+  });
+  test('a bad slug, a non-https address or one over 500 letters drops the pair, and the others stay', () => {
+    const r = P('t=Bad_Slug&u=https://x.com/1&t=ok&u=http://x.com/2&t=ok2&u=' + encodeURIComponent('https://x.com/' + 'a'.repeat(500)) + '&t=fine&u=https://x.com/3');
+    assert.deepEqual(r, [{ slug: 'fine', url: 'https://x.com/3' }]);
+  });
+  test('more t than u: the extra t is ignored; none at all gives nothing', () => {
+    assert.deepEqual(P('t=a&t=b&u=https://x.com/1'), [{ slug: 'a', url: 'https://x.com/1' }]);
+    assert.deepEqual(P(''), []);
   });
 });

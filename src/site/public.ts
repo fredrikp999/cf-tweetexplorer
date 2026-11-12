@@ -37,7 +37,7 @@ import { AREA_BRIEFINGS, AREA_HOME, AREA_LABEL, areaHint, areaOfRequest, areaOf,
 import { LENS_COLORS, LENS_JS, applyLens, lensMatch, chosenLens, lensColorCss, lensesOfTopic, type Lens } from '../signal/lens';
 import { avatarResponse, isOwnLens, isPersonal, mePost, ownLenses, viewerOf, type Viewer } from './me';
 import type { AskRow, ListBrief, ListView, Me } from '../durable-objects/users';
-import { FEATURES, MAX_FOLLOWS, MAX_OWN_LENSES, MAX_SAVED_ITEMS, MAX_SAVED_LISTS, VISIBILITIES, VISIBILITY_LABEL, canPublish, homeFor, type SavedList, type Visibility } from '../users/model';
+import { FEATURES, MAX_FOLLOWS, MAX_OWN_LENSES, MAX_SAVED_ITEMS, MAX_SAVED_LISTS, VISIBILITIES, VISIBILITY_LABEL, canPublish, findItem, homeFor, savePairs, type SavedList, type Visibility } from '../users/model';
 import { VISIT_JS, WINDOWS, WINDOW_LABEL, cardLine, plainLine, topicFor, inBrief, mixText, pickReads, rankList, researchStrip, risingStrip, sinceCounts, windowOf, ladderData, type LadderData, type LadderRaw, type LandingWindow, type ReadItem, type RecentPaper, type SigTopic } from './landing';
 import { HOST_JS, VIZ_CSS, VIZ_VIEWS, vizFrame, viewCsp } from './viz';
 import { climbWords, climbs, inZone, pctOf, risingOut, type RisingData, type RisingTopic } from './rising';
@@ -183,6 +183,7 @@ figure.bars div{grid-template-columns:6rem 1fr 2.5rem}nav.archive li{grid-templa
 .act.stack>div i{min-height:0}
 .sgitems{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}.sgitems li{border-left:3px solid var(--line);padding-left:12px}.sgitems .by{font-size:13px;color:var(--muted)}.sgitems a{color:var(--text)}.sgitems a:hover{color:var(--accent)}.sgrow .t a{color:inherit;text-decoration:none}.sgrow .t a:hover{color:var(--accent);text-decoration:underline}.sglist a{color:inherit;text-decoration:none}.sglist a:hover{text-decoration:underline}
 form.report{display:grid;gap:12px;max-width:640px}form.report textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text)}form.report button{justify-self:start;padding:8px 18px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);font:inherit;cursor:pointer}.hp{position:absolute;left:-9999px}.cites .rep{color:var(--muted)}
+.oic{display:inline-block;font-size:13.5px}.oic summary{cursor:pointer;color:var(--muted)}.oic [data-copy]{user-select:all}.copybtn{font:inherit;font-size:12.5px;margin-left:8px;padding:1px 9px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
 .meacts{margin:10px 0 0}.meform.inline{display:inline}.followbtn{font:inherit;font-size:14px;font-weight:600;padding:5px 14px;border-radius:999px;border:1px solid var(--accent);background:var(--card);color:var(--accent);cursor:pointer}.followbtn[aria-pressed=true]{background:var(--accent);color:var(--card)}
 .memsg{margin:10px 0 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--card);border-radius:6px;font-size:14px}
 .askbox{display:grid;gap:8px;margin:14px 0 0;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);max-width:720px}.askbox label{font-weight:600}.askbox textarea,.lensform textarea,.lensform input,.meform select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg,var(--card));color:var(--text);max-width:100%}
@@ -427,9 +428,9 @@ function bar(ctx: Ctx, active?: Active, page?: Here['page'], board?: string, o: 
 /** Cloudflare Web Analytics for the public pages, from the CF_ANALYTICS_TOKEN secret: page views without cookies. Empty: no script at all. */
 let analyticsToken = '';
 
-function shell(title: string, top: string, body: string, opts: { description?: string; canonical?: string; image?: string; lang?: string; feed?: string; feedTitle?: string; /** A schema.org BreadcrumbList (JSON), for pages that show a trail. */ jsonLd?: string; /** The wider column of the landing page and the search. */ wide?: boolean; /** The landing page: its masthead runs up to the top bar. */ home?: boolean } = {}): string {
+function shell(title: string, top: string, body: string, opts: { description?: string; canonical?: string; image?: string; lang?: string; feed?: string; feedTitle?: string; /** A schema.org BreadcrumbList (JSON), for pages that show a trail. */ jsonLd?: string; /** The wider column of the landing page and the search. */ wide?: boolean; /** The landing page: its masthead runs up to the top bar. */ home?: boolean; /** Keep the page out of search engines. */ noindex?: boolean } = {}): string {
   return `<!doctype html><html lang="${opts.lang === 'sv' ? 'sv' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)}</title>${opts.description ? `<meta name="description" content="${esc(opts.description.slice(0, 200))}">` : ''}
+<title>${esc(title)}</title>${opts.noindex ? '<meta name="robots" content="noindex">' : ''}${opts.description ? `<meta name="description" content="${esc(opts.description.slice(0, 200))}">` : ''}
 <meta property="og:title" content="${esc(title)}">${opts.description ? `<meta property="og:description" content="${esc(opts.description.slice(0, 200))}">` : ''}
 ${opts.canonical ? `<link rel="canonical" href="${esc(opts.canonical)}">` : ''}${opts.feed ? `<link rel="alternate" type="application/rss+xml" title="${esc(opts.feedTitle ?? title)}" href="${esc(opts.feed)}">` : ''}${opts.image ? `<meta property="og:image" content="${esc(opts.image)}"><meta name="twitter:card" content="summary_large_image">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -592,7 +593,7 @@ export function landingHtml(ctx: Ctx, d: LandingData, origin = ''): string {
     return `<section aria-labelledby="h-land"><h2 class="lh" id="h-land">The landscape <a href="/signal/${esc(sig!.slug)}${win === 1 ? '/1' : win === 3 ? '/3' : ''}">Signal &rarr;</a></h2>
 <ol class="lrows" aria-label="Topics by Signal score">${rank.rows.map((r, i) => { const t = r.topic, mix = mixText(t.parts, groups);
       return `<li class="lrow st-${pop(t) || 'steady'}${r.part ? ' part' : ''}${lens ? (r.inLens ? ` lensin lc-${lens.color}` : ' lensout') : ''}" title="${sourceTitle(t)}" style="--i:${i}"><span class="t"><a href="${tl(t.term)}">${esc(t.label)}</a></span><span class="lb" aria-hidden="true"><i style="width:${Math.max(2, (100 * t.signal) / max).toFixed(1)}%"></i></span><b>${sigPct(t.signal)}</b><span class="tags">${pill(t)}${lens && r.inLens ? lensTag(lens) : lens ? '' : lensTags(t)}${mix ? `${mixBar(t.parts)}<small class="meta">${esc(mix)}</small>` : ''}</span></li>`; }).join('')}</ol>
-${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in ${esc(lens.name)} come first; the others are dimmed, not removed.` : `No topic in ${esc(lens.name)} is big enough today.`}</p>` : ''}</section>`;
+${lens ? `<p class="meta">${rank.inCount ? `${plural1(rank.inCount, 'topic')} in ${esc(lens.name)} come first; the others are dimmed, not removed.` : `No topic in ${esc(lens.name)} is big enough today.`}</p>` : ''}${openInClaude(`Show me the Undercurrent landscape${lensWords(lens, area)}`)}</section>`;
   });
 
   const rising = guard(() => {
@@ -782,7 +783,7 @@ function risingHtml(ctx: Ctx, d: RisingData | null, lens: Lens | undefined, orig
   const aq = ctx.area === 'ai' ? '' : '?area=politics', q = (l?: string) => { const p = new URLSearchParams(); if (l) p.set('lens', l); if (ctx.area !== 'ai') p.set('area', ctx.area); const s = p.toString(); return '/rising' + (s ? '?' + s : ''); };
   const top = bar(ctx, undefined, 'rising', undefined, { lens, href: (p) => q(p.lens) });
   const head = `<header class="pagehead"><div class="eyebrow"><a href="${AREA_HOME[ctx.area]}">${esc(AREA_LABEL[ctx.area])}</a></div><h1>Rising from the deep</h1>
-<p class="lede">Every topic by how widely it has spread. At the surface a topic is everywhere: every kind of source, most groups. In the deep it lives in one place. What climbs from the deep is what may be news tomorrow.</p></header>`;
+<p class="lede">Every topic by how widely it has spread. At the surface a topic is everywhere: every kind of source, most groups. In the deep it lives in one place. What climbs from the deep is what may be news tomorrow.</p>${openInClaude(`Show me what is rising in Undercurrent${lensWords(lens, ctx.area)}`)}</header>`;
   if (!d) return shell('Rising from the deep · Undercurrent', top, `${head}<p class="meta">There is nothing to place yet: no published Signal has topics for the last days.</p>`, { description: 'Topics by how widely they have spread, and which are rising.', canonical: origin + q() });
   const up = climbs(d), tl = (t: RisingTopic) => `<a href="${esc(topicHref(t.slug, ctx.area))}">${esc(t.label)}</a>`;
   const zone = (z: Zone) => { const l = inZone(d, z); return l.length ? `<h3>${esc(ZONE_LABEL[z])} <small class="meta">${n(l.length)}</small></h3><ul class="deep">${l.map((t) => `<li${d.lens && t.inLens === false ? ' class="out"' : ''}><b>${tl(t)}</b>${t.state ? ` <span class="k">${esc(t.state)}</span>` : ''} <span class="pc">${pctOf(t.b[t.b.length - 1] ?? 0)}</span><span class="meta">${esc(t.reach ?? '')}</span></li>`).join('')}</ul>` : ''; };
@@ -799,7 +800,7 @@ ${zone('surface')}${zone('mid')}${zone('deep')}
 }
 function researchMapHtml(ctx: Ctx, lens?: Lens): string {
   return shell('Research map · Undercurrent', bar(ctx, undefined, 'map', undefined, { lens, href: (p) => '/research/map' + (p.lens ? '?lens=' + encodeURIComponent(p.lens) : '') }), `<header class="pagehead"><div class="eyebrow"><a href="/research">Research pulse</a></div><h1>Research map</h1>
-<p class="lede">What the papers of the last 30 days in the research topics are about, grouped by subject. Choose the dates, the level of detail and the topics.</p></header>
+<p class="lede">What the papers of the last 30 days in the research topics are about, grouped by subject. Choose the dates, the level of detail and the topics.</p>${openInClaude('Show me the Undercurrent research map')}</header>
 ${vizFrame('map', '/research/map', 'New research papers grouped by subject, with date, detail, topic and lens controls', lens?.key ?? '')}
 <h2>How this is made</h2>
 <p>Papers are grouped by the meaning of their title and abstract, using an embedding model, and a language model then names each group and describes it from its most typical titles. Names can be off, and a paper can land in a neighbouring group: this is a way to see the shape of a month, not a classification. It counts papers, which says nothing about their quality.</p>
@@ -1188,7 +1189,7 @@ export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', len
   const lensName = from?.kind === 'lens' ? lenses.find((l) => l.key === from.key)?.name : undefined, briefing = from?.kind === 'briefing' ? ctx.topics.find((t) => t.slug === from.slug)?.title : undefined;
   const tr = trailOf(trailParts({ area: d.area, from, lenses, briefingTitle: briefing, topic: { slug: d.slug, label: d.label }, angle: angle === 'talk' ? null : { key: angle, label: ANGLES.find(([k]) => k === angle)?.[1] ?? angle } }), origin);
   return shell(`${d.label} · Topic · Undercurrent`, bar(ctx, undefined, 'topics'), `${tr.html}${from && trail.nav ? prevNextHtml(trail.nav, from, d.area, lensName) : ''}<header class="pagehead"><div class="eyebrow">${areaLink}Topic &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a></div><h1>${esc(d.label)} ${pill}</h1>
-<p class="lede">${esc(summary)}</p>${written}${lensLine}${topicActions(ctx, d)}</header>
+<p class="lede">${esc(summary)}</p>${written}${lensLine}${topicActions(ctx, d)}<div class="meacts">${openInClaude(`Show me the topic ${d.label} in Undercurrent${angle === 'talk' ? '' : `, the ${ANGLES.find(([k]) => k === angle)?.[1] ?? angle} angle`}`)}</div></header>
 ${lifeHtml(d.series, dayLink, view.day)}
 <p class="meta">Items per day over the last 14 days: bars for each day${dayLink ? ' (a bar shows that day in Talk)' : ''}, the curve their three-day average${d.series.usual ? ', the dashed line the usual level' : ''}. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p>
 ${evidenceHtml(d)}
@@ -1214,6 +1215,11 @@ function yoursHtml(ctx: Ctx, topics: SigTopic[], state: (t: SigTopic) => string,
   };
   return `<section class="yours" aria-labelledby="h-yours"><h2 class="sect" id="h-yours">Your topics</h2><ul>${mine.map(row).join('')}</ul><p class="meta"><a href="/me#follows">What you follow</a></p></section>`;
 }
+/** A line to copy into Claude, for a page that has an MCP view. The sentence is ours; the name in it is escaped like any text. */
+const openInClaude = (sentence: string): string =>
+  `<details class="oic"><summary>Open in Claude</summary><p><span data-copy>${esc(sentence)}</span></p><p class="meta">Paste it into a chat that has the Undercurrent connector. <a href="/agent">How to add it</a>.</p></details>`;
+/** The lens and area words that end the sentence of a page showing the landscape or what rises. */
+const lensWords = (lens: Lens | undefined, area: Area): string => (lens ? ` in the ${lens.name} lens` : '') + (area === 'politics' ? ', politics' : '');
 const hidden = (fields: Record<string, string>) => Object.entries(fields).map(([k, v]) => `<input type="hidden" name="${k}" value="${esc(v)}">`).join('');
 const msgLine = (ctx: Ctx) => (ctx.msg ? `<p class="memsg" role="status">${esc(ctx.msg)}</p>` : '');
 /** Follow on every topic page (a plain form, so it works on a page from the shared cache too) and, for a reader whose role has it, Ask Claude. */
@@ -1232,8 +1238,12 @@ function topicActions(ctx: Ctx, d: TopicData): string {
  * choosing one of those takes it out again. Plain forms, no script.
  */
 function saveCtl(ctx: Ctx, d: TopicData, angle: Angle, url: string): string {
+  return saveForm(ctx, d, url, topicHref(d.slug, d.area, angle === 'talk' ? undefined : angle) + '#angle');
+}
+/** The save form for one item: the topic page's own, and the one /me/save shows (where `back` is that page's address). */
+function saveForm(ctx: Ctx, d: Pick<TopicData, 'slug' | 'area'>, url: string, back: string): string {
   if (!ctx.users || !/^https?:\/\//.test(url)) return '';
-  const base = hidden({ slug: d.slug, area: d.area, url, back: topicHref(d.slug, d.area, angle === 'talk' ? undefined : angle) + '#angle' });
+  const base = hidden({ slug: d.slug, area: d.area, url, back });
   const lists = ctx.me?.lists ?? [], holding = ctx.saved?.[url] ?? [];
   if (lists.length <= 1) {
     const on = holding.length > 0, l = lists[0];
@@ -1254,6 +1264,16 @@ function visField(me: Me, cur: Visibility = 'private'): string {
 const listForm = (me: Me, l?: SavedList, back = '/me#saved') => `<form method="post" action="/me/list" class="meform lensform">${hidden({ back, ...(l ? { id: l.id } : {}) })}
 <label>Name <input name="name" maxlength="60" required value="${esc(l?.name ?? '')}"></label> ${visField(me, l?.visibility)}
 <label class="wide">What it is about (optional) <input name="description" maxlength="280" value="${esc(l?.description ?? '')}"></label><button type="submit">${l ? 'Save' : 'Make the list'}</button></form>`;
+/** One row of /me/save: the item the address names, as the topic's own data has it, with the topic page's save form; or "No longer in this topic" and the address as text. */
+export interface SaveRow { slug: string; url: string; item: ReturnType<typeof findItem>; d?: TopicData }
+export function meSaveHtml(ctx: Ctx, rows: SaveRow[], back: string): string {
+  const row = (r: SaveRow) => r.item && r.d
+    ? `<li class="card"><b>${esc(r.item.title)}</b><small>${esc(KIND_NAME[r.item.kind] ?? r.item.kind)} &middot; ${esc(r.item.source)}${r.item.ts ? ` &middot; ${date(r.item.ts)}` : ''} &middot; <a href="${esc(topicHref(r.d.slug, r.d.area))}">${esc(r.d.label)}</a></small>${saveForm(ctx, r.d, r.url, back)}</li>`
+    : `<li class="card"><b>No longer in this topic</b><small>${esc(r.url)}</small></li>`;
+  return shell('Save to a list · Undercurrent', bar(ctx, undefined, 'me'), `<header class="pagehead"><h1>Save to a list</h1></header>${msgLine(ctx)}
+${rows.length ? `<ul class="mefollows">${rows.map(row).join('')}</ul>` : '<p class="meta">Nothing to save. Pick items in a view first.</p>'}
+<p class="meta"><a href="/me#saved">Back to your settings and lists</a></p>`, { noindex: true });
+}
 /** "Your saved lists" on /me. */
 function savedSection(me: Me): string {
   const rows = me.lists.map((l) => `<li><a href="/saved/${esc(l.id)}">${esc(l.name)}</a> ${visTag(l.visibility)} <small>${n(l.count)} item${l.count === 1 ? '' : 's'}</small></li>`).join('');
@@ -1943,6 +1963,14 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
     if (!viewer.enabled) return missing();
     if (!me) return html(shell('Your settings · Undercurrent', bar(ctx, undefined, 'me'), `<header class="pagehead"><h1>Your settings</h1><p class="lede">This page needs the site’s sign-in, which did not come through${viewer.problem ? ` (${esc(viewer.problem)})` : ''}. Reload the page, or sign in again. If it keeps happening, the site’s sign-in setting may be wrong: the site owner can check it.</p></header>`, {}), 403);
     if (parts.length === 1) return html(meHtml(ctx, me, (lensBy[area] ?? []).filter((l) => !isOwnLens(l.key)), await env.USERS.getByName('main').asks(me.email)));
+    if (parts.length === 2 && parts[1] === 'save') {   // /me/save?t=&u=: the items a view's foot bar picked, each with the save form of its topic page (nothing from the address is kept)
+      const area = areaHint(url.searchParams.get('area')) === 'politics' ? 'politics' : 'ai', pairs = savePairs(url.searchParams), topicBy = new Map<string, TopicData | null>();
+      for (const slug of new Set(pairs.map((p) => p.slug))) { const t = await loadTopic(env, slug, { quiet: true, area }); topicBy.set(slug, t && !('redirect' in t) ? t.data : null); }
+      const rows: SaveRow[] = pairs.map((p) => { const d = topicBy.get(p.slug); return { ...p, item: d ? findItem(d, p.url) : null, d: d ?? undefined }; });
+      if (me.lists.length) ctx.saved = await env.USERS.getByName('main').savedAmong(me.email, rows.filter((r) => r.item).map((r) => r.url)).catch(() => ({}));
+      const here = url.pathname + url.search;
+      return html(meSaveHtml(ctx, rows, here.length <= 300 ? here : '/me'));
+    }
     if (parts.length === 3 && parts[1] === 'ask' && /^\d{1,10}$/.test(parts[2])) { const a = await env.USERS.getByName('main').ask(me.email, Number(parts[2])); return a && a.answer ? html(askHtml(ctx, a, me)) : missing(); }
     return missing();
   }

@@ -152,6 +152,19 @@ export function findItem(d: TopicData, url: string): Omit<SavedItem, 'note' | 'a
   return null;
 }
 
+/**
+ * The pairs of a /me/save address (?t=<slug>&u=<url>&t=…&u=…): the nth t with the nth u, at most ten. A pair whose slug is not a topic address, or whose
+ * url does not start with https:// or is over 500 letters, is dropped. Nothing here is trusted: the page looks each pair up in the topic's own data.
+ */
+export function savePairs(params: URLSearchParams): Array<{ slug: string; url: string }> {
+  const t = params.getAll('t'), u = params.getAll('u'), out: Array<{ slug: string; url: string }> = [];
+  for (let i = 0; i < Math.min(t.length, u.length, 10); i++) {
+    const slug = t[i].trim().toLowerCase(), url = u[i].trim();
+    if (TOPIC_SLUG.test(slug) && /^https:\/\//.test(url) && url.length <= 500) out.push({ slug, url });
+  }
+  return out;
+}
+
 /** A question to Ask Claude: one line or a few, at most 500 characters; null when empty. */
 export function cleanQuestion(raw: unknown): string | null {
   const q = String(raw ?? '').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').replace(/[ \t]+/g, ' ').trim().slice(0, 500);

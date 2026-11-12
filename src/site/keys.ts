@@ -27,6 +27,9 @@ function panel(show){if(!help){help=d.createElement('div');help.id='keyhelp';hel
 help.innerHTML='<h2>Keyboard</h2><dl><dt>/</dt><dd>Search</dd><dt>j  k</dt><dd>Next, previous in the list</dd><dt>[  ]</dt><dd>Previous, next topic</dd><dt>1 to 5</dt><dd>Angle of a topic</dd><dt>g l</dt><dd>The landscape</dd><dt>?</dt><dd>This list</dd><dt>Esc</dt><dd>Close</dd></dl>';
 help.addEventListener('click',function(){help.hidden=true});d.body.appendChild(help)}
 help.hidden=show===undefined?!help.hidden:!show}
+function copies(){Array.prototype.forEach.call(d.querySelectorAll('[data-copy]'),function(el){if(el.nextSibling&&el.nextSibling.className==='copybtn')return;var b=d.createElement('button');b.type='button';b.className='copybtn';b.textContent='Copy';
+b.addEventListener('click',function(){var done=function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},2000)};try{navigator.clipboard.writeText(el.textContent||'').then(done,function(){})}catch(e){}});el.parentNode.insertBefore(b,el.nextSibling)})}
+copies();
 d.addEventListener('keydown',function(e){if(e.defaultPrevented||e.ctrlKey||e.metaKey||e.altKey)return;
 if(e.key==='Escape'){hide();if(help)help.hidden=true;return}
 if(typing(e.target))return;var k=e.key;
