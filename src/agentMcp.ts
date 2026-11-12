@@ -130,13 +130,14 @@ export function registerAgentTools(server: McpServer, env: Env, origin: string, 
   registerAppTool(server, 'get_topic', {
     title: 'Topic: what is this about',
     description: 'Level 2: one topic. The written summary, its state (new, rising, steady, falling), the evidence per kind of source (each in its own unit, never added together), top items, papers on the subject, briefings that covered it and related topics. Every line links to the original and to the topic page.',
-    inputSchema: { topic: topicArg, area: areaHintArg, window: z.number().int().min(1).max(14).default(7).describe('Days for the count of mentions (the evidence always covers the last 7 days)'), from: z.string().max(100).optional().describe('Where you came from, as on the site: "lens:<key>" (or "lens:all"; add "@3" or "@7" for the 3 or 7 day ranking), "search:<words>" or "briefing:<slug>/<id>". The answer then names the topic before and after in that list. Unknown values are ignored.'), detail: detailArg },
+    inputSchema: { topic: topicArg, area: areaHintArg, window: z.number().int().min(1).max(14).default(7).describe('Days for the count of mentions (the evidence always covers the last 7 days)'), from: z.string().max(100).optional().describe('Where you came from, as on the site: "lens:<key>" (or "lens:all"; add "@3" or "@7" for the 3 or 7 day ranking), "search:<words>" or "briefing:<slug>/<id>". The answer then names the topic before and after in that list. Unknown values are ignored.'), detail: detailArg,
+      lens: z.string().regex(/^[a-z][a-z0-9-]{1,19}$/).optional().describe('The lens you are reading in, if any. It changes nothing in the answer; the Topic hub view keeps it so that what it asks next stays in the same lens.') },
     annotations: READ_ONLY,
     _meta: { ui: { resourceUri: TOPIC_UI } },
-  }, ({ topic, area, window, from, detail }) => run('get_topic', { topic: asSlug(topic), area, window, from, detail }, async () => {
+  }, ({ topic, area, window, from, detail, lens }) => run('get_topic', { topic: asSlug(topic), area, window, from, detail, lens }, async () => {
     const d = await findTopic(env, topic, area);   // a name counted under a bigger topic opens that topic's own page; the answer says which area the topic is in
     const f = parseFrom(from), walk = d && f ? { from: f, list: await resolveFrom(env, f, { area: d.area ?? 'ai' }) } : undefined;   // A4: the list the agent is walking through
-    return d ? topicOut(d, origin, detail as Detail, window, walk) : topicMissing(topic, origin);
+    return d ? topicOut(d, origin, detail as Detail, window, walk, lens) : topicMissing(topic, origin);
   }));
 
   registerAppResource(server, 'Topic hub', TOPIC_UI, { mimeType: RESOURCE_MIME_TYPE },

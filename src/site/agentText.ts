@@ -13,6 +13,7 @@ import type { Layout, ReplayFrame } from '../signal/landscape.ts';
 import { KIND_TITLE, KIND_WORDS, firstCaveat, firstSentence, lagWords, stampUtc, startedWithin, timelineWords, type TopicFirst } from '../signal/topicview.ts';
 import { SEARCH_KINDS, KIND_TITLE as SEARCH_TITLE, type SearchAnswer } from './search.ts';
 import { itemHref, type SourceCard } from '../signal/sourcecard.ts';
+import { overviewQuestions, papersQuestions, topicQuestions } from './questions.ts';
 import { fromValue, neighbours, type From } from '../signal/trail.ts';
 import { roughly, STATE_LABEL, topicSlug, type EvItem, type EvKind, type TopicData, type TopicState } from '../signal/topicpage.ts';
 
@@ -124,6 +125,7 @@ export function overviewOut(d: OverviewIn, origin: string, detail: Detail = 'bri
     landscape: landscapeOf(d.landscape, topics, { area, lens, lenses, groups, baselineOk: !!sig?.baselineOk, origin, stateOf: (t) => stateOf(t, !!sig?.baselineOk) }),
     ladder: ladderData(d.ladder, { area, lens, lenses, origin }),
     ...(d.replay?.length && !lens ? { replay: { today: new Date(now).toISOString().slice(0, 10), frames: d.replay } } : {}),
+    questions: overviewQuestions(rising.map((r) => ({ label: r.label, change: r.change ?? null }))),
     topics: ranked, outsideLens: rank.outside.map((t) => ({ slug: slugOf(t), label: t.label, url: urlOf(t) })),
     research: !ai ? null : { newPapers: rs.newPapers, paperDays, discussed: rs.discussed, risingTopics: (extras?.risingResearch ?? []).map((r) => ({ slug: r.slug, title: r.title, state: r.state, url: `${origin}/research/${r.slug}` })),
       mostDiscussed: rs.top.map((p) => ({ id: p.id, title: p.title, url: `https://arxiv.org/abs/${p.id}` })), mapUrl: origin + '/research/map' },
@@ -170,7 +172,7 @@ const uptakeText = (a: { hf?: { upvotes: number } | null; hn?: { points: number;
 
 /** The list a topic was reached through (the `from` argument of get_topic, A4) and what it holds, in order. */
 export interface Walk { from: From; list: Array<{ slug: string; label: string }> }
-export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief', windowDays = 7, walk?: Walk): Answer {
+export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief', windowDays = 7, walk?: Walk, lens?: string): Answer {
   const url = origin + topicPath(t.slug, t.area), sep = url.includes('?') ? '&' : '?', full = detail === 'full', st = t.state ? STATE_LABEL[t.state].toLowerCase() : null;
   const recent = t.series.counts.slice(-Math.max(1, Math.min(14, windowDays))).reduce((a, b) => a + b, 0), wd = Math.max(1, Math.min(14, windowDays));
   const talkKinds = (['x', 'hn', 'youtube', 'rss'] as EvKind[]).filter((k) => t.talk.some((i) => i.kind === k));
@@ -186,6 +188,8 @@ export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief',
     briefings: (t.briefings ?? []).map((b) => ({ ...b, url: `${origin}/${b.slug}/${b.id}${b.anchor ? '#' + b.anchor : ''}` })), related: t.related.map((r) => ({ ...r, url: origin + topicPath(r.slug, t.area) })), alsoIn: t.alsoIn,
     list: nb && walk ? { from: fromValue(walk.from), position: nb.index, total: nb.total, previous: nb.prev ?? null, next: nb.next ?? null } : null,
     sourcesShown: t.board.proof,
+    lens: lens ?? null,
+    questions: topicQuestions({ label: t.label, state: t.state, phase: life?.phase ?? null, peakDay: life ? t.series.days[life.peak] ?? null : null, days: t.series.days, papers: t.papers.matched, firstOrder: t.first.arrivals.map((a) => KIND_TITLE[a.kind]) }),
     first: firstData(t.first), timeline: t.timeline, watch: t.watch.map((v) => ({ ...v, thumbnail: `https://i.ytimg.com/vi/${v.video}/mqdefault.jpg` })),
   };
   const lead = [`**${t.label}**${st ? ` is ${st}` : ''} (${link('topic page', url)}${(t.area ?? 'ai') === 'ai' ? '' : `, area: ${AREA_LABEL[t.area]}`}). ${t.summary ? t.summary.text : t.fallback}`,
@@ -304,7 +308,7 @@ export function papersOut(r: { total: number; papers: PaperIn[]; clusters?: Arra
   a: { topic?: { slug: string; label: string } | null; cluster?: number; query?: string; discussedOnly: boolean }, origin: string, detail: Detail = 'brief'): Answer {
   const full = detail === 'full', shown = r.papers.slice(0, full ? 25 : 8);
   const scope = [a.topic ? `topic ${link(a.topic.label, origin + topicPath(a.topic.slug))}` : '', a.cluster !== undefined ? `cluster ${code(String(a.cluster))}${r.clusters?.find((c) => c.id === a.cluster) ? ' ' + r.clusters.find((c) => c.id === a.cluster)!.name : ''}` : '', a.query ? `words "${flat(a.query, 60)}"` : '', a.discussedOnly ? 'only papers being discussed' : ''].filter(Boolean).join(', ');
-  const data = { scope: { topic: a.topic?.slug ?? null, cluster: a.cluster ?? null, query: a.query ?? null, discussedOnly: a.discussedOnly }, total: r.total, shown: shown.length, papers: shown.map(paperData), clusters: r.clusters ?? [], mapUrl: origin + '/research/map', thanks: ARXIV_THANKS };
+  const data = { scope: { topic: a.topic?.slug ?? null, cluster: a.cluster ?? null, query: a.query ?? null, discussedOnly: a.discussedOnly }, total: r.total, shown: shown.length, papers: shown.map(paperData), clusters: r.clusters ?? [], mapUrl: origin + '/research/map', thanks: ARXIV_THANKS, questions: papersQuestions(r.clusters ?? []) };
   if (!shown.length) return { text: `No paper of the last 30 days matches${scope ? ` (${scope})` : ''}.\n\n**Next:** try fewer words, drop ${code('discussed_only')}, or ${code('get_papers')} without arguments for the clusters.\n\n_${ARXIV_THANKS}_`, data, error: false };
   const talked = r.papers.filter((p) => p.attention.hf || p.attention.hn || p.attention.accounts).length;
   const lead = [`${plural(r.total, 'paper')} from the last 30 days${scope ? ` (${scope})` : ''}${talked ? `; ${talked} of those shown are being discussed` : ''}. Abstracts only. ${link('Research map', origin + '/research/map')}.`,

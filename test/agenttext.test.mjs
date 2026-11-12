@@ -94,6 +94,11 @@ describe('get_topic', () => {
     assert.match(a.text, /Who had it first[\s\S]*First seen on Hacker News[\s\S]*then X from/); assert.match(a.text, /MCP auth explained/);   // step 7: the order, and a video
     assert.equal(a.data.first.order.length, 2); assert.equal(a.data.watch[0].thumbnail, 'https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg');
   });
+  test('suggested questions: at most three strings; lens is null or the key given', () => {
+    const a = topicOut(topic(), O), b = topicOut(topic(), O, 'brief', 7, undefined, 'security');
+    assert.ok(Array.isArray(a.data.questions) && a.data.questions.length <= 3 && a.data.questions.every((q) => typeof q === 'string'));
+    assert.equal(a.data.lens, null); assert.equal(b.data.lens, 'security');
+  });
   test('without a written summary it says so and uses the numbers', () => {
     const a = topicOut(topic({ summary: null }), O);
     assert.match(a.text, /fallback/); assert.match(a.text, /No written summary yet/);

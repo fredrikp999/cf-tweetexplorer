@@ -1,6 +1,7 @@
 // "Rising from the deep": what the page /rising, its JSON and the MCP tool `get_rising` all show, so the three cannot drift apart.
 // Pure functions (no Worker APIs), so Node can test them. The Monitor gives the layout (src/signal/depth.ts); here it is joined with the lenses and put into words.
 import { AREA_LABEL, topicHref, type Area } from '../signal/area.ts';
+import { risingQuestions } from './questions.ts';
 import { KIND_NAME, MIN_CLIMB, ZONE_LABEL, reachWords, zoneOf, type DepthLayout, type Reach, type Zone } from '../signal/depth.ts';
 import { LENS_PALETTE, lensesOfTopic, type Lens } from '../signal/lens.ts';
 import { topicState, type TopicState } from '../signal/topicpage.ts';
@@ -75,5 +76,5 @@ export function risingOut(d: RisingData | null, origin: string, area: Area = 'ai
   const secs = [up.length ? `## Rising from the deep\n${up.map((t, i) => `${i + 1}. ${link(t.label, t.url)} ${code(t.slug)}: ${climbWords(t, d)}. Now ${t.reach}.`).join('\n')}` : '',
     ...(['surface', 'mid', 'deep'] as Zone[]).map((z) => { const l = inZone(d, z); return l.length ? `## ${ZONE_LABEL[z]}\n${l.map(row).join('\n')}` : ''; })].filter(Boolean);
   const text = `${lead.join('\n')}\n\n${secs.join('\n\n')}\n\n_Breadth is ${BREADTH_IS} The picture: ${page}_\n\n**Next:** ${code('get_topic')} with a topic address for the summary and evidence; ${code('get_who_said_first')} for the order the sources had it in.`;
-  return { text, data: d as unknown as Record<string, unknown> };
+  return { text, data: { ...(d as unknown as Record<string, unknown>), questions: risingQuestions(up.map((t) => ({ label: t.label, zone: t.zone ?? null }))) } };
 }
