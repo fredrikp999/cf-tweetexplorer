@@ -233,7 +233,7 @@ Where each view ends after everything here. Bump one step at each change, never 
 | View | Today | Changed by | Ends at |
 | --- | --- | --- | --- |
 | Landscape `src/apps/landscape.ts` | `landscape-v6` | A5 (a day), A10 (shell), A7 (mutes), B10 (wake) | `landscape-v10` |
-| Topic hub `src/apps/topichub.ts` | `topic-v3` | A1 (item panel), A2 (*New only*), A5 (filter in place), A10, A8, B3, B6, B7 | `topic-v11` |
+| Topic hub `src/apps/topichub.ts` | `topic-v3` | A1 (item panel), A2 (*New only*), A5 (filter in place), A10, A8, B3, B6 (`topic-v5`, a *Conversations* tab; built), B7 | `topic-v11` |
 | Research map `src/apps/map.ts` | `research-map-v3` | A10, B4 | `research-map-v5` |
 | Depth chart `src/apps/depth.ts` | `depth-v1` | A10 | `depth-v2` |
 | Crossings `src/apps/crossings.ts` | new | B2 | `crossings-v1` |
@@ -1352,6 +1352,8 @@ or mark.
 ---
 
 ### B6. Prism: the conversations inside a topic
+
+*The build specification is [SPEC-B6-prism.md](SPEC-B6-prism.md); where the two differ, that one wins.*
 
 **State.** Not built. **Depends on.** F4 (item vectors exist only with the Signal topic model on), A10. Do it with A3. **Size.** L.
 

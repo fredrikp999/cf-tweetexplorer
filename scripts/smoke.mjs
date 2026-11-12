@@ -64,6 +64,8 @@ for (const slug of [...today.matchAll(/href="\/t\/([a-z0-9-]+)"/g)].map((m) => m
   await check(`/t/${slug}?kind=hn&sort=newest`, { has: ['Angles on this topic'] });
   await check(`/t/${slug}?day=${new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)}`, { has: ['Angles on this topic'] });
   await check(`/t/${slug}?day=2026-99-99&kind=zzz&sort=zzz`, { has: ['Angles on this topic'] });
+  // B6: a conversation narrows Talk by address; one the topic does not have is dropped, so this is 200 with or without conversations
+  await check(`/t/${slug}?conv=c1`, { has: ['Angles on this topic'] });
   // A4: the trail line, the topic's place in the list it was reached from (a search for its own name always has it), a wrong origin that is simply ignored, and the peek card
   await check(`/t/${slug}?from=search:${encodeURIComponent(slug.replace(/-/g, ' '))}`, { has: ['aria-label="Trail"', 'Angles on this topic'] });
   await check(`/t/${slug}?from=lens:no-such-lens`, { has: ['aria-label="Trail"'] });
