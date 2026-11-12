@@ -15,6 +15,7 @@ import { SEARCH_KINDS, KIND_TITLE as SEARCH_TITLE, type SearchAnswer } from './s
 import { itemHref, type SourceCard } from '../signal/sourcecard.ts';
 import { overviewQuestions, papersQuestions, topicQuestions } from './questions.ts';
 import { fromValue, neighbours, type From } from '../signal/trail.ts';
+import { prismLayout } from '../signal/prism.ts';
 import { roughly, STATE_LABEL, topicSlug, type EvItem, type EvKind, type TopicData, type TopicState } from '../signal/topicpage.ts';
 
 export type Detail = 'brief' | 'full';
@@ -187,6 +188,9 @@ export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief',
     talk: t.talk.map((i) => ({ ...i, reactionsText: reactionText(i) })), papers: { matched: t.papers.matched, mentioned: t.papers.mentioned, thanks: ARXIV_THANKS, list: t.papers.list.map((p) => ({ id: p.id, title: p.title, published: p.published, url: p.absUrl, uptake: { discussed: !!(p.attention.hf || p.attention.hn || p.attention.accounts), accounts: p.attention.accounts, hf: p.attention.hf ?? null, hn: p.attention.hn ?? null } })) },
     briefings: (t.briefings ?? []).map((b) => ({ ...b, url: `${origin}/${b.slug}/${b.id}${b.anchor ? '#' + b.anchor : ''}` })), related: t.related.map((r) => ({ ...r, url: origin + topicPath(r.slug, t.area) })), alsoIn: t.alsoIn,
     list: nb && walk ? { from: fromValue(walk.from), position: nb.index, total: nb.total, previous: nb.prev ?? null, next: nb.next ?? null } : null,
+    prism: t.prism ? { day: t.prism.day, groups: t.prism.groups.map((g) => ({ id: g.id, name: g.name, namedBy: g.by, n: g.n, kind: g.kind, began: g.began, last: g.last,
+        typical: g.typical.map((i) => ({ id: i.id, title: i.title, url: i.url, by: i.by, kind: i.kind })) })), other: t.prism.other,
+      layout: prismLayout(t.prism), from: t.prism.from, to: t.prism.to } : null,
     sourcesShown: t.board.proof,
     lens: lens ?? null,
     questions: topicQuestions({ label: t.label, state: t.state, phase: life?.phase ?? null, peakDay: life ? t.series.days[life.peak] ?? null : null, days: t.series.days, papers: t.papers.matched, firstOrder: t.first.arrivals.map((a) => KIND_TITLE[a.kind]) }),
@@ -202,14 +206,21 @@ export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief',
   const secFirst = fs ? `## Who had it first\n${fs}${t.first.thin ? ' (Only a few mentions, so this may be chance.)' : ''}${t.first.openEnded ? ' (Already being talked about when our history starts.)' : ''} _Among the sources we follow, by publication time; it does not say where the story began._ ${link('More', url + sep + 'angle=first')}.` : '';
   const secWatch = t.watch.length ? `## Watch\n${t.watch.slice(0, full ? 8 : 3).map((v) => `- ${link(v.title, v.url)} (${[v.source, day(v.ts), v.views ? `${roughly(v.views)} views` : ''].filter(Boolean).join(', ')})`).join('\n')}\n${link('All videos on the site', url + sep + 'angle=watch')}.` : '';
   const secPap = t.papers.matched ? `## Papers\n${plural(t.papers.matched, 'paper')} on the subject in the last 30 days; ${t.papers.mentioned ? `${t.papers.mentioned} named in posts or on Hacker News` : 'none discussed yet'}. ${link('Papers on the site', url + sep + 'angle=papers')}.\n${t.papers.list.slice(0, full ? 8 : 3).map((p) => `- ${link(p.title, p.absUrl)} ${code(p.id)}, ${day(p.published)}: ${uptakeText(p.attention)}`).join('\n')}\n_${ARXIV_THANKS}_` : '';
+  const secConv = (() => {
+    const pr = t.prism; if (!pr || !pr.groups.length) return '';
+    const shown = pr.groups.slice(0, full ? pr.groups.length : 4), short = (ts: number) => { const d = new Date(ts); return `${d.getUTCDate()} ${d.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' })}`; };
+    const rows = shown.map((g) => `- **${flat(g.name, 80)}** ${code(g.id)}: ${plural(g.n, 'item')}, ${g.kind === 'mixed' ? 'several kinds of source' : 'mostly ' + (KIND_LABEL[g.kind] ?? g.kind)}, from ${short(g.began)}.${g.typical.length ? ` Most typical: ${link(g.typical[0].title, g.typical[0].url)}` : ''}`);
+    return `## Conversations inside it\n${rows.join('\n')}\n_Grouped by what the items say, by a model; the names were written by a model.${pr.other ? ` ${plural(pr.other, 'more item')} ${pr.other === 1 ? 'is' : 'are'} in none of these.` : ''}_`;
+  })();
   const brs = t.briefings ?? [];
   const secBr = brs.length ? `## In briefings\n${brs.slice(0, full ? 6 : 3).map((b) => `- ${link(`${b.title}${b.theme ? ': ' + b.theme : ''}`, `${origin}/${b.slug}/${b.id}${b.anchor ? '#' + b.anchor : ''}`)} ${code(b.slug)}, ${day(b.publishedAt)}${b.tldr ? ` — ${firstLine(b.tldr, 120)}` : ''}`).join('\n')}` : '';
   const secRel = t.related.length ? `## Talked about together with\n${t.related.slice(0, 6).map((r) => `- ${link(r.label, origin + topicPath(r.slug, t.area))} ${code(r.slug)}${r.state ? ` (${STATE_LABEL[r.state].toLowerCase()})` : ''}${r.line ? `: ${r.line}` : ''}`).join('\n')}` : '';
   const arg = (slug: string) => `${code('get_topic')} with ${code(`topic: "${slug}"`)}${walk ? ` and ${code(`from: "${fromValue(walk.from)}"`)}` : ''}${(t.area ?? 'ai') === 'ai' ? '' : ` and ${code('area: "politics"')}`}`;
   const walkHint = nb ? `${nb.next ? `${arg(nb.next.slug)} for the next topic in the list (${nb.index} of ${nb.total}: ${nb.next.label})` : `this is the last of ${nb.total} in the list`}${nb.prev ? `; ${arg(nb.prev.slug)} for the one before (${nb.prev.label})` : ''}` : '';
   const near = t.related[0] ? `${code('get_topic')} with ${code(`topic: "${t.related[0].slug}"`)} for a neighbour (${t.related[0].label})` : '';
-  const hints = [walkHint, t.board.proof && talkKinds.length ? `${code('get_topic_items')} with ${code(`topic: "${t.slug}"`)} for the items behind it` : '', t.papers.list[0] ? `${code('get_paper')} with ${code(`id: "${t.papers.list[0].id}"`)}` : '', brs[0] ? `${code('get_briefing')} with ${code(`topic: "${brs[0].slug}"`)}` : '', near].filter(Boolean);
-  return { text: assemble(lead, [secEv, secFirst, secTalk, secPap, secWatch, secBr, secRel], (hints.join('; ') || `${code('get_overview')} for the landscape`) + '.', detail), data };
+  const convHint = t.board.proof && t.prism?.groups[0] ? `${code('get_topic_items')} with ${code(`topic: "${t.slug}"`)} and ${code(`conversation: "${t.prism.groups[0].id}"`)} for the items of one conversation` : '';
+  const hints = [walkHint, convHint, t.board.proof && talkKinds.length ? `${code('get_topic_items')} with ${code(`topic: "${t.slug}"`)} for the items behind it` : '', t.papers.list[0] ? `${code('get_paper')} with ${code(`id: "${t.papers.list[0].id}"`)}` : '', brs[0] ? `${code('get_briefing')} with ${code(`topic: "${brs[0].slug}"`)}` : '', near].filter(Boolean);
+  return { text: assemble(lead, [secEv, secFirst, secTalk, secConv, secPap, secWatch, secBr, secRel], (hints.join('; ') || `${code('get_overview')} for the landscape`) + '.', detail), data };
 }
 
 /** The order in the JSON: each kind's first time, how long after the start, and the sentence that says it. */
@@ -257,24 +268,25 @@ export function topicMissing(asked: string, origin: string): Answer {
 }
 
 // ---- get_topic_items
-export interface ItemsIn { found: boolean; area?: Area; slug?: string; label?: string; proof?: boolean; total?: number; counts?: Record<string, number>; /** What the Monitor applied: a day it did not know is null here. */ day?: string | null; items?: EvItem[] }
-export function itemsOut(r: ItemsIn, a0: { topic: string; kind?: string; /** `new` and `top` are the older names. */ sort: string; day?: string; offset: number }, origin: string, detail: Detail = 'brief'): Answer {
+export interface ItemsIn { found: boolean; area?: Area; slug?: string; label?: string; proof?: boolean; total?: number; counts?: Record<string, number>; /** What the Monitor applied: a day it did not know is null here. */ day?: string | null; /** The conversation the Monitor applied: null when the one asked for is not one of today's. */ conv?: { id: string; name: string } | null; items?: EvItem[] }
+export function itemsOut(r: ItemsIn, a0: { topic: string; kind?: string; /** `new` and `top` are the older names. */ sort: string; day?: string; conversation?: string; offset: number }, origin: string, detail: Detail = 'brief'): Answer {
   const a = { ...a0, sort: parseSort(a0.sort, 'newest') };
   if (!r.found) return topicMissing(a.topic, origin);
   const url = origin + topicPath(r.slug!, r.area), items = r.items ?? [], total = r.total ?? 0;
   const nextOffset = a.offset + items.length < total ? a.offset + items.length : null;
-  const data = { topic: r.slug, label: r.label, url, kind: a.kind ?? null, day: r.day ?? null, sort: a.sort, total, counts: r.counts ?? {}, offset: a.offset, nextCursor: nextOffset === null ? null : String(nextOffset),
+  const data = { topic: r.slug, label: r.label, url, kind: a.kind ?? null, day: r.day ?? null, conversation: r.conv ?? null, sort: a.sort, total, counts: r.counts ?? {}, offset: a.offset, nextCursor: nextOffset === null ? null : String(nextOffset),
     items: items.map((i) => ({ id: i.id ?? null, ...(i.id ? { cardUrl: origin + itemHref(r.slug!, i.id, r.area) } : {}), kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl || null, source: i.source, by: i.by, ts: i.ts, date: day(i.ts), reactionsText: reactionText(i), reactions: { likes: i.likes >= 0 ? i.likes : null, replies: i.replies >= 0 ? i.replies : null, views: i.views >= 0 ? i.views : null } })) };
   if (!r.proof) return { text: `**${r.label}**: this topic's Signal does not show its sources, so its items are not public. ${link('The topic page', url)} has the summary and the numbers.\n\n**Next:** ${code('get_topic')} with ${code(`topic: "${r.slug}"`)}.`, data, error: false };
   const counts = Object.entries(r.counts ?? {}).map(([k, n]) => `${KIND_LABEL[k] ?? k} ${n}`).join(', ');
-  const lead = [`**${r.label}**: ${plural(total, 'item')}${a.kind ? ` from ${KIND_LABEL[a.kind] ?? a.kind}` : ''} ${r.day ? `on ${r.day}` : 'in the last 7 days'}${counts ? ` (${counts} in the 7 days)` : ''}, ${a.sort === 'newest' ? 'newest first' : a.sort === 'earliest' ? 'earliest first' : 'most reacted first'}. ${link('Topic page', url)}.`,
+  const lead = [`**${r.label}**: ${plural(total, 'item')}${a.kind ? ` from ${KIND_LABEL[a.kind] ?? a.kind}` : ''} ${r.day ? `on ${r.day}` : 'in the last 7 days'}${r.conv ? ` in the conversation ${flat(r.conv.name, 80)}` : ''}${counts ? ` (${counts} in the 7 days)` : ''}, ${a.sort === 'newest' ? 'newest first' : a.sort === 'earliest' ? 'earliest first' : 'most reacted first'}. ${link('Topic page', url)}.`,
     a.day && !r.day ? `${code(a.day)} is not one of the days this topic has items for (the last 7), so it was ignored.` : '',
+    a.conversation && !r.conv ? `${code(flat(a.conversation, 12))} is not a conversation of this topic today, so it was ignored.` : '',
     items.length ? `Showing ${a.offset + 1} to ${a.offset + items.length}.` : 'Nothing at this position.',
     a.sort === 'reacted' ? `"Most reacted" weighs likes, replies and views, so it is ordered within each kind of source, one kind after the other${a.kind ? '' : ' (give a kind to see one list)'}; compare numbers only within one kind.` : '',
     a.sort === 'earliest' ? 'Earliest first: the oldest items of the week, to see who was early. Not the same as who started it.' : ''].filter(Boolean);
   const body = items.map((i, n) => `${a.offset + n + 1}. **${KIND_LABEL[i.kind] ?? i.kind}** ${itemLine(i)}`).join('\n');
   const withId = items.find((i) => i.id), open = withId ? `${code('get_item')} with ${code(`topic: "${r.slug}"`)} and ${code(`item: "${withId.id}"`)} for one item in context (why it is in the topic, what came before and after). ` : '';
-  const next = open + (nextOffset !== null ? `${code('get_topic_items')} with ${code(`topic: "${r.slug}"`)}${a.kind ? `, ${code(`kind: "${a.kind}"`)}` : ''}${r.day ? `, ${code(`day: "${r.day}"`)}` : ''}, ${code(`sort: "${a.sort}"`)}, ${code(`cursor: "${nextOffset}"`)} for the next ${Math.min(PAGE, total - nextOffset)}.` : `${code('get_topic')} with ${code(`topic: "${r.slug}"`)} for the summary.`);
+  const next = open + (nextOffset !== null ? `${code('get_topic_items')} with ${code(`topic: "${r.slug}"`)}${a.kind ? `, ${code(`kind: "${a.kind}"`)}` : ''}${r.day ? `, ${code(`day: "${r.day}"`)}` : ''}${r.conv ? `, ${code(`conversation: "${r.conv.id}"`)}` : ''}, ${code(`sort: "${a.sort}"`)}, ${code(`cursor: "${nextOffset}"`)} for the next ${Math.min(PAGE, total - nextOffset)}.` : `${code('get_topic')} with ${code(`topic: "${r.slug}"`)} for the summary.`);
   return { text: assemble(lead, [body, THIRD_PARTY], next, detail), data };
 }
 

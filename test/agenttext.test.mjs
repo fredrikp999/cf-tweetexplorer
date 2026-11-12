@@ -107,6 +107,22 @@ describe('get_topic', () => {
     const a = topicOut(topic({ board: { slug: 'ai', title: 'AI', proof: false }, talk: [] }), O);
     assert.match(a.text, /does not show its sources/); assert.ok(!/get_topic_items/.test(a.text.split('**Next:**')[1]));
   });
+  const pv = (id, name, kind, typical) => ({ id, name, by: 'model', n: 12, kind, began: Date.UTC(2026, 10, 3), last: now, typical, dots: [{ id: 'aaaaaaaaaaa', ts: now }] });
+  const prism = (typical) => ({ day: '2026-11-07', groups: [pv('c1', 'the exploit', 'x', typical ? [{ id: 'aaaaaaaaaaa', kind: 'x', title: 'Exploit write-up', url: 'https://e.example/w', by: 'alice', source: 'X', ts: now }] : []), pv('c2', 'vendor responses', 'mixed', [])], other: 3, from: now - 7 * 86400_000, to: now });
+  test('conversations inside it: data, layout, section and the next hint', () => {
+    const a = topicOut(topic({ prism: prism(true) }), O);
+    assert.deepEqual(a.data.prism.groups.map((g) => g.id), ['c1', 'c2']); assert.equal(a.data.prism.layout.petals.filter((p) => p.id !== 'other').length, 2);
+    assert.match(a.text, /## Conversations inside it[\s\S]*the exploit[\s\S]*vendor responses[\s\S]*## Papers/); assert.match(a.text, /mostly X, from 3 Nov\. Most typical: \[Exploit write-up\]/); assert.match(a.text, /several kinds of source/);
+    assert.match(a.text, /3 more items are in none of these/); assert.match(a.text.split('**Next:**')[1], /conversation: "c1"/);
+  });
+  test('conversations of a Signal without sources: no typical items', () => {
+    const a = topicOut(topic({ prism: prism(false) }), O), sec = a.text.split('## Conversations inside it')[1].split('## ')[0];
+    assert.ok(!/Most typical/.test(sec)); assert.ok(!/Exploit write-up/.test(sec)); assert.match(sec, /the exploit/);
+  });
+  test('without a prism: no section, data.prism null, the same text', () => {
+    const a = topicOut(topic(), O), b = topicOut(topic({ prism: null }), O);
+    assert.equal(a.data.prism, null); assert.ok(!/Conversations inside it/.test(a.text) && !/conversation:/.test(a.text)); assert.equal(a.text, b.text);
+  });
   test('missing topic is an error answer that points to get_overview', () => {
     const a = topicMissing('nope', O); assert.ok(a.error); assert.match(a.text, /get_overview/);
   });
@@ -128,6 +144,12 @@ describe('get_topic_items', () => {
   test('sources not shown, and not found', () => {
     assert.match(itemsOut({ found: true, slug: 's', label: 'L', proof: false }, { topic: 's', sort: 'new', offset: 0 }, O).text, /not public/);
     assert.ok(itemsOut({ found: false }, { topic: 'zz', sort: 'new', offset: 0 }, O).error);
+  });
+  test('a conversation is named in the lead and carried by the next page; one that was ignored is said', () => {
+    const a = itemsOut({ found: true, slug: 's', label: 'L', proof: true, total: 60, counts: {}, conv: { id: 'c2', name: 'vendor responses' }, items }, { topic: 's', sort: 'newest', conversation: 'c2', offset: 0 }, O);
+    assert.match(a.text, /in the conversation vendor responses/); assert.match(a.text, /conversation: "c2"/); assert.deepEqual(a.data.conversation, { id: 'c2', name: 'vendor responses' });
+    const b = itemsOut({ found: true, slug: 's', label: 'L', proof: true, total: 5, counts: {}, conv: null, items: items.slice(0, 5) }, { topic: 's', sort: 'newest', conversation: 'c9', offset: 0 }, O);
+    assert.match(b.text, /`c9` is not a conversation of this topic today, so it was ignored/); assert.equal(b.data.conversation, null);
   });
   test('reactionText uses the unit of each source', () => {
     assert.equal(reactionText({ kind: 'rss', likes: 5 }), ''); assert.equal(reactionText({ kind: 'youtube', views: 12000 }), 'about 12k views'); assert.equal(reactionText({ kind: 'hn', likes: 3, replies: 0 }), '3 points, 0 comments');
