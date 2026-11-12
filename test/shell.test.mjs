@@ -148,6 +148,7 @@ describe('picking, telling and asking', () => {
     const b = boot(APP);
     b.UC.suggest(['Why did X peak on Tuesday?', 'x', 7, 'Which papers are behind X?', 'How did X get from Hacker News to X?', 'A fourth question?']);
     assert.equal(all(b.part('ucq'), (n) => n.tag === 'button').length, 3);
+    b.UC.refresh(); assert.ok(!b.part('ucq').classList.contains('hide'), 'questions stay shown after a redraw');
     button(b.part('ucq'), 'Why did').onclick(); assert.ok(b.of('ui/message')[0].params.content[0].text.startsWith('Why did X peak'));
   });
 });
@@ -158,6 +159,7 @@ describe('hosts', () => {
     assert.equal(b.UC.open('topic', { topic: 'x' }), false);
     b.UC.pick('a', { k: 'item', label: 'L', url: 'u' }); b.UC.tell(); b.UC.suggest(['Why did X peak on Tuesday?']); await later(700);
     assert.equal(b.sent.length, 0); assert.ok(b.part('ucbar').classList.contains('hide')); assert.ok(b.part('ucfoot').classList.contains('hide'));
+    b.UC.refresh(); assert.ok(b.part('ucq').classList.contains('hide'), 'no empty question box under the view');
   });
   test('a host that lists nothing gets everything, as the views have always done', () => {
     assert.equal(boot({}).UC.open('paper', { id: '2511.00001' }), true);

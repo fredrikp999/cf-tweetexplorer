@@ -150,7 +150,7 @@ var UC = (function () {
       else DRAW[t.kind](pane, t.data);
     }
     renderBar(); renderFoot();
-    if (qbox) qbox.classList.toggle('hide', on);
+    if (qbox) qbox.classList.toggle('hide', on || !qbox.childNodes.length);   // an empty box (no questions, or the site) stays hidden
     size();
   }
   function load(entry) {
