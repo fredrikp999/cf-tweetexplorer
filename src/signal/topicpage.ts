@@ -4,6 +4,7 @@
 
 import type { TimelineDot, TopicFirst, TopicWatch } from './topicview.ts';
 import type { Brush } from './brush.ts';
+import type { PrismOut } from './prism.ts';
 
 // ---- the address
 /** FNV-1a, 32 bits, in base 36: a few letters that tell two odd names apart. */
@@ -157,6 +158,8 @@ export interface TopicData {
   related: Array<{ slug: string; label: string; state?: TopicState | null; days?: string[]; counts?: number[]; line?: string }>;
   /** Mentions per day for the heat calendar: the 30 days the counts are kept, from the terms table (names as Signal counts them, so they can differ a little from the items above). */
   heat?: { days: string[]; counts: number[] };
+  /** Prism (src/signal/prism.ts): the conversations inside the topic, counted over the items Talk lists; null or absent when it has none. */
+  prism?: PrismOut | null;
   /** Added by src/site/topicData.ts (they live in the Publish object). */
   briefings?: TopicBriefing[];
 }

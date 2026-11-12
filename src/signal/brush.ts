@@ -13,9 +13,10 @@ export const DEFAULT_SORT: BrushSort = 'reacted';
 /** Items shown per kind: the usual few, or more when a day or a kind narrows the list. */
 export const TALK_CAP = 8, TALK_CAP_NARROW = 20;
 
-export interface Brush { day?: string; kind?: EvKind; sort: BrushSort }
+/** `conv`: one conversation inside the topic (Prism, src/signal/prism.ts), by its id. */
+export interface Brush { day?: string; kind?: EvKind; conv?: string; sort: BrushSort }
 /** The same, as asked for (anything not understood is simply left out). */
-export interface BrushAsk { day?: string | null; kind?: string | null; sort?: string | null }
+export interface BrushAsk { day?: string | null; kind?: string | null; conv?: string | null; sort?: string | null }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 /** The `n` UTC days ending at `now`, oldest first, as YYYY-MM-DD. */
@@ -32,15 +33,15 @@ export function parseSort(v: string | null | undefined, fallback: BrushSort = DE
 }
 /**
  * The filter in an address, checked strictly: a day only in `<YYYY-MM-DD>` form and one of `days` (the days the topic has items for), a kind only one Talk has, a sort only one of the four.
- * What is not valid is dropped, so a wrong address gives the plain list, never an error.
+ * What is not valid is dropped, so a wrong address gives the plain list, never an error. `convs`: the ids of the topic's conversations today; a conversation is kept only when it is one of them.
  */
-export function parseBrush(ask: BrushAsk, days: string[], fallbackSort: BrushSort = DEFAULT_SORT): Brush {
-  const day = String(ask.day ?? ''), kind = String(ask.kind ?? '');
-  return { ...(DAY.test(day) && days.includes(day) ? { day } : {}), ...(BRUSH_KINDS.includes(kind as EvKind) ? { kind: kind as EvKind } : {}), sort: parseSort(ask.sort, fallbackSort) };
+export function parseBrush(ask: BrushAsk, days: string[], fallbackSort: BrushSort = DEFAULT_SORT, convs: string[] = []): Brush {
+  const day = String(ask.day ?? ''), kind = String(ask.kind ?? ''), conv = String(ask.conv ?? '');
+  return { ...(DAY.test(day) && days.includes(day) ? { day } : {}), ...(BRUSH_KINDS.includes(kind as EvKind) ? { kind: kind as EvKind } : {}), ...(conv && convs.includes(conv) ? { conv } : {}), sort: parseSort(ask.sort, fallbackSort) };
 }
 /** The query parameters that say this filter (the default order is left out), for building addresses. */
 export function brushParams(b: Brush, fallbackSort: BrushSort = DEFAULT_SORT): Array<[string, string]> {
-  return [...(b.day ? [['day', b.day] as [string, string]] : []), ...(b.kind ? [['kind', b.kind] as [string, string]] : []), ...(b.sort !== fallbackSort ? [['sort', b.sort] as [string, string]] : [])];
+  return [...(b.day ? [['day', b.day] as [string, string]] : []), ...(b.kind ? [['kind', b.kind] as [string, string]] : []), ...(b.conv ? [['conv', b.conv] as [string, string]] : []), ...(b.sort !== fallbackSort ? [['sort', b.sort] as [string, string]] : [])];
 }
 
 /** What an item needs to be filtered and ordered. A number of -1 or undefined was not recorded. */

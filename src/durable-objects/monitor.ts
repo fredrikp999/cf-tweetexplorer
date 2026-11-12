@@ -24,7 +24,8 @@ import { DEPTH_DAYS, DEPTH_TOPICS, DEPTH_WINDOW, depthLayout, reachSeries, type 
 import { LADDER_DAYS, LADDER_POOL, LADDER_WINDOW, dayScores, ladderOf, type Ladder } from '../signal/ladder';
 import { firstByKind, pickWatch, timelineDots, type TopicWatch } from '../signal/topicview';
 import { ITEM_ID, buildCard, inTimeOrder, itemId, type CardTopic, type SourceCard } from '../signal/sourcecard';
-import { brushItems, brushParams, parseBrush, recentDays, TALK_CAP, TALK_CAP_NARROW, type BrushAsk } from '../signal/brush';
+import { brushItems, brushParams, DEFAULT_SORT, parseBrush, recentDays, TALK_CAP, TALK_CAP_NARROW, type BrushAsk } from '../signal/brush';
+import { CONV_ID, PRISM_KEEP_DAYS, buildPrism, parsePrismNames, prismSystem, prismUser, ruleName, unnamed, type Prism, type PrismItem, type PrismOut, type PrismTypical, type PrismView } from '../signal/prism';
 import { numbersLine, oneLine, type TopicBrief } from '../signal/trail';
 import { evidenceSegments, fallbackSummary, topicSlug, topicState, usualLevel, type EvItem, type EvKind, type TopicData, type TopicPaper } from '../signal/topicpage';
 import { areaHint, areaOf, parseArea, rankByArea, type Area } from '../signal/area';
@@ -162,6 +163,8 @@ export class MonitorDO extends DurableObject<Env> {
     for (const col of ['likes', 'replies', 'views']) { try { sql.exec(`ALTER TABLE item_log ADD COLUMN ${col} INTEGER NOT NULL DEFAULT -1`); } catch { /* already there */ } }   // the numbers behind `eng`, one by one (-1: not recorded), for the topic page's evidence strip
     // Topic summaries (section 8 of INTENT.md): one paragraph per topic per day, written by the Signal topic model from the topic's items, with the items it says it used.
     sql.exec('CREATE TABLE IF NOT EXISTS topic_summary (slug TEXT NOT NULL, day TEXT NOT NULL, term TEXT NOT NULL, text TEXT NOT NULL, items TEXT NOT NULL, n INTEGER NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (slug, day)) WITHOUT ROWID');
+    // Prism (src/signal/prism.ts): the conversations inside a topic, one row per topic per day; json is a Prism with `counted` (how many items were grouped), or { none: true, counted } for a topic that was looked at and is one conversation.
+    sql.exec('CREATE TABLE IF NOT EXISTS topic_prism (board TEXT NOT NULL, slug TEXT NOT NULL, day TEXT NOT NULL, json TEXT NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (board, slug, day)) WITHOUT ROWID');
     // Meaning (src/signal/vectors.ts): a vector per item Signal read, and whether it repeats an earlier one (`copy`: "watch\nitem" of the post it repeats, '' when it is its own).
     // A copy is read as "no topics" and not counted, so a post copied by many accounts counts once. Kept as long as the item log.
     sql.exec("CREATE TABLE IF NOT EXISTS item_vec (watch TEXT NOT NULL, item TEXT NOT NULL, day TEXT NOT NULL, v BLOB NOT NULL, copy TEXT NOT NULL DEFAULT '', PRIMARY KEY (watch, item)) WITHOUT ROWID");
@@ -215,6 +218,7 @@ export class MonitorDO extends DurableObject<Env> {
     const wake = this.aiWake(), now = Date.now(), tidy = Date.parse(today() + 'T00:00:00Z') + 86_400_000 + 60_000;
     let next = wake ? Math.min(wake, tidy) : tidy;
     const sums = this.summaryWake(); if (sums) next = Math.min(next, sums);
+    const prism = this.prismWake(); if (prism) next = Math.min(next, prism);
     const pulse = this.pulseWake(); if (pulse) next = Math.min(next, pulse);
     next = Math.min(next, this.researchWake());
     const map = this.mapWake(); if (map) next = Math.min(next, map);
@@ -225,6 +229,7 @@ export class MonitorDO extends DurableObject<Env> {
   async alarm(): Promise<void> {
     if (!this.collectReady()) await this.syncCollect();
     try { await this.summaryStep(Date.now() + 20_000); } catch (err) { console.error('topic summaries failed', err instanceof Error ? err.message : String(err)); }   // before the naming work: a day's summaries cost cents, and the cap is shared
+    try { await this.prismStep(Date.now() + 15_000); } catch (err) { console.error('topic conversations failed', err instanceof Error ? err.message : String(err)); }   // after the summaries: the cap is shared, and a day's summaries matter more than a day's names
     try { await this.processAi(Date.now() + 20_000); } catch (err) { console.error('signal topics failed', err instanceof Error ? err.message : String(err)); }
     this.pruneSignal();
     const researchUntil = Date.now() + 25_000;
@@ -449,13 +454,14 @@ export class MonitorDO extends DurableObject<Env> {
     if (!found) return { found: false as const };
     const { v, topic } = found, slug = topicSlug(topic.term), proof = v.board.proof === true;
     if (!proof) return { found: true as const, slug, label: topic.label, area: areaOf(v.board), proof, total: 0, items: [] as EvItem[] };
-    const offset = Math.max(0, Math.min(5000, Number(p.get('offset')) || 0)), c = v.c, { items } = await this.topicItems(v, [topic.term, ...topic.members]);
+    const offset = Math.max(0, Math.min(5000, Number(p.get('offset')) || 0)), c = v.c, got = await this.topicItems(v, [topic.term, ...topic.members]);
     // A5: the same day, kind and order as the topic page (src/signal/brush.ts); here newest is the default, and "reacted" without a kind is ordered within each kind, one kind after the other
-    const brush = parseBrush({ day: p.get('day'), kind: p.get('kind'), sort: p.get('sort') }, recentDays(Date.now(), 14).filter((d) => d >= c.from), 'newest');
+    const { items, meta } = got, pr = this.prismOut(v.board.slug, slug, items, meta, proof);
+    const brush = parseBrush({ day: p.get('day'), kind: p.get('kind'), conv: p.get('conv'), sort: p.get('sort') }, recentDays(Date.now(), 14).filter((d) => d >= c.from), 'newest', pr ? pr.out.groups.map((g) => g.id) : []);
     const counts: Record<string, number> = {};
     for (const i of items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
-    const of = brushItems(items, brush).items;
-    return { found: true as const, slug, label: topic.label, area: areaOf(v.board), proof, total: of.length, counts, day: brush.day ?? null, kind: brush.kind ?? null, sort: brush.sort, items: of.slice(offset, offset + 25) };
+    const pool = brush.conv ? items.filter((i) => i.id && pr!.of.get(i.id) === brush.conv) : items, of = brushItems(pool, brush).items, cv = brush.conv ? pr!.out.groups.find((g) => g.id === brush.conv) : undefined;
+    return { found: true as const, slug, label: topic.label, area: areaOf(v.board), proof, total: of.length, counts, day: brush.day ?? null, kind: brush.kind ?? null, conv: cv ? { id: cv.id, name: cv.name } : null, sort: brush.sort, items: of.slice(offset, offset + 25) };
   }
   /** Papers of the last 30 days for the public MCP server: filtered by words (all of them, in title or abstract), by a cluster of the Research map, or by "being discussed". Attention first, then newest. */
   private papersPublic(p: URLSearchParams) {
@@ -1640,7 +1646,7 @@ export class MonitorDO extends DurableObject<Env> {
     const found = await this.findTopic(slug, hint);
     if (!found) return null;
     const { v, topic, alsoIn } = found, { board, c } = v, proof = board.proof === true, names = [topic.term, ...topic.members], canonical = topicSlug(topic.term);
-    const { hits, items, wide } = await this.topicItems(v, names), now = Date.now();
+    const { hits, items, wide, meta } = await this.topicItems(v, names), now = Date.now();
     const days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), counts = days.map(() => 0);
     for (const h of hits) { const d = days.indexOf(dayOf(h.ts)); if (d >= 0) counts[d]++; }
     const papers = this.topicPapers(names), segments = evidenceSegments(items, papers, proof), state = topicState(topic);
@@ -1649,7 +1655,9 @@ export class MonitorDO extends DurableObject<Env> {
     const byKind: TopicData['counts'] = {};
     for (const i of items) byKind[i.kind] = (byKind[i.kind] ?? 0) + 1;
     // A5: the Talk list narrowed to a day and a kind and ordered as asked, each kind within itself (src/signal/brush.ts). The day must be one the items cover (from the start of the window).
-    const view = parseBrush(brush, days.filter((d) => d >= c.from)), brushed = brushItems(items, view, view.day || view.kind ? TALK_CAP_NARROW : TALK_CAP);
+    const pr = this.prismOut(board.slug, canonical, items, meta, proof);
+    const view = parseBrush(brush, days.filter((d) => d >= c.from), DEFAULT_SORT, pr ? pr.out.groups.map((g) => g.id) : []);
+    const pool = view.conv ? items.filter((i) => i.id && pr!.of.get(i.id) === view.conv) : items, brushed = brushItems(pool, view, view.day || view.kind || view.conv ? TALK_CAP_NARROW : TALK_CAP);
     const talk = !proof ? [] : brushed.items
       .map((i) => ({ ...(i.id ? { id: i.id } : {}), kind: i.kind, title: i.title, url: i.url, discussionUrl: i.discussionUrl, source: i.source, by: i.by, ts: i.ts, ...(i.likes >= 0 ? { likes: i.likes } : {}), ...(i.replies >= 0 ? { replies: i.replies } : {}), ...(i.views > 0 ? { views: i.views } : {}) }));
     const sm = this.ctx.storage.sql.exec<{ day: string; text: string; items: string; n: number; model: string }>('SELECT day, text, items, n, model FROM topic_summary WHERE slug = ? ORDER BY day DESC LIMIT 1', canonical).toArray()[0];
@@ -1671,7 +1679,7 @@ export class MonitorDO extends DurableObject<Env> {
       state, signal: topic.signal, change: topic.change, isNew: topic.isNew, kind: topic.kind, breadth: topic.breadth, active: topic.active, reactions: topic.reactions,
       series: { days, counts, usual: usualLevel(counts) }, counts: byKind, total: items.length, evidence: segments,
       summary, fallback: fallbackSummary({ label: topic.label, state, total: items.length, days: c.days, segments, groups: v.shown.length }),
-      talk, view: { ...view, counts: proof ? brushed.counts : {} }, papers, related,
+      talk, view: { ...view, counts: proof ? brushed.counts : {} }, prism: pr?.out ?? null, papers, related,
       // Step 7: the order the kinds of source had it in, items over time, and videos. Titles and links only on a Signal that shows its sources.
       first: firstByKind(wide, { since: now - 14 * 86_400_000, hide: !proof }), timeline: timelineDots(wide, { from: now - 14 * 86_400_000, to: now, hide: !proof }),
       watch: this.topicWatch(wide, names, proof), heat,
@@ -1795,6 +1803,99 @@ export class MonitorDO extends DurableObject<Env> {
     // The topic's own name (`term`) is what a lens stores; `label` is how Signal shows it.
     return { cost: r.cost, model: cfg.model, topics: list.length, suggestions: Object.fromEntries(Object.entries(got).map(([k, ls]) => [k, ls.map((l) => ({ term: byLabel.get(l) ?? l, label: l, already: lensMatch(lenses.find((x) => x.key === k)!, { term: byLabel.get(l) ?? l, label: l }) }))])) };
   }
+  // ---- Prism (src/signal/prism.ts): the conversations inside a topic, found from the vectors of its items once a day, from the alarm, never from a page request.
+  /** Forgets every kept answer of one topic (all hints and filters), after its summary or its conversations changed. */
+  private dropTopicCache(slug: string): void { for (const k of [...this.pubCache.keys()]) if (k.startsWith(`topic|${slug}|`)) this.pubCache.delete(k); }
+  /** The items Talk lists, as Prism needs them: only those that were read for their meaning and are not a copy of an earlier post. */
+  private prismItems(items: EvItem[], meta: Map<EvItem, { watch: string; item: string }>): PrismItem[] {
+    const out: PrismItem[] = [];
+    for (const i of items) {
+      const m = meta.get(i);
+      if (!m) continue;
+      const r = this.ctx.storage.sql.exec<{ v: ArrayBuffer; copy: string }>('SELECT v, copy FROM item_vec WHERE watch = ? AND item = ?', m.watch, m.item).toArray()[0];
+      if (!r || r.copy !== '') continue;
+      out.push({ key: m.watch + '\n' + m.item, v: fromBlob(r.v), ts: i.ts, kind: i.kind, title: i.title });
+    }
+    return out;
+  }
+  /** When to wake for conversations: 0 when there is nothing to do (no vectors are being made, no published Signal, or done for today). Not held back by the daily cap: the grouping costs no money, only the names do. */
+  private prismWake(): number {
+    if (!this.tables().ai || !this.boards().some((b) => b.public) || this.getMeta('prismDay', '') === today()) return 0;
+    return Date.now() + 1000;
+  }
+  /**
+   * Finds today's conversations of each active topic and names the new ones, one model call per topic with the Signal topic model, inside its daily cap, recorded in Costs as "Topic conversations (AI)".
+   * It stops at the deadline and carries on at the next wake-up. A name the model did not give (cap reached, call failed) is made by rule, and asked for again tomorrow.
+   */
+  private async prismStep(deadline: number): Promise<void> {
+    const cfg = this.aiConfig(), sql = this.ctx.storage.sql, day = today();
+    if (!this.tables().ai || !this.boards().some((b) => b.public) || this.getMeta('prismDay', '') === day) return;
+    const done = new Set(sql.exec<{ board: string; slug: string }>('SELECT board, slug FROM topic_prism WHERE day = ?', day).toArray().map((r) => r.board + '\n' + r.slug));
+    for (const slug of await this.activeTopics()) {
+      if (Date.now() > deadline) return;   // carries on at the next wake-up; prismDay is not set
+      const found = await this.findTopic(slug);
+      if (!found) continue;
+      const board = found.v.board.slug, canonical = topicSlug(found.topic.term);
+      if (done.has(board + '\n' + canonical)) continue;
+      const names = [found.topic.term, ...found.topic.members], { items, meta } = await this.topicItems(found.v, names), pis = this.prismItems(items, meta);
+      let prev: Prism | null = null;   // the newest earlier day that had groups: a day with none in between does not break the line
+      for (const r of sql.exec<{ json: string }>('SELECT json FROM topic_prism WHERE board = ? AND slug = ? AND day < ? ORDER BY day DESC LIMIT 3', board, canonical, day)) {
+        const j = JSON.parse(r.json) as Partial<Prism>;
+        if (Array.isArray(j.groups)) { prev = j as Prism; break; }
+      }
+      const p = buildPrism(pis, prev, day);
+      let named = false;
+      if (p && unnamed(p).length) {
+        const need = unnamed(p), titleOf = new Map(pis.map((i) => [i.key, i.title] as const)), titlesOf = (g: { typical: string[] }) => g.typical.map((k) => titleOf.get(k) ?? '').filter(Boolean);
+        const taken = p.groups.filter((g) => g.by === 'model').map((g) => g.name);
+        if (cfg.enabled && cfg.model && this.aiSpend().cost < cfg.dailyCap) {
+          try {
+            const r = await complete(this.env, cfg.model, [prismSystem(), prismUser(found.topic.label, need.map(titlesOf), taken)], { maxTokens: 200,
+              mock: () => JSON.stringify({ names: need.map((_, i) => ({ i: i + 1, name: 'conversation ' + (i + 1) })) }) });
+            if (r.cost) { this.setMeta('aiSpend', { day, cost: this.aiSpend().cost + r.cost }); await recordCost(this.env, { kind: 'signal', ref: 'topic-prism', label: 'Topic conversations (AI)', llm: r.cost, tokensIn: r.tokensIn, tokensOut: r.tokensOut, calls: 1, model: cfg.model }); }
+            for (const [i, name] of parsePrismNames(r.text, need.length, taken)) { need[i].name = name; need[i].by = 'model'; named = true; }
+          } catch (err) { console.error('topic conversation names failed', slug, err instanceof Error ? err.message : String(err)); }
+        }
+        // The rule: a group still without a name takes its most typical title; one that has a rule-made name from yesterday keeps it
+        for (const g of need) if (g.by !== 'model') { if (!g.name) g.name = ruleName(titlesOf(g)[0] ?? ''); g.by = 'rule'; }
+      }
+      sql.exec('INSERT OR REPLACE INTO topic_prism (board, slug, day, json, model, at) VALUES (?, ?, ?, ?, ?, ?)', board, canonical, day, JSON.stringify(p ? { ...p, counted: pis.length } : { none: true, counted: pis.length }), named ? cfg.model : '', Date.now());
+      this.dropTopicCache(canonical);
+    }
+    this.setMeta('prismDay', day);
+    sql.exec('DELETE FROM topic_prism WHERE day < ?', dayOf(Date.now() - PRISM_KEEP_DAYS * 86_400_000));
+  }
+  /** A topic's conversations as the page and the tools get them, or null: today's or yesterday's row, counted over the items the list has now. `of` (public item id to conversation id) is for the filter and never leaves the Monitor. */
+  private prismOut(board: string, slug: string, items: EvItem[], meta: Map<EvItem, { watch: string; item: string }>, proof: boolean): { out: PrismOut; of: Map<string, string> } | null {
+    const row = this.ctx.storage.sql.exec<{ day: string; json: string }>('SELECT day, json FROM topic_prism WHERE board = ? AND slug = ? ORDER BY day DESC LIMIT 1', board, slug).toArray()[0];
+    if (!row || !summaryFresh(row.day)) return null;
+    const stored = JSON.parse(row.json) as Partial<Prism>;
+    if (!Array.isArray(stored.groups)) return null;   // a newest row that says none means none
+    const byKey = new Map<string, EvItem>();
+    for (const i of items) { const m = meta.get(i); if (m) byKey.set(m.watch + '\n' + m.item, i); }
+    const of = new Map<string, string>(), groups: PrismView[] = [];
+    for (const g of stored.groups) {
+      const here = g.items.map((k) => byKey.get(k)).filter((i): i is EvItem => !!i);
+      if (!here.length) continue;
+      const ts = here.map((i) => i.ts), tally = new Map<EvKind, number>();
+      for (const i of here) { tally.set(i.kind, (tally.get(i.kind) ?? 0) + 1); if (i.id) of.set(i.id, g.id); }
+      const top = [...tally].sort((a, b) => b[1] - a[1]), kind: EvKind | 'mixed' = top.length > 1 && top[0][1] === top[1][1] ? 'mixed' : top[0][0];
+      const typical: PrismTypical[] = !proof ? [] : g.typical.map((k) => byKey.get(k)).filter((i): i is EvItem => !!i && !!i.id).map((i) => ({ id: i.id!, kind: i.kind, title: i.title, url: i.url, by: i.by, source: i.source, ts: i.ts }));
+      groups.push({ id: g.id, name: g.name, by: g.by === 'model' ? 'model' : 'rule', n: here.length, kind, began: Math.min(...ts), last: Math.max(...ts), typical,
+        dots: !proof ? [] : here.filter((i) => i.id).map((i) => ({ id: i.id!, ts: i.ts })) });
+    }
+    if (groups.length < 2) return null;   // a picture of one petal says nothing
+    const all = [...byKey.values()].map((i) => i.ts);
+    return { out: { day: row.day, groups, other: (stored.other ?? []).filter((k) => byKey.has(k)).length, from: Math.min(...all), to: Math.max(...all) }, of };
+  }
+  /** What the owner reads to check the numbers (section 12 of docs/SPEC-B6-prism.md): today's rows, no item. */
+  private prismStatus() {
+    const rows = this.ctx.storage.sql.exec<{ board: string; slug: string; json: string }>('SELECT board, slug, json FROM topic_prism WHERE day = ? ORDER BY board, slug', today()).toArray();
+    return { day: today(), topics: rows.map((r) => {
+      const j = JSON.parse(r.json) as Partial<Prism> & { counted?: number }, gs = Array.isArray(j.groups) ? j.groups : [], by = new Set(gs.map((g) => g.by));
+      return { board: r.board, slug: r.slug, items: j.counted ?? 0, groups: gs.length, stable: gs.length && typeof j.stable === 'number' ? j.stable : null, names: (by.has('model') && by.has('rule') ? 'mixed' : by.has('model') ? 'model' : by.has('rule') ? 'rule' : '') as 'model' | 'rule' | 'mixed' | '' };
+    }) };
+  }
   /** When to wake for summaries: 0 when there is nothing to do (off, no published Signal, or done for today), the next midnight when the day's cap is used up. */
   private summaryWake(): number {
     const c = this.aiConfig();
@@ -1838,7 +1939,7 @@ export class MonitorDO extends DurableObject<Env> {
       const used = (parsed.used.length ? parsed.used : picked.map((_, k) => k + 1)).slice(0, 8).map((k) => picked[k - 1]).filter(Boolean);
       sql.exec('INSERT OR REPLACE INTO topic_summary (slug, day, term, text, items, n, model, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', slug, day, found.topic.term, parsed.text,
         JSON.stringify(used.map((i) => ({ title: i.title, url: i.url, by: i.by, kind: i.kind }))), used.length, cfg.model, Date.now());
-      this.pubCache.delete(`topic|${slug}`);
+      this.dropTopicCache(slug);
     }
     this.setMeta('summaryDay', day);
     sql.exec('DELETE FROM topic_summary WHERE day < ?', dayOf(Date.now() - SUMMARY_KEEP_DAYS * 86_400_000));
@@ -1933,6 +2034,7 @@ export class MonitorDO extends DurableObject<Env> {
           return json(v);
         }
         if (name === 'signal-ai') return json(this.aiStatus());
+        if (name === 'prism-status') return json(this.prismStatus());
         if (name === 'signal-filter') return json(this.filterInfo());
         if (name === 'signal-public-items') {
           const out = await this.signalPublicItems(url.searchParams.get('slug') ?? '', (url.searchParams.get('term') ?? '').toLowerCase().slice(0, 80), Number(url.searchParams.get('days')));
@@ -1946,13 +2048,13 @@ export class MonitorDO extends DurableObject<Env> {
         if (name === 'topic-public') {   // the topic page and /t/<slug>.json: kept for two minutes
           const slug = (url.searchParams.get('slug') ?? '').toLowerCase().slice(0, 64), hint = areaHint(url.searchParams.get('area'));
           // the day, kind and order of the Talk list (A5), checked before they become part of the cache key, so odd values share the plain list's entry
-          const bq = parseBrush({ day: url.searchParams.get('day'), kind: url.searchParams.get('kind'), sort: url.searchParams.get('sort') }, recentDays(Date.now(), 14)), bk = brushParams(bq).map(([a, b]) => `${a}=${b}`).join('&');
+          const rawConv = url.searchParams.get('conv') ?? '', bq = parseBrush({ day: url.searchParams.get('day'), kind: url.searchParams.get('kind'), conv: rawConv, sort: url.searchParams.get('sort') }, recentDays(Date.now(), 14), DEFAULT_SORT, CONV_ID.test(rawConv) ? [rawConv] : []), bk = brushParams(bq).map(([a, b]) => `${a}=${b}`).join('&');
           const k = `topic|${slug}|${hint ?? ''}|${bk}`, hit = this.pubCache.get(k);
           if (hit && Date.now() - hit.at < 120_000) return hit.v ? json(hit.v) : json({ error: 'not found' }, 404);
           const v = await this.topicData(slug, hint, bq);
           if (bk && this.pubCache.size > 300) this.pubCache.delete(this.pubCache.keys().next().value as string);
           this.pubCache.set(k, { at: Date.now(), v });
-          if (url.searchParams.get('quiet') !== '1' && this.summaryWake()) await this.reschedule();   // summaries are due: start writing them (a page never waits for one). `quiet`: the public MCP server only reads
+          if (url.searchParams.get('quiet') !== '1' && (this.summaryWake() || this.prismWake())) await this.reschedule();   // summaries or conversations are due: start writing them (a page never waits for one). `quiet`: the public MCP server only reads
           return v ? json(v) : json({ error: 'not found' }, 404);
         }
         if (name === 'topic-peek') {   // the small card of a topic, for /t/<slug>/peek: kept for two minutes

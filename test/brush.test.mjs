@@ -30,6 +30,15 @@ describe('reading the address', () => {
     assert.deepEqual(parseBrush({}, days), { sort: 'reacted' });
     assert.deepEqual(parseBrush({ day: null, kind: null, sort: null }, days), { sort: 'reacted' });
   });
+  test('a conversation is kept only when the topic has it today, and combines with a day and a kind', () => {
+    const days = recentDays(Date.parse('2026-11-12T10:00:00Z'), 14);
+    assert.deepEqual(parseBrush({ conv: 'c2' }, days, 'reacted', ['c1', 'c2']), { conv: 'c2', sort: 'reacted' });
+    for (const bad of ['c3', 'C2', '', null]) assert.deepEqual(parseBrush({ conv: bad }, days, 'reacted', ['c1', 'c2']), { sort: 'reacted' }, String(bad));
+    assert.deepEqual(parseBrush({ conv: 'c2' }, days), { sort: 'reacted' }, 'no conversations known: dropped');
+    const b = parseBrush({ day: '2026-11-10', kind: 'hn', conv: 'c1', sort: 'newest' }, days, 'reacted', ['c1']);
+    assert.deepEqual(b, { day: '2026-11-10', kind: 'hn', conv: 'c1', sort: 'newest' });
+    assert.deepEqual(brushParams(b), [['day', '2026-11-10'], ['kind', 'hn'], ['conv', 'c1'], ['sort', 'newest']]);
+  });
   test('the older tool names still work; the default can differ', () => {
     assert.equal(parseSort('new'), 'newest');
     assert.equal(parseSort('top'), 'reacted');
