@@ -27,6 +27,11 @@ describe('view scripts', () => {
     assert.ok(s.includes("name: 'get_research_map'"));
     assert.ok(s.includes('d.thanks'));
   });
+  it('the hub uses the shell for Back, picks and telling the model', () => {
+    const s = script(hub);
+    for (const call of ['UC.init(', 'UC.step(', 'UC.pick(', 'UC.tell()', "UC.open('item'", "UC.open('paper'"]) assert.ok(s.includes(call), call);
+    assert.doesNotMatch(hub, /id="back"|id="site"|id="ask"/);
+  });
   it('the landscape asks Claude to show a topic where the host can message', () => {
     assert.match(script(land), /host\.message[\s\S]{0,200}ui\/message[\s\S]*Show me the topic/);
   });
