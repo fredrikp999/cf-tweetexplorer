@@ -42,6 +42,14 @@ h1{margin:0;font-size:21px;line-height:1.2}
 #foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}#foot .sp{flex:1}#msg{color:var(--mut);font-size:12.5px;min-height:1.4em;margin:6px 0 0}
 #thanks{color:var(--mut);font-size:12px;margin:8px 0 0}
 body.full #app{min-height:100vh}
+:root{--k-x:#1f7a8c;--k-hn:#d9480f;--k-youtube:#c2255c;--k-rss:#6741d9}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--k-x:#3fa5b8;--k-hn:#f76707;--k-youtube:#e64980;--k-rss:#845ef7}}
+:root[data-theme=dark]{--k-x:#3fa5b8;--k-hn:#f76707;--k-youtube:#e64980;--k-rss:#845ef7}
+.prism{max-width:520px;width:100%;height:auto;display:block;margin:0 0 6px}.prism text{font-size:12px;fill:var(--fg)}.prism .pn{fill:var(--mut);font-size:11px}
+.pp{fill:color-mix(in srgb,var(--pk,var(--mut)) 20%,var(--card));stroke:var(--pk,var(--mut));stroke-width:1.2;cursor:pointer}.pp.k-x{--pk:var(--k-x)}.pp.k-hn{--pk:var(--k-hn)}.pp.k-youtube{--pk:var(--k-youtube)}.pp.k-rss{--pk:var(--k-rss)}.pp.other{stroke-dasharray:3 3;cursor:default}
+.pp.on{stroke-width:2.6}.pp:hover,.pp:focus-visible{stroke-width:2.4}.pp:focus-visible,.pd:focus-visible{outline:none}.pd{fill:var(--fg);opacity:.55;cursor:pointer}.pd:hover,.pd:focus-visible{fill:var(--ac);opacity:1}.pc{fill:var(--card);stroke:var(--line)}
+.plist{list-style:none;margin:6px 0;padding:0;display:grid;gap:6px}.plist li{border-left:3px solid var(--line);padding-left:10px}.plist small{color:var(--mut)}.plist li button.ask{margin-left:6px;font-size:12.5px}
+#slide{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:2px 0 8px;color:var(--mut);font-size:12.5px}#slide input{accent-color:var(--ac);flex:1;min-width:140px;max-width:360px}
 @media (max-width:560px){#evwrap{grid-template-columns:1fr}}
 </style></head><body><div id="s">Reading the topic…</div><div id="app" class="hide">
 <div id="top"><span class="sp"></span><button id="fs" class="hide">Fullscreen</button></div>
@@ -58,8 +66,9 @@ ${SHELL_JS}
 var NS = 'http://www.w3.org/2000/svg';
 // The angles, in the order of the topic page on the site. A new angle: one entry here and one function in PANES.
 var TABS = [['talk', 'Talk'], ['first', 'Who said it first'], ['papers', 'Papers'], ['watch', 'Watch'], ['briefings', 'Briefings']];
+TABS.splice(1, 0, ['conv', 'Conversations']);
 var pending = {}, nextId = 2, host = {}, D = null, theme = '', tab = 'talk', busy = false, home = '';
-var T = { kind: '', sort: 'new', items: [], next: null, total: 0, loading: false, err: '', loaded: false, gen: 0 };
+var T = { kind: '', sort: 'new', conv: '', items: [], next: null, total: 0, loading: false, err: '', loaded: false, gen: 0 }, PT = 0;
 function el(id) { return document.getElementById(id); }
 function send(m) { m.jsonrpc = '2.0'; parent.postMessage(m, '*'); }
 function request(method, params, ms, done) {
@@ -125,7 +134,8 @@ function header() {
 function renderTabs() {
   var box = el('tabs'); box.textContent = '';
   TABS.forEach(function (t) {
-    var n = t[0] === 'briefings' ? D.briefings.length : t[0] === 'papers' ? D.papers.matched : t[0] === 'first' ? D.first.order.length : t[0] === 'watch' ? D.watch.length : null, b = mk('button', '', t[1]);
+    if (t[0] === 'conv' && !D.prism) return;
+    var n = t[0] === 'conv' ? D.prism.groups.length : t[0] === 'briefings' ? D.briefings.length : t[0] === 'papers' ? D.papers.matched : t[0] === 'first' ? D.first.order.length : t[0] === 'watch' ? D.watch.length : null, b = mk('button', '', t[1]);
     b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', t[0] === tab ? 'true' : 'false');
     if (n) b.appendChild(mk('small', '', String(n)));
     b.onclick = function () { tab = t[0]; renderTabs(); renderPane(); UC.tell(); };
@@ -145,6 +155,11 @@ function openBtn(text, url, cls) { var b = mk('button', cls || 'lk', text); b.on
 function kinds() { return D.evidence.filter(function (e) { return e.kind !== 'arxiv'; }); }
 function talkPane(p) {
   if (!D.sourcesShown) { p.appendChild(mk('p', 'note', 'This topic\\u2019s Signal does not show its sources, so the items behind it are not public. The summary and the numbers above are all there is.')); return; }
+  if (T.conv) {
+    var cg = convGroup(T.conv), chip = mk('p', 'note', 'Showing ' + (cg ? cg.name : 'one conversation') + ' \\u00B7 '), clr = mk('button', 'lk', 'clear');
+    clr.onclick = function () { T.conv = ''; loadItems(true); UC.tell(); };
+    chip.appendChild(clr); p.appendChild(chip);
+  }
   var ctl = mk('div'); ctl.id = 'ctl';
   var g = mk('span', 'g'); g.setAttribute('role', 'group'); g.setAttribute('aria-label', 'Kind of source');
   [['', 'All']].concat(kinds().map(function (e) { return [e.kind, e.label]; })).forEach(function (k) {
@@ -178,7 +193,7 @@ function loadItems(reset) {
   var gen, args;
   if (reset) { T.items = []; T.next = null; T.total = 0; T.loaded = false; T.gen++; }
   gen = T.gen; T.loading = true; T.err = '';
-  args = { topic: D.slug, sort: T.sort }; if (T.kind) args.kind = T.kind; if (T.next && !reset) args.cursor = T.next;
+  args = { topic: D.slug, sort: T.sort }; if (T.conv) args = { topic: D.slug, sort: T.sort, conversation: T.conv }; if (T.kind) args.kind = T.kind; if (T.next && !reset) args.cursor = T.next;
   if (tab === 'talk') renderPane();
   request('tools/call', { name: 'get_topic_items', arguments: args }, 30000, function (err, res) {
     if (gen !== T.gen) return;   // the topic or the filter changed meanwhile
@@ -248,7 +263,81 @@ function watchPane(p) {
   });
   p.appendChild(mk('p', 'note', 'Matched by the topic\u2019s names in titles, from chosen YouTube channels and feed pages. Each opens on YouTube.'));
 }
-var PANES = { talk: talkPane, first: firstPane, papers: papersPane, watch: watchPane, briefings: briefingsPane };
+// Conversations (Prism): the groups inside the topic as petals, drawn from the layout the server worked out (D.prism.layout); the view does no geometry of its own.
+function convGroup(id) { var i, g = D && D.prism ? D.prism.groups : []; for (i = 0; i < g.length; i++) if (g[i].id === id) return g[i]; return null; }
+function pickConv(id) { T.conv = T.conv === id ? '' : id; tab = 'talk'; renderTabs(); if (D.sourcesShown) loadItems(true); else renderPane(); UC.tell(); }
+function convPane(p) {
+  var pr = D.prism, L = pr.layout, hasDots = false, top = mk('div'), bot = mk('div');
+  L.petals.forEach(function (pt) { if (pt.dots.length) hasDots = true; });
+  p.appendChild(top);
+  if (hasDots) {
+    var sl = mk('div'), lab = mk('label', '', 'Up to '), rg = mk('input'), when1 = mk('span', '', when(PT));
+    sl.id = 'slide'; rg.type = 'range'; rg.min = String(pr.from); rg.max = String(pr.to); rg.step = '3600000'; rg.value = String(PT); rg.setAttribute('aria-label', 'Show the conversations up to this time');
+    rg.oninput = function () { PT = Number(rg.value); when1.textContent = when(PT); drawConv(top, bot, hasDots); reportSize(); };
+    rg.onchange = function () { UC.tell(); };
+    lab.appendChild(when1); sl.appendChild(lab); sl.appendChild(rg); p.appendChild(sl);
+  }
+  p.appendChild(bot);
+  drawConv(top, bot, hasDots);
+}
+function drawConv(top, bot, hasDots) {
+  var pr = D.prism, L = pr.layout, count = {}, kindCls = { x: 'k-x', hn: 'k-hn', youtube: 'k-youtube', rss: 'k-rss' };
+  L.petals.forEach(function (pt) {
+    var g = convGroup(pt.id);
+    count[pt.id] = !hasDots || pt.id === 'other' ? (g ? g.n : pr.other) : pt.dots.filter(function (d) { return d.ts <= PT; }).length;
+  });
+  var svg = sv('svg', { viewBox: '0 0 520 340', 'class': 'prism', role: 'group', 'aria-label': D.label + ': ' + pr.groups.length + ' conversations' });
+  L.petals.forEach(function (pt) {
+    var g = convGroup(pt.id), name = g ? g.name : 'Other', n = count[pt.id], path = sv('path', { d: pt.path, 'class': 'pp ' + (g ? (kindCls[g.kind] || 'mixed') : 'other') + (g && T.conv === g.id ? ' on' : '') });
+    path.appendChild(sv('title', {}, name + ': ' + fmt(n) + (n === 1 ? ' item' : ' items')));
+    if (g) {
+      path.setAttribute('tabindex', '0'); path.setAttribute('role', 'button'); path.setAttribute('aria-label', name + ', ' + fmt(n) + ' items');
+      path.onclick = function () { pickConv(g.id); };
+      path.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickConv(g.id); } };
+    }
+    svg.appendChild(path);
+    pt.dots.forEach(function (d) {
+      if (d.ts > PT) return;
+      var c = sv('circle', { cx: d.x, cy: d.y, r: 2.4, 'class': 'pd' });
+      c.appendChild(sv('title', {}, when(d.ts)));
+      if (UC.can.panels()) {
+        c.setAttribute('tabindex', '0'); c.setAttribute('role', 'button'); c.setAttribute('aria-label', 'Open an item from ' + when(d.ts));
+        c.onclick = function () { UC.open('item', { topic: D.slug, item: d.id, area: D.area }); };
+        c.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); UC.open('item', { topic: D.slug, item: d.id, area: D.area }); } };
+      }
+      svg.appendChild(c);
+    });
+    var lines = name.length > 16 && name.indexOf(' ') > 0 ? (function () { var best = -1, i, mid = name.length / 2; for (i = 0; i < name.length; i++) if (name.charAt(i) === ' ' && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i; return [name.slice(0, best), name.slice(best + 1)]; })() : [name],
+      ly = pt.label[1] + (pt.anchor === 'middle' && pt.label[1] < L.cy ? -(lines.length) * 13 : 0), tx = sv('text', { x: pt.label[0], y: ly, 'text-anchor': pt.anchor });
+    lines.forEach(function (ln, i) { tx.appendChild(sv('tspan', { x: pt.label[0], dy: i ? 13 : 0 }, ln)); });
+    tx.appendChild(sv('tspan', { 'class': 'pn', dx: 4 }, fmt(n)));
+    svg.appendChild(tx);
+  });
+  svg.appendChild(sv('circle', { cx: L.cx, cy: L.cy, r: L.r0, 'class': 'pc' }));
+  var nm = D.label.length > 22 ? D.label.slice(0, 21) + '\\u2026' : D.label, cl = nm.length > 11 && nm.indexOf(' ') > 0 ? [nm.slice(0, nm.lastIndexOf(' ', 11) > 0 ? nm.lastIndexOf(' ', 11) : nm.indexOf(' ')), ''] : [nm];
+  if (cl.length > 1) cl[1] = nm.slice(cl[0].length + 1);
+  var ct = sv('text', { x: L.cx, y: L.cy - (cl.length - 1) * 6 + 4, 'text-anchor': 'middle' });
+  cl.forEach(function (ln, i) { ct.appendChild(sv('tspan', { x: L.cx, dy: i ? 13 : 0 }, ln)); });
+  svg.appendChild(ct);
+  top.textContent = ''; bot.textContent = ''; top.appendChild(svg);
+  var ol = mk('ol', 'plist');
+  pr.groups.slice().sort(function (a, b) { return count[b.id] - count[a.id]; }).forEach(function (g) {
+    var li = mk('li'), b = mk('button', 'lk', g.name), n = count[g.id];
+    b.onclick = function () { pickConv(g.id); };
+    li.appendChild(b); li.appendChild(document.createTextNode(' '));
+    li.appendChild(mk('small', '', fmt(n) + (n === 1 ? ' item' : ' items') + (g.began ? ' \\u00B7 began ' + when(g.began) : '')));
+    if (can()) {
+      var ask = mk('button', 'ask', 'Ask Claude about this conversation');
+      ask.onclick = function () { UC.ask('About the conversation "' + g.name + '" inside the topic ' + D.label + ': what is it about, and what should I read first? Its most typical items: ' + g.typical.map(function (i) { return i.title + ' (' + i.url + ')'; }).join('; ') + '. (get_topic_items with topic ' + D.slug + ' and conversation ' + g.id + ' lists all of them.)'); };
+      li.appendChild(ask);
+    }
+    ol.appendChild(li);
+  });
+  bot.appendChild(ol);
+  if (pr.other > 0) bot.appendChild(mk('p', 'note', fmt(pr.other) + ' more item' + (pr.other === 1 ? ' is' : 's are') + ' in none of these.'));
+  bot.appendChild(mk('p', 'note', 'The items are grouped by what they say, by a model, and each name was written by ' + (pr.groups.some(function (g) { return g.namedBy === 'rule'; }) ? 'a model or, where marked with quotation marks, taken from the title of the most typical item' : 'a model from the most typical items') + '. It can get things wrong.'));
+}
+var PANES = { talk: talkPane, conv: convPane, first: firstPane, papers: papersPane, watch: watchPane, briefings: briefingsPane };
 
 // ---- related topics: a click switches this view to that topic
 function related() {
@@ -271,10 +360,11 @@ function go(slug, push) {
 }
 
 // ---- what the shell needs from this view
-var TABNAME = { talk: 'Talk', first: 'Who said it first', papers: 'Papers', watch: 'Watch', briefings: 'Briefings' };
+var TABNAME = { talk: 'Talk', conv: 'Conversations', first: 'Who said it first', papers: 'Papers', watch: 'Watch', briefings: 'Briefings' };
 function contextText() {
   var t = 'In the topic hub for ' + D.label + ' (address ' + D.slug + (D.area === 'politics' ? ', area politics' : '') + '), on the ' + TABNAME[tab] + ' tab';
-  if (tab === 'talk') t += (T.kind ? ', only ' + T.kind : '') + ', ' + (T.sort === 'top' ? 'most reacted first' : 'newest first');
+  if (tab === 'talk') t += (T.kind ? ', only ' + T.kind : '') + (T.conv ? ', in the conversation "' + (convGroup(T.conv) ? convGroup(T.conv).name : T.conv) + '"' : '') + ', ' + (T.sort === 'top' ? 'most reacted first' : 'newest first');
+  if (tab === 'conv' && D.prism && PT < D.prism.to) t += ', looking at its conversations up to ' + when(PT);
   return t + '.';
 }
 function siteUrl() {
@@ -282,6 +372,7 @@ function siteUrl() {
   if (!D || !D.url) return '';
   if (tab !== 'talk') q.push('angle=' + tab);
   if (tab === 'talk' && T.kind) q.push('kind=' + T.kind);
+  if (tab === 'talk' && T.conv) q.push('conv=' + encodeURIComponent(T.conv));
   if (tab === 'talk' && T.sort === 'new') q.push('sort=newest');
   return D.url + (q.length ? (D.url.indexOf('?') >= 0 ? '&' : '?') + q.join('&') : '');
 }
@@ -292,8 +383,8 @@ function show(data) {
   if (!data || data.error || !data.slug) throw new Error(data && data.error ? data.error : 'no topic');
   D = data; D.evidence = D.evidence || []; D.briefings = D.briefings || []; D.related = D.related || []; D.papers = D.papers || { matched: 0, mentioned: 0, list: [] };
   D.series = D.series || { days: [], counts: [], usual: 0 };
-  D.first = D.first || { order: [], sentence: '', caveat: '' }; D.first.order = D.first.order || []; D.watch = D.watch || [];
-  tab = 'talk'; T = { kind: '', sort: 'new', items: [], next: null, total: 0, loading: false, err: '', loaded: false, gen: T.gen + 1 };
+  D.first = D.first || { order: [], sentence: '', caveat: '' }; D.first.order = D.first.order || []; D.watch = D.watch || []; D.prism = D.prism || null;
+  tab = 'talk'; PT = D.prism ? D.prism.to : 0; T = { kind: '', sort: 'new', conv: '', items: [], next: null, total: 0, loading: false, err: '', loaded: false, gen: T.gen + 1 };
   el('s').classList.add('hide'); el('app').classList.remove('hide');
   header(); renderTabs(); related(); renderPane();
   if (D.sourcesShown) loadItems(true);

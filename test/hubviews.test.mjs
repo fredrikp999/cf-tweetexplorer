@@ -34,6 +34,11 @@ describe('view scripts', () => {
     for (const call of ['UC.init(', 'UC.step(', 'UC.pick(', 'UC.tell()', "UC.open('item'", "UC.open('paper'"]) assert.ok(s.includes(call), call);
     assert.doesNotMatch(hub, /id="back"|id="site"|id="ask"/);
   });
+  it('the hub draws the conversations from the layout it is given and filters Talk by one', () => {
+    const s = script(hub);
+    for (const part of ['convPane', 'D.prism.layout', 'conversation: T.conv', 'Ask Claude about this conversation']) assert.ok(s.includes(part), part);
+    assert.doesNotMatch(s, /Math\.(cos|sin)/, 'the geometry is the server\'s');
+  });
   it('the landscape opens a topic in place and falls back to the page', () => {
     const s = script(land);
     assert.match(s, /UC\.open\('topic'[\s\S]{0,120}return; \}[\s\S]{0,40}openPage\(b\)/);
