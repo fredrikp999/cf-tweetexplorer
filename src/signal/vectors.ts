@@ -34,6 +34,7 @@ export function embedText(raw: string): string {
     .replace(/https?:\/\/\S+/g, ' ')
     .replace(/Continue reading on [^»]*»/gi, ' ')
     .replace(/submitted by \/u\/\S+(\s*\[link\])?(\s*\[comments\])?/gi, ' ')
+    .replace(/(^|\n)[ \t]*comments[ \t]*(?=\n|$)/gi, ' ')   // a feed whose every description is the one word "Comments" (lobste.rs): on short titles it made unrelated posts alike enough to become one story
     .replace(/\s+/g, ' ').trim().slice(0, 500);
 }
 

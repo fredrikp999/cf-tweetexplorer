@@ -19,12 +19,26 @@ import { dot, unit, versionClash } from './vectors.ts';
  * on real items. It is one constant so that step has one place to change.
  */
 export const STORY_SIM = 0.55;
-/** A name shared between an item and a story lowers the bar by this much (the names are the evidence the proposal wants used, but a name alone is not enough). */
-export const STORY_NAME_BONUS = 0.08;
+/**
+ * A name shared between an item and a story (one of the story's STORY_NAME_TOP leading names), or between two waiting items, lowers the bar by this much: the names are
+ * the evidence the proposal wants used, but a name alone is not enough. On real feeds (2026-11-13) different takes on one subject (an essay, a quote, a newsletter and
+ * a review of one model release) were 0.37 to 0.49 alike pair by pair, and so were different launches by one company in one week (0.40 to 0.48): the vectors cannot
+ * tell those apart, the names can. Under 0.40 nearly every pair is unrelated.
+ */
+export const STORY_NAME_BONUS = 0.15, STORY_NAME_TOP = 4;
 /** Pooled items wait this long for company; older ones are dropped. */
 export const STORY_POOL_MS = 48 * 3_600_000;
-/** A new story needs at least this many items from at least STORY_BIRTH_GROUPS different source groups. */
-export const STORY_BIRTH_MIN = 3, STORY_BIRTH_GROUPS = 2;
+/**
+ * A new story needs at least this many items from at least STORY_BIRTH_SOURCES different sources (section 3: "from at least two sources"). Sources, not source groups:
+ * on real feeds (2026-11-13) a model release covered by four blogs of one group never became a story when two groups were asked for.
+ */
+export const STORY_BIRTH_MIN = 3, STORY_BIRTH_SOURCES = 2;
+/**
+ * Two stories whose centres are at least this alike are one story and are joined (the smaller into the bigger). It happens when a story starts from one side of an event
+ * and a second is born from another side before the first has grown towards it. On real feeds (2026-11-13) the two halves of one story were 0.72 alike and the
+ * closest pair of different stories 0.50 (two launches by one company in one week).
+ */
+export const STORY_MERGE_SIM = 0.62;
 /** The centre of a story stops moving this long after its first item, so it cannot drift on and swallow its neighbours (section 8). */
 export const STORY_FIX_MS = 3 * 86_400_000;
 /** A story with no items for this long is dormant (the same quiet as Who said it first). */
@@ -53,7 +67,11 @@ export interface Story {
   /** True once the centre has stopped moving. assignItems also treats a story older than STORY_FIX_MS as fixed, whatever this says. */
   fixed: boolean;
 }
-export interface StoryItem { key: string; v: ArrayLike<number>; ts: number; names: string[]; /** The source group that voted for it. */ group: string }
+export interface StoryItem {
+  key: string; v: ArrayLike<number>; ts: number; names: string[]; /** The source group that voted for it. */ group: string;
+  /** Who it came from (a feed, an account): a story is born only when at least STORY_BIRTH_SOURCES of them have it. Without one, the group stands in. */
+  source?: string;
+}
 
 // ---- comparing
 /** The mean of these vectors: what everything in the area has in common. Empty input gives an empty vector (alike() then compares the raw directions). */
@@ -87,7 +105,7 @@ export function numberVeto(itemNames: string[], storyNames: string[]): boolean {
   return itemNames.some((a) => storyNames.some((b) => skeleton(a) !== '' && skeleton(a) === skeleton(b) && versionClash(a, b)));
 }
 /** The bar an item must pass to join a story: lower when a name is shared. */
-export const joinBar = (itemNames: string[], storyNames: string[]): number => (sharedName(itemNames, storyNames) ? STORY_SIM - STORY_NAME_BONUS : STORY_SIM);
+export const joinBar = (itemNames: string[], storyNames: string[]): number => (sharedName(itemNames, storyNames.slice(0, STORY_NAME_TOP)) ? STORY_SIM - STORY_NAME_BONUS : STORY_SIM);
 
 // ---- the centre
 /** The centre after one more item: the unit mean of n items plus this one (the centre is held as a unit vector, so this is the mean's direction to a good approximation). */
@@ -128,8 +146,8 @@ const byTime = (a: { ts: number; key: string }, b: { ts: number; key: string }) 
  *  - joins the closest live or dormant story if it is alike enough (STORY_SIM, lower with a shared name) and no number vetoes it; closed stories never take items.
  *    A join moves the story's centre at once unless it is fixed, so a later item of the same batch is compared with the story as it now is. Ties go to the lower id.
  *  - otherwise waits in the pool.
- * After that the pool is searched for new stories: items within STORY_POOL_MS of `now` that are alike, at least STORY_BIRTH_MIN of them from at least STORY_BIRTH_GROUPS
- * groups. Greedy: the item with most neighbours seeds a group first. Items too old are dropped. `stories` is not changed; the caller stores `touched`, `woke` and `births`.
+ * After that the pool is searched for new stories: items within STORY_POOL_MS of `now` that are alike, at least STORY_BIRTH_MIN of them from at least STORY_BIRTH_SOURCES
+ * sources. Greedy: the item with most neighbours seeds a group first. Items too old are dropped. `stories` is not changed; the caller stores `touched`, `woke` and `births`.
  */
 export function assignItems(items: StoryItem[], stories: Story[], pool: StoryItem[], bg: ArrayLike<number>, now: number): Assigned {
   const seen = new Set<string>(), all: StoryItem[] = [];
@@ -164,23 +182,24 @@ function mergeNames(old: string[], more: string[][]): string[] {
   for (const l of more) for (const x of new Set(l.map(norm).filter(Boolean))) n.set(x, (n.get(x) ?? 0) + 1);
   return [...n].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([k]) => k).slice(0, 12);
 }
-/** New stories among waiting items (oldest first). A group is the seed and the items alike with it, tightened once against the group's own centre. */
+/** New stories among waiting items (oldest first). A group is the seed and the items alike with it (the bar is lower for a pair that shares a name, and a clash in a number keeps a pair apart), tightened once against the group's own centre. */
 function findBirths(fresh: StoryItem[], bg: ArrayLike<number>): { births: Birth[]; left: StoryItem[] } {
   const cs = fresh.map((it) => centredOn(it.v, bg)), free = new Set(fresh.map((_, i) => i)), skipped = new Set<number>(), births: Birth[] = [];
+  const near = (i: number, j: number) => dot(cs[i], cs[j]) >= (sharedName(fresh[i].names, fresh[j].names) ? STORY_SIM - STORY_NAME_BONUS : STORY_SIM) && !numberVeto(fresh[i].names, fresh[j].names);
   for (;;) {
     let seed = -1, most = -1;
     for (const i of free) {
       if (skipped.has(i)) continue;
       let k = 0;
-      for (const j of free) if (j !== i && dot(cs[i], cs[j]) >= STORY_SIM) k++;
+      for (const j of free) if (j !== i && near(i, j)) k++;
       if (k > most) { most = k; seed = i; }   // free is walked in rising order, so the oldest wins a tie
     }
     if (seed < 0) break;
-    let members = [...free].filter((j) => j === seed || dot(cs[seed], cs[j]) >= STORY_SIM);
+    let members = [...free].filter((j) => j === seed || near(seed, j));
     const tight = (ms: number[]) => { const c = centredOn(meanCentre(ms.map((j) => fresh[j].v)), bg); return ms.filter((j) => dot(cs[j], c) >= STORY_SIM); };
     members = tight(members);
-    const groups = new Set(members.map((j) => fresh[j].group));
-    if (members.length < STORY_BIRTH_MIN || groups.size < STORY_BIRTH_GROUPS) { skipped.add(seed); continue; }
+    const groups = new Set(members.map((j) => fresh[j].group)), sources = new Set(members.map((j) => fresh[j].source ?? fresh[j].group));
+    if (members.length < STORY_BIRTH_MIN || sources.size < STORY_BIRTH_SOURCES) { skipped.add(seed); continue; }
     members.sort((a, b) => a - b);
     for (const j of members) free.delete(j);
     births.push({
@@ -190,6 +209,28 @@ function findBirths(fresh: StoryItem[], bg: ArrayLike<number>): { births: Birth[
   }
   return { births, left: [...free].sort((a, b) => a - b).map((i) => fresh[i]) };
 }
+
+/**
+ * Stories that are one story: pairs of live or dormant stories whose centres are at least STORY_MERGE_SIM alike and whose names do not clash in a number. The smaller
+ * goes into the bigger (ties: into the older, then the lower id), and a story that takes another is not itself moved in the same round, so there are no chains to follow.
+ */
+export function findMerges(stories: Array<Pick<Story, 'id' | 'centre' | 'n' | 'first' | 'state' | 'names'>>, bg: ArrayLike<number>): Array<{ from: string; into: string; sim: number }> {
+  const live = stories.filter((s) => s.state !== 'closed').sort((a, b) => b.n - a.n || a.first - b.first || (a.id < b.id ? -1 : 1)), cs = live.map((s) => centredOn(s.centre, bg));
+  const gone = new Set<number>(), kept = new Set<number>(), out: Array<{ from: string; into: string; sim: number }> = [];
+  for (let j = 1; j < live.length; j++) {
+    if (kept.has(j)) continue;
+    let best = -1, top = STORY_MERGE_SIM;
+    for (let i = 0; i < j; i++) {
+      if (gone.has(i)) continue;
+      const sim = dot(cs[i], cs[j]);
+      if (sim >= top && !numberVeto(live[j].names, live[i].names)) { top = sim; best = i; }
+    }
+    if (best >= 0) { gone.add(j); kept.add(best); out.push({ from: live[j].id, into: live[best].id, sim: top }); }
+  }
+  return out;
+}
+/** A story's names after it took another story's: both rankings vote, the bigger story's first. */
+export const joinNames = (into: string[], from: string[]): string[] => mergeNames(into, [from]);
 
 // ---- lifecycle
 /** The state changes due at `now`: live to dormant after STORY_DORMANT_MS without items, live or dormant to closed after STORY_CLOSE_MS. Only stories that change are listed. (Waking is done by assignItems.) */

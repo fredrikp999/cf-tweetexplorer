@@ -112,8 +112,12 @@ const historyOf = (stories: ThemeStory[], now: number): number => {
   const first = Math.min(...stories.map((s) => s.first));
   return Number.isFinite(first) ? Math.min(THEME_WEEKS_LOOK, Math.max(1, Math.ceil((now - first) / WEEK))) : 1;
 };
-/** The weeks a theme must be active in: THEME_WEEKS_ACTIVE of THEME_WEEKS_LOOK, scaled down when there are fewer weeks of history (the first proposals come from four weeks, not eight). */
-export const weeksNeeded = (history: number): number => Math.max(1, Math.min(THEME_WEEKS_ACTIVE, Math.ceil((history * THEME_WEEKS_ACTIVE) / THEME_WEEKS_LOOK)));
+/**
+ * The weeks a theme must be active in: THEME_WEEKS_ACTIVE of THEME_WEEKS_LOOK, scaled down when there are fewer weeks of history (the first proposals come from four
+ * weeks, not eight), but never under two: one week cannot show that anything lasts. On a first local run with one week of real items (2026-11-13) the scaled-down
+ * rule proposed "five of the eleven stories there are" as a theme.
+ */
+export const weeksNeeded = (history: number): number => Math.max(2, Math.min(THEME_WEEKS_ACTIVE, Math.ceil((history * THEME_WEEKS_ACTIVE) / THEME_WEEKS_LOOK)));
 
 // ---- 1. which theme a story is in
 /** The active theme whose centre the story is closest to, if it is alike enough (THEME_SIM); else null (uncharted). Ties go to the lower id. */

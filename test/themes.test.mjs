@@ -77,9 +77,9 @@ describe('discovering themes', () => {
   test('a group seen in one week only fails Lasting, and a young history lowers the bar', () => {
     const d = spread(8, () => story({ own: OWN.d, weeks: [0] })), res = run([...d, ...noiseStories()], { historyWeeks: 6 });
     assert.ok(findGroup(res, d.map((s) => s.id)).failed.includes('weeks'));
-    assert.equal(weeksNeeded(6), 3); assert.equal(weeksNeeded(2), 1); assert.equal(weeksNeeded(4), 2);
-    const young = run([...d, ...noiseStories()], { historyWeeks: 1 });
-    assert.ok(!findGroup(young, d.map((s) => s.id)).failed.includes('weeks'));
+    assert.equal(weeksNeeded(6), 3); assert.equal(weeksNeeded(4), 2); assert.equal(weeksNeeded(2), 2); assert.equal(weeksNeeded(1), 2, 'one week never shows that something lasts');
+    const young = run([...d, ...noiseStories()], { historyWeeks: 1 }), g = findGroup(young, d.map((s) => s.id)).tests.find((t) => t.id === 'weeks');
+    assert.equal(g.need, 2, 'with one week of history two active weeks are still asked for');
   });
   test('too few stories fail Lasting', () => {
     const e = spread(3, (i) => story({ own: OWN.e, weeks: [i, i + 1] })), res = run([...e, ...lasting(OWN.a), ...lasting(OWN.b)]);

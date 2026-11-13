@@ -39,9 +39,9 @@ import { GENERIC } from '../signal/terms';
 import { STOP } from '../history/stats';
 import { complete, defaultTiers, modelOptions } from '../llm/analysis';
 import { embed } from '../lib/embed';
-import { COPY_DAYS, EMBED_BATCH, EMBED_MODEL, EMBED_PER_M, embedText, findCopies, fromBlob, nameSuggestions, nearestNames, toBlob } from '../signal/vectors';
+import { COPY_DAYS, EMBED_BATCH, EMBED_MODEL, EMBED_PER_M, embedText, findCopies, fromBlob, nameSuggestions, nearestNames, toBlob, unit } from '../signal/vectors';
 import { useGateway } from '../llm/gateway.ts';
-import { STORY_NEW_DAYS, assignItems, backgroundOf, isFixed, isNewStory, needsRename, parseStoryName, storyStates, storySystem, storyUser, typicalItems, type Story, type StoryItem, type StoryState } from '../signal/stories';
+import { STORY_NEW_DAYS, assignItems, backgroundOf, findMerges, isFixed, joinNames, isNewStory, needsRename, parseStoryName, storyStates, storySystem, storyUser, typicalItems, type Story, type StoryItem, type StoryState } from '../signal/stories';
 import { THEME_WINDOW_WEEKS, assignTheme, discoverThemes, followCentre, moreLikeThese, parseThemeName, refuseName, reviewThemes, suggestLens, themeCurve, themeSystem, themeUser, type Rejected, type Theme, type ThemeCandidate, type ThemeProposal, type ThemeStory } from '../signal/themes';
 import { THEME_LATER_MS, THEME_NAME_MAX, THEME_PUBLIC_WEEKS, THEME_READ_WEEKS, THEME_RUN_MS, heldBack, noisySources, proposalKey, storyMarks, themeStoriesOf, thinThemes, weekly, weeksSince } from '../signal/themeview';
 import { STORY_BACKFILL_DAYS, STORY_BACKFILL_PAGE, chunkBySpan, groupAreas, isNewInWindow, provisionalName, relatedByNames, storyAliases, storyCounts, storyFor, uniqueSlug } from '../signal/storyview';
@@ -2155,14 +2155,16 @@ export class MonitorDO extends DurableObject<Env> {
   // ---- Stories (src/signal/stories.ts, docs/grouping-proposal.md, step 1): items go into stories per area as the topic model reads them; the model names each story once.
   // The first run goes through the last 30 days in time order (a few hours of items per step), so there are stories at once; until it is done the pages show terms.
   /** Which area and group each source's items go to: sources of a group on a Signal (published or not), except papers, which have the Research map. */
-  private async storyScope(): Promise<{ area: Map<string, Area>; group: Map<string, string> }> {
-    const { of } = await this.groups(), areas = groupAreas(this.boards()), area = new Map<string, Area>(), group = new Map<string, string>();
+  private async storyScope(): Promise<{ area: Map<string, Area>; group: Map<string, string>; source: (watch: string, by: string | null | undefined) => string }> {
+    const { of } = await this.groups(), areas = groupAreas(this.boards()), area = new Map<string, Area>(), group = new Map<string, string>(), people = new Set<string>();
     for (const w of this.watches()) {
       const g = of.get(w.id), a = g ? areas.get(g) : undefined;
       if (!g || !a || sourceOf(w) === 'arxiv') continue;
       area.set(w.id, a); group.set(w.id, g);
+      if (sourceOf(w) === 'x') people.add(w.id);
     }
-    return { area, group };
+    // Who an item came from, for "at least two sources": the feed or search it was read from, but on X the account that wrote it (one search or list holds many accounts).
+    return { area, group, source: (watch, by) => (people.has(watch) && by ? `x:${by.toLowerCase()}` : watch) };
   }
   private storyRows(area: string): StoryRow[] {
     return this.ctx.storage.sql.exec<StoryDbRow>("SELECT * FROM story WHERE area = ? AND state != 'closed'", area).toArray().map(storyOf);
@@ -2182,14 +2184,14 @@ export class MonitorDO extends DurableObject<Env> {
    * Puts items of one area into its stories (assignItems) and stores what changed: joins, centres, woken stories, births (named by rule until the model names them) and the pool.
    * `now`: the time it is, or during the backfill the time its items have reached, so the pool and the lifecycle follow the items' own time.
    */
-  private storyAssign(area: Area, items: Array<StoryItem & { watch: string; item: string; day: string }>, now: number, bg: Float32Array): void {
+  private storyAssign(area: Area, items: Array<StoryItem & { watch: string; item: string; day: string }>, now: number, bg: Float32Array, source: (watch: string, by: string | null | undefined) => string): void {
     const sql = this.ctx.storage.sql, stories = this.storyRows(area), byId = new Map(stories.map((s) => [s.id, s] as const));
     const changes = storyStates(stories, now);   // a story quiet for 14 days takes nothing more
     for (const ch of changes) byId.get(ch.id)!.state = ch.state;
     const fresh = items.filter((i) => !sql.exec('SELECT 1 FROM story_item WHERE watch = ? AND item = ?', i.watch, i.item).toArray().length);
     if (!fresh.length && !changes.length) return;
-    const pool = sql.exec<{ watch: string; item: string; day: string; ts: number; grp: string; names: string; v: ArrayBuffer }>('SELECT p.watch, p.item, p.day, p.ts, p.grp, p.names, v.v FROM story_pool p JOIN item_vec v ON v.watch = p.watch AND v.item = p.item WHERE p.area = ?', area).toArray()
-      .map((r) => ({ key: `${r.watch}\n${r.item}`, watch: r.watch, item: r.item, day: r.day, ts: r.ts, group: r.grp, names: JSON.parse(r.names) as string[], v: fromBlob(r.v) }));
+    const pool = sql.exec<{ watch: string; item: string; day: string; ts: number; grp: string; names: string; v: ArrayBuffer; by: string | null }>('SELECT p.watch, p.item, p.day, p.ts, p.grp, p.names, v.v, l.by FROM story_pool p JOIN item_vec v ON v.watch = p.watch AND v.item = p.item LEFT JOIN item_log l ON l.watch = p.watch AND l.item = p.item WHERE p.area = ?', area).toArray()
+      .map((r) => ({ key: `${r.watch}\n${r.item}`, watch: r.watch, item: r.item, day: r.day, ts: r.ts, group: r.grp, source: source(r.watch, r.by), names: JSON.parse(r.names) as string[], v: fromBlob(r.v) }));
     const res = assignItems(fresh, stories.filter((s) => s.state !== 'closed'), pool, bg, now), meta = new Map([...pool, ...fresh].map((i) => [i.key, i] as const));
     const earlier = sql.exec<{ centre: ArrayBuffer }>('SELECT centre FROM story WHERE area = ? AND first >= ?', area, now - STORY_NEW_DAYS * 86_400_000).toArray().map((r) => fromBlob(r.centre));
     const taken = (slug: string) => sql.exec("SELECT 1 FROM story WHERE area = ? AND slug = ? AND state != 'closed'", area, slug).toArray().length > 0;
@@ -2219,6 +2221,33 @@ export class MonitorDO extends DurableObject<Env> {
       sql.exec('DELETE FROM story_pool WHERE area = ?', area);
       for (const p of res.pool) { const it = meta.get(p.key)!; sql.exec('INSERT OR REPLACE INTO story_pool (watch, item, area, day, ts, grp, names) VALUES (?, ?, ?, ?, ?, ?, ?)', it.watch, it.item, area, it.day, it.ts, it.group, JSON.stringify(it.names)); }
     });
+    if (res.joins.length || res.births.length) this.storyMerge(area, bg);
+  }
+  /**
+   * Stories that have become one are joined (findMerges): a story can start from one side of an event and a second be born from another side before the first has grown
+   * towards it. The smaller one's items, daily counts and addresses go to the bigger, whose name stays; the smaller one's addresses redirect.
+   */
+  private storyMerge(area: Area, bg: Float32Array): void {
+    const sql = this.ctx.storage.sql, rows = this.storyRows(area), merges = findMerges(rows, bg);
+    if (!merges.length) return;
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    this.ctx.storage.transactionSync(() => {
+      for (const m of merges) {
+        const a = byId.get(m.into)!, b = byId.get(m.from)!;
+        sql.exec('UPDATE story_item SET story = ? WHERE story = ?', a.id, b.id);
+        for (const d of sql.exec<{ day: string; grp: string; n: number }>('SELECT day, grp, n FROM story_day WHERE story = ?', b.id).toArray())
+          sql.exec('INSERT INTO story_day (story, day, grp, n) VALUES (?, ?, ?, ?) ON CONFLICT (story, day, grp) DO UPDATE SET n = n + excluded.n', a.id, d.day, d.grp, d.n);
+        sql.exec('DELETE FROM story_day WHERE story = ?', b.id);
+        const centre = a.fixed ? a.centre : unit(Float32Array.from(a.centre, (x, i) => x * a.n + b.centre[i] * b.n));
+        const old = [...new Set([...a.oldSlugs, b.slug, ...b.oldSlugs])].filter((x) => x !== a.slug).slice(0, 20);
+        a.n += b.n; a.first = Math.min(a.first, b.first); a.last = Math.max(a.last, b.last); a.names = joinNames(a.names, b.names); a.centre = centre; a.oldSlugs = old;
+        a.theme = a.theme ?? b.theme; a.bornNew = a.first === b.first ? b.bornNew : a.bornNew; if (b.state === 'live') a.state = 'live';
+        sql.exec('UPDATE story SET centre = ?, n = ?, first = ?, last = ?, names = ?, old_slugs = ?, theme = ?, born_new = ?, state = ? WHERE id = ?', toBlob(a.centre), a.n, a.first, a.last, JSON.stringify(a.names), JSON.stringify(old), a.theme, a.bornNew ? 1 : 0, a.state, a.id);
+        sql.exec('DELETE FROM story WHERE id = ?', b.id);
+        sql.exec('DELETE FROM topic_summary WHERE slug = ?', b.slug); sql.exec('DELETE FROM topic_prism WHERE slug = ?', b.slug);
+      }
+    });
+    this.pubCache.clear();
   }
   /** The items the topic model has just read, into stories. While the first grouping runs, only items it has passed are taken here (at its time); it takes the others in order. */
   private async storiesFromRead(read: Array<{ watch: string; item: string; day: string; v: Float32Array; names: string[] }>): Promise<void> {
@@ -2227,11 +2256,11 @@ export class MonitorDO extends DurableObject<Env> {
     for (const r of read) {
       const area = scope.area.get(r.watch);
       if (!area) continue;
-      const ts = sql.exec<{ ts: number }>('SELECT ts FROM item_log WHERE watch = ? AND item = ?', r.watch, r.item).toArray()[0]?.ts ?? Date.parse(r.day + 'T12:00:00Z');
+      const log = sql.exec<{ ts: number; by: string | null }>('SELECT ts, by FROM item_log WHERE watch = ? AND item = ?', r.watch, r.item).toArray()[0], ts = log?.ts ?? Date.parse(r.day + 'T12:00:00Z');
       if (!bf.done && ts > bf.at) continue;
-      (byArea.get(area) ?? byArea.set(area, []).get(area)!).push({ key: `${r.watch}\n${r.item}`, watch: r.watch, item: r.item, day: r.day, ts, v: r.v, names: r.names, group: scope.group.get(r.watch)! });
+      (byArea.get(area) ?? byArea.set(area, []).get(area)!).push({ key: `${r.watch}\n${r.item}`, watch: r.watch, item: r.item, day: r.day, ts, v: r.v, names: r.names, group: scope.group.get(r.watch)!, source: scope.source(r.watch, log?.by) });
     }
-    for (const [area, items] of byArea) this.storyAssign(area, items, bf.done ? Date.now() : bf.at, this.storyBg(area, scope.area));
+    for (const [area, items] of byArea) this.storyAssign(area, items, bf.done ? Date.now() : bf.at, this.storyBg(area, scope.area), scope.source);
   }
   /** The first grouping: the last 30 days of read items, oldest first, a few hours of items per step, until the deadline. Carries on at the next wake-up. */
   private async storyBackfillStep(deadline: number): Promise<void> {
@@ -2240,17 +2269,17 @@ export class MonitorDO extends DurableObject<Env> {
     const sql = this.ctx.storage.sql, scope = await this.storyScope(), alias = this.aliasFn(), bgs = new Map<Area, Float32Array>(), floor = Date.now() - STORY_BACKFILL_DAYS * 86_400_000;
     if (st.at < floor) st = { ...st, at: floor, key: '' };
     while (Date.now() < deadline) {
-      const rows = sql.exec<{ watch: string; item: string; day: string; ts: number; v: ArrayBuffer; topics: string }>(
-        `SELECT v.watch, v.item, v.day, l.ts, v.v, a.topics FROM item_log l JOIN item_vec v ON v.watch = l.watch AND v.item = l.item JOIN ai_item a ON a.watch = l.watch AND a.item = l.item
+      const rows = sql.exec<{ watch: string; item: string; day: string; ts: number; v: ArrayBuffer; topics: string; by: string | null }>(
+        `SELECT v.watch, v.item, v.day, l.ts, v.v, a.topics, l.by FROM item_log l JOIN item_vec v ON v.watch = l.watch AND v.item = l.item JOIN ai_item a ON a.watch = l.watch AND a.item = l.item
          WHERE l.day >= ?1 AND v.copy = '' AND (l.ts > ?2 OR (l.ts = ?2 AND l.watch || char(10) || l.item > ?3)) ORDER BY l.ts, l.watch, l.item LIMIT ?4`, dayOf(st.at), st.at, st.key, STORY_BACKFILL_PAGE).toArray();
       if (!rows.length) { st = { ...st, done: true }; this.setMeta('storyBackfill', st); this.storyLifecycle(Date.now()); this.pubCache.clear(); return; }
       const chunk = chunkBySpan(rows), last = chunk[chunk.length - 1], byArea = new Map<Area, Array<StoryItem & { watch: string; item: string; day: string }>>();
       for (const r of chunk) {
         const area = scope.area.get(r.watch);
         if (!area) continue;
-        (byArea.get(area) ?? byArea.set(area, []).get(area)!).push({ key: `${r.watch}\n${r.item}`, watch: r.watch, item: r.item, day: r.day, ts: r.ts, v: fromBlob(r.v), names: [...new Set(((JSON.parse(r.topics) ?? []) as string[]).map(alias))], group: scope.group.get(r.watch)! });
+        (byArea.get(area) ?? byArea.set(area, []).get(area)!).push({ key: `${r.watch}\n${r.item}`, watch: r.watch, item: r.item, day: r.day, ts: r.ts, v: fromBlob(r.v), names: [...new Set(((JSON.parse(r.topics) ?? []) as string[]).map(alias))], group: scope.group.get(r.watch)!, source: scope.source(r.watch, r.by) });
       }
-      for (const [area, items] of byArea) this.storyAssign(area, items, last.ts, bgs.get(area) ?? bgs.set(area, this.storyBg(area, scope.area)).get(area)!);
+      for (const [area, items] of byArea) this.storyAssign(area, items, last.ts, bgs.get(area) ?? bgs.set(area, this.storyBg(area, scope.area)).get(area)!, scope.source);
       st = { ...st, at: last.ts, key: `${last.watch}\n${last.item}`, n: st.n + chunk.length };
       this.setMeta('storyBackfill', st);
     }

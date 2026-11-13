@@ -191,3 +191,20 @@ Each step is usable alone, and steps 1 and 3 can be thrown away without touching
 2. **Proposed themes are not public before approval.** Uncharted stories are public, as stories.
 3. **Themes are per area**, like lenses (AI and politics apart).
 4. **Per-item naming by the model stays.**
+
+## 10. First run on real items (2026-11-13)
+
+Step 0 was skipped, so the grouping was read once on a local run instead: 49 public feeds (news, press, blogs, community, Hacker News), 446 items, mock topic names
+(two-word phrases, since there is no model key locally). What it showed, and what was changed:
+
+- **The threshold holds.** Against a story's centre, items of the story score 0.59 and up, items of other stories 0.55 and under (`STORY_SIM` 0.55 stays).
+- **Sources, not groups, for a birth.** Section 3 says "at least two sources"; the code asked for two source groups, so a release covered by four blogs never became a
+  story. Now two sources (on X: two accounts).
+- **One story born twice.** The biggest story started from two sides and stayed two stories (centres 0.72 alike; the closest different pair 0.50). Stories whose centres
+  are 0.62 alike are now joined, the smaller into the bigger, and its address redirects (`findMerges`).
+- **Pair by pair, the vectors cannot tell takes on one subject from different launches by one company** (both 0.37 to 0.49). So a shared name now lowers the bar by
+  0.15 (was 0.08), also between waiting items, and only a story's four leading names count.
+- **Feed boilerplate glued unrelated posts.** A feed whose every description is "Comments" made a junk story; `embedText` drops that line.
+- **Themes from one week.** With one week of history "five of the eleven stories" was proposed as a theme. A theme now always needs two active weeks.
+
+Not checked: real model names (the name bonus and the number veto ran on mock names), X posts, more than a week of items, and the theme tests on real history.

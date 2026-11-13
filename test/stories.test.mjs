@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  STORY_BIRTH_MIN, STORY_CLOSE_MS, STORY_FIX_MS, STORY_POOL_MS, STORY_SIM, alike, assignItems, backgroundOf, cleanStoryName, isNewStory, needsRename,
+  STORY_BIRTH_MIN, STORY_CLOSE_MS, STORY_FIX_MS, STORY_MERGE_SIM, STORY_POOL_MS, STORY_SIM, alike, assignItems, backgroundOf, cleanStoryName, findMerges, isNewStory, joinNames, needsRename,
   numberVeto, parseStoryName, storyStates, storySlug, storySystem, storyUser, typicalItems, updateCentre,
 } from '../src/signal/stories.ts';
 import { QUIET_MS } from '../src/signal/first.ts';
@@ -121,6 +121,28 @@ describe('births', () => {
     const res = assignItems(items, [], [], bg(), NOW);
     assert.equal(res.births.length, 2);
     assert.ok(res.births.some((b) => b.names[0] === 'x story'));
+  });
+});
+
+describe('sources and merging', () => {
+  test('two sources of one group are enough for a story; one source repeating itself is not', () => {
+    const two = [item(0, { source: 'feed-a' }), item(0, { source: 'feed-b' }), item(0, { source: 'feed-a' })];
+    assert.equal(assignItems(two, [], [], bg(), NOW).births.length, 1, 'the group is the same, the sources differ');
+    const one = [item(1, { source: 'feed-a', group: 'g1' }), item(1, { source: 'feed-a', group: 'g1' }), item(1, { source: 'feed-a', group: 'g1' })];
+    assert.equal(assignItems(one, [], [], bg(), NOW).births.length, 0);
+  });
+  test('two stories with the same centre become one: the smaller into the bigger', () => {
+    const big = story(0, { id: 'big', n: 20 }), small = story(0, { id: 'small', n: 4 }), other = story(1, { id: 'other', n: 30 });
+    const m = findMerges([small, other, big], bg());
+    assert.equal(m.length, 1);
+    assert.equal(m[0].from, 'small'); assert.equal(m[0].into, 'big');
+    assert.ok(m[0].sim >= STORY_MERGE_SIM);
+    assert.deepEqual(findMerges([big, other], bg()), [], 'different stories stay apart');
+    assert.deepEqual(findMerges([big, story(0, { id: 'shut', state: 'closed' })], bg()), [], 'a closed story is left alone');
+  });
+  test('a clash in a number keeps two alike stories apart, and joined names keep the bigger story\'s lead', () => {
+    assert.deepEqual(findMerges([story(0, { id: 'a', names: ['kimi k2'] }), story(0, { id: 'b', names: ['kimi k3'] })], bg()), []);
+    assert.equal(joinNames(['nvidia ceo', 'huang resigns'], ['huang affair', 'nvidia ceo'])[0], 'nvidia ceo');
   });
 });
 

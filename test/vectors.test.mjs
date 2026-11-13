@@ -65,5 +65,7 @@ describe('helpers', () => {
   test('the text compared leaves out links and feed boilerplate', () => {
     assert.equal(embedText('Big news https://t.co/x Continue reading on Medium »'), 'Big news');
     assert.equal(embedText('Agentic soc help submitted by /u/someone [link] [comments]'), 'Agentic soc help');
+    assert.equal(embedText('Beating the frontier on NetHack\nComments'), 'Beating the frontier on NetHack');
+    assert.equal(embedText('Comments on the new policy'), 'Comments on the new policy');
   });
 });
