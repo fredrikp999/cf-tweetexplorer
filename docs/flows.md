@@ -259,6 +259,12 @@ Not done with meaning (yet): lens membership and search still go by words, and a
 6. **Privacy.** Item titles, links, outlet and channel names appear only when the Signal shows its sources (`proof`); the evidence strip's counts and ranges never name a source.
 7. **Old addresses.** `/signal/<address>/t/<term>` redirects (301) to `/t/<slug>`.
 
+## Stories and themes
+
+Stories (`src/signal/stories.ts`): after each batch the topic model reads, the Monitor puts the items into stories of their area (the area of the Signals their group is on; papers left out, copies counted once): an item joins the story whose centre it is most alike once the area's mean is taken away, or waits in a pool until a few alike items from two groups start a new one. A story is dormant after three quiet days and closed after 14. The first run groups the last 30 days in time order. The model names each story once. Where an area has stories (and the admin has not turned them off), Signal's topics, `/t/<slug>`, the landscape, Depth, the Ladder, search and the MCP tools are stories, scored as terms were; an address that is no story falls back to the merged terms.
+
+Themes (`src/signal/themes.ts`): once a week, per area, each theme follows its stories a little, stories in no theme that fit one join it, the rest are grouped and the groups that pass every test are named by the model and proposed in the admin (Signal setup, Themes), with split, merge, retire and drift proposals for the themes there are. The admin approves (name, sentence and lens editable), merges into a theme, says no (never proposed again) or later (four weeks). A new story joins the closest theme as it is born. Approved themes are public at `/themes` and `/theme/<slug>`, in `get_overview`, `get_rising`, `get_topic` and `get_theme`; on the landing page's landscape the dashed circles are themes; a theme's lens decides the lens of its stories.
+
 ## Lenses
 
 A lens (`src/signal/lens.ts`) is an area of interest: a key (`security`), a name, one line, one of six colours and a list of terms. It orders and highlights; it never hides.

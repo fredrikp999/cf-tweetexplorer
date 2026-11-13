@@ -35,6 +35,7 @@ import { STREAM_TOPICS, loadOverview, loadRising } from './overview';
 import { overviewOut } from './agentText';
 import type { Layout } from '../signal/landscape';
 import { AREA_BRIEFINGS, AREA_HOME, AREA_LABEL, areaHint, areaOfRequest, areaOf, boardsOfArea, parseArea, publishedAreas, topicHref, topicsOfArea, type Area } from '../signal/area';
+import { followOfTheme, themeHref, themeOfFollow, type ThemePublic, type ThemesPublic, type ThemeStoryCard } from '../signal/themeview';
 import { LENS_COLORS, LENS_JS, applyLens, lensMatch, chosenLens, lensColorCss, lensesOfTopic, type Lens } from '../signal/lens';
 import { avatarResponse, isOwnLens, isPersonal, mePost, ownLenses, viewerOf, type Viewer } from './me';
 import type { AskRow, ListBrief, ListView, Me } from '../durable-objects/users';
@@ -66,12 +67,12 @@ export interface ViewItem { title: string; url: string; by: string; source: stri
 export interface PubView { slug: string; title: string; description: string; listed: boolean; layout: 'player' | 'cards' | 'list'; first: ViewItem | null }
 interface PubViewPage { slug: string; title: string; description: string; layout: 'player' | 'cards' | 'list'; show: 'latest' | 'top'; days: number; perSource: boolean; items: ViewItem[] }
 /** Every topic of one published Signal in the last two weeks. */
-interface PubTerms { slug: string; title: string; days: number; baselineOk: boolean; terms: Array<{ term: string; signal: number; docs: number; isNew: boolean; change: number | null; evergreen: boolean; kind: string; breadth: number }> }
+interface PubTerms { slug: string; title: string; days: number; baselineOk: boolean; /** The topics are stories: `term` is the address, `label` the name. */ stories?: boolean; terms: Array<{ term: string; label?: string; signal: number; docs: number; isNew: boolean; change: number | null; evergreen: boolean; kind: string; breadth: number }> }
 interface Ctx { /** The area this page belongs to: its topics, boards and menu are the area's own (render() builds one Ctx per area). */ area: Area; /** The areas with something published: the area chooser shows only when there is more than AI. */ areas: Area[]; topics: PubTopic[]; /** Published feed pages. */ views: PubView[]; lists: PubXList[]; alists: PubAList[]; flists: PubFList[]; reports: PubReportBrief[]; /** The published Signals (top-level sets of source groups). */ boards: PubBoard[]; /** The lenses of the area, for the lens chooser of the top bar (none: the chooser is left out); a reader's own lenses come last. */ lenses?: Lens[]; /** Readers are on (the site knows who is signed in): pages offer Follow and the settings page. */ users?: boolean; /** The signed-in reader, only on a page made for them (never on a page in the shared cache). */ me?: Me | null; /** A line to show once, after a change (?msg=), on a page made for the reader. */ msg?: string; /** On a topic page made for the reader: which of their lists hold each item's address. */ saved?: Record<string, string[]> }
 export interface PubBoard { slug: string; title: string; description: string; groups: string[]; proof?: boolean; /** The area it belongs to (none: AI). */ area?: Area; /** Addresses it had before: they redirect here. */ aliases?: string[] }
 interface PubProof { slug: string; title: string; days: number; term: string; label: string; terms: string[]; from: string; to: string; total: number; groups: Array<{ name: string; n: number }>; sources: Array<{ label: string; group: string; n: number }>; items: Array<{ title: string; url: string; discussionUrl: string; source: string; by: string; group: string; ts: number }> }
 // Signal, as the Monitor gives it for the public page: group names and counts, and terms. `parts` is each group's share of a term's score, in the order of `groups`.
-export interface PubSigTerm { /** The bigger topic this one is part of. */ parent?: string; term: string; label: string; related: string[]; members: string[]; signal: number; change: number | null; isNew: boolean; kind: 'shared' | 'single' | 'mixed'; breadth: number; active: number; top: number; parts: number[]; /** Each group's own share of its items that mention the topic, in the order of `groups`. */ shares?: number[]; /** Only on a Signal with sources shown. */ reactions?: number; headlines?: Array<{ title: string; url: string; by: string; reactions?: number }> }
+export interface PubSigTerm { /** The bigger topic this one is part of. */ parent?: string; term: string; label: string; related: string[]; members: string[]; signal: number; change: number | null; isNew: boolean; kind: 'shared' | 'single' | 'mixed'; breadth: number; active: number; top: number; parts: number[]; /** Each group's own share of its items that mention the topic, in the order of `groups`. */ shares?: number[]; /** Only on a Signal with sources shown. */ reactions?: number; headlines?: Array<{ title: string; url: string; by: string; reactions?: number }>; /** When topics are stories: the theme it is in, its lens, and whether it is new in it. */ theme?: { slug: string; name: string } | null; themeLens?: string | null; newIn?: boolean }
 export interface PubSignal { slug: string; title: string; description: string; proof?: boolean; /** Topics were named by a language model. */ ai?: boolean; /** Topics left out because they are always around at the same level. */ steadyHidden?: number; days: number; from: string; to: string; baselineOk: boolean; volumeDays: string[]; groups: Array<{ name: string; weight: number; items: number; perDay: number[] }>;
   top: PubSigTerm[]; rising: PubSigTerm[]; shared: PubSigTerm[]; single: PubSigTerm[] }
 const listTotal = (c: Ctx) => c.lists.length + c.alists.length + c.flists.length;
@@ -424,7 +425,7 @@ const THEME_INIT = '<script src="/viz/theme.js"></script>';
 const THEME_BTN = '<button type="button" class="themebtn" id="themebtn" aria-label="Colour theme">Theme</button>';
 
 /** Where a page sits in the More menu: the page kind, the feed page or Signal it is, or the briefing topic it shows. */
-type Here = { page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'first' | 'galaxy' | 'research' | 'map' | 'rising' | 'briefings' | 'agent' | 'method' | 'me' | 'saved'; board?: string; slug?: string };
+type Here = { page?: 'lists' | 'history' | 'signal' | 'feeds' | 'topics' | 'themes' | 'first' | 'galaxy' | 'research' | 'map' | 'rising' | 'briefings' | 'agent' | 'method' | 'me' | 'saved'; board?: string; slug?: string };
 
 /** The top bar for every page that is not the landing page or the search: no lens or window of its own, so a lens link goes to the landing page of the area unless the page says otherwise (`o.href`). */
 function bar(ctx: Ctx, active?: Active, page?: Here['page'], board?: string, o: { lens?: Lens; href?: (p: { lens?: string; window?: number }) => string } = {}): string {
@@ -512,7 +513,7 @@ export function topBar(ctx: Ctx, o: { lenses: Lens[]; lens?: Lens; window?: Land
   const lists = listTotal(ctx), topics = inOrder(ctx.topics, (x, y) => x.title.localeCompare(y.title));
   const grp = (label: string, items: string) => (items ? `<div class="grp">${label}</div>${items}` : '');
   const more = grp('Read', a(AREA_BRIEFINGS[area], ai ? "Today's briefings" : 'Briefings', h.page === 'briefings')
-      + (ctx.boards.length ? a(`/signal${aq}`, `Signal${ctx.boards.length > 1 ? ` <small>${ctx.boards.length}</small>` : ''}`, h.page === 'signal' && (!h.board || ctx.boards.length === 1)) + a(`/topics${aq}`, 'All topics, A to Z', h.page === 'topics') : '')
+      + (ctx.boards.length ? a(`/signal${aq}`, `Signal${ctx.boards.length > 1 ? ` <small>${ctx.boards.length}</small>` : ''}`, h.page === 'signal' && (!h.board || ctx.boards.length === 1)) + a(`/topics${aq}`, 'All topics, A to Z', h.page === 'topics') + a(`/themes${aq}`, 'Themes', h.page === 'themes') : '')
       + (ctx.boards.length ? a(`/rising${aq}`, 'Rising from the deep', h.page === 'rising') : '')
       + (firstBoard ? a(`/signal/${esc(firstBoard.slug)}/first`, 'Who said it first', h.page === 'first') : '')
       + (ai ? a('/research', 'Research pulse', h.page === 'research') + a('/research/map', 'Research map', h.page === 'map') : ''))
@@ -690,7 +691,7 @@ export function agentHtml(ctx: Ctx, origin: string): string {
   const mcp = `${origin}/agent/mcp`;
   const tools: Array<[string, string]> = [['list_lenses', 'The areas (AI and politics, kept apart) and their lenses, with a line each.'], ['get_overview', 'What is going on: in brief, new and rising topics, the top topics, research in short. Takes an area (AI, or politics), a lens and a window of 1, 3 or 7 days.'],
     ['get_rising', 'Topics by how widely they have spread (kinds of source, groups, sources) over 14 days, and which are rising from the deep.'], ['get_topic', 'One topic: summary, state, evidence per kind of source, top items, papers, briefings, related topics.'], ['get_topic_items', 'The posts, threads, articles and videos behind a topic, or one conversation inside it, 25 a page, with links to the originals.'], ['search', 'Find topics, items, papers and briefings by words, grouped by kind with topics first, each with a link to the original.'],
-    ['get_briefing', 'A published briefing with its themes and sources.'], ['get_papers', 'Papers of the last 30 days with their abstract and how many posts name them. Filter by topic, cluster, words or "being discussed".'], ['get_paper', 'One paper: abstract, links, every post that names it.']];
+    ['get_theme', 'A theme: stories that keep coming back together over weeks, with its stories, its curve by week and what is new in it.'], ['get_briefing', 'A published briefing with its themes and sources.'], ['get_papers', 'Papers of the last 30 days with their abstract and how many posts name them. Filter by topic, cluster, words or "being discussed".'], ['get_paper', 'One paper: abstract, links, every post that names it.']];
   return shell('For agents · Undercurrent', bar(ctx, undefined, 'agent'), `<header class="pagehead"><h1>For agents</h1><p class="lede">The same three levels as this site, as a server your own agent can ask: Claude Code while you work, the Claude app, or a scheduled routine. It answers in short Markdown with links to every original, and as JSON for programs.</p></header>
 <h2 class="sect">Connect</h2>
 <p>In Claude Code:</p><pre><code>claude mcp add --transport http undercurrent ${esc(mcp)}</code></pre>
@@ -1223,7 +1224,8 @@ export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', len
   const counts = (Object.entries(d.counts) as Array<[EvKind, number]>).map(([k, v]) => `${n(v)} on ${esc({ x: 'X', hn: 'Hacker News', youtube: 'YouTube', rss: 'blogs and news', arxiv: 'papers' }[k])}`).join(' &middot; ');
   const count = (a: Angle) => (a === 'talk' ? d.total : a === 'first' ? d.first.arrivals.length : a === 'watch' ? d.watch.length : a === 'briefings' ? d.briefings?.length ?? 0 : d.papers.matched);
   const tabs = `<nav class="sgwin angles" aria-label="Angles on this topic">${ANGLES.map(([k, label]) => `<a href="${esc(withFrom(topicHref(d.slug, d.area, k === 'talk' ? undefined : k), from))}"${angle === k ? ' aria-current="page"' : ''}>${label} <small>${n(count(k))}</small></a>`).join('')}</nav>`;
-  const names = d.members.length ? `Also counted under: ${esc(d.members.join(', '))}. ` : '';
+  // A story is one group of posts found by meaning; its other names are what its posts were tagged with, not names counted under it.
+  const names = d.members.length ? `${d.story ? 'Its posts were also tagged' : 'Also counted under'}: ${esc(d.members.join(', '))}. ` : '';
   // The same name can be a topic in the other area too: it has its own page there (?area=), and is not mixed into this one.
   const here = d.alsoIn.filter((b) => (b.area ?? 'ai') === d.area), other = [...new Set(d.alsoIn.filter((b) => (b.area ?? 'ai') !== d.area).map((b) => b.area ?? 'ai'))];
   const also = (here.length ? `Also in: ${here.map((b) => `<a href="/signal/${esc(b.slug)}">${esc(b.title)}</a>`).join(', ')}. ` : '') + other.map((a) => `The same name is also a topic in <a href="${esc(topicHref(d.slug, a))}">${AREA_LABEL[a]}</a>. `).join('');
@@ -1235,7 +1237,7 @@ export function topicHtml(d: TopicData, ctx: Ctx, angle: Angle, origin = '', len
   const kindLink = canBrush ? (kind: EvKind) => brushHref(d, { ...view, kind: view.kind === kind ? undefined : kind }, from) : undefined;
   const lensName = from?.kind === 'lens' ? lenses.find((l) => l.key === from.key)?.name : undefined, briefing = from?.kind === 'briefing' ? ctx.topics.find((t) => t.slug === from.slug)?.title : undefined;
   const tr = trailOf(trailParts({ area: d.area, from, lenses, briefingTitle: briefing, topic: { slug: d.slug, label: d.label }, angle: angle === 'talk' ? null : { key: angle, label: ANGLES.find(([k]) => k === angle)?.[1] ?? angle } }), origin);
-  return shell(`${d.label} · Topic · Undercurrent`, bar(ctx, undefined, 'topics'), `${tr.html}${from && trail.nav ? prevNextHtml(trail.nav, from, d.area, lensName) : ''}<header class="pagehead"><div class="eyebrow">${areaLink}Topic &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a></div><h1>${esc(d.label)} ${pill}</h1>
+  return shell(`${d.label} · Topic · Undercurrent`, bar(ctx, undefined, 'topics'), `${tr.html}${from && trail.nav ? prevNextHtml(trail.nav, from, d.area, lensName) : ''}<header class="pagehead"><div class="eyebrow">${areaLink}${d.story ? 'Story' : 'Topic'} &middot; <a href="/signal/${esc(d.board.slug)}">${esc(d.board.title)}</a>${storyThemeLine(d)}</div><h1>${esc(d.label)} ${pill}${storyMarksHtml(d)}</h1>
 <p class="lede">${esc(summary)}</p>${written}${lensLine}${topicActions(ctx, d)}<div class="meacts">${openInClaude(`Show me the topic ${d.label} in Undercurrent${angle === 'talk' ? '' : `, the ${ANGLES.find(([k]) => k === angle)?.[1] ?? angle} angle`}`)}</div></header>
 ${lifeHtml(d.series, dayLink, view.day)}
 <p class="meta">Items per day over the last 14 days: bars for each day${dayLink ? ' (a bar shows that day in Talk)' : ''}, the curve their three-day average${d.series.usual ? ', the dashed line the usual level' : ''}. ${d.total ? `In the last ${d.days} days: ${counts}.` : ''} ${names}${also}</p>
@@ -1258,6 +1260,8 @@ function yoursHtml(ctx: Ctx, topics: SigTopic[], state: (t: SigTopic) => string,
   const row = (f: (typeof mine)[number]) => {
     const t = by.get(f.slug), st = (t ? state(t) : '') as 'new' | 'rising' | 'falling' | '';
     const how = !t ? '<small>quiet in this window</small>' : `${st ? `<span class="pstate ${st}">${STATE_MARK[st]} ${STATE_LABEL[st]}</span> ` : ''}${pct ? `<small>${pct(t.signal)} of items</small>` : ''}`;
+    const th = themeOfFollow(f.slug);
+    if (th) return `<li><a href="${esc(themeHref(th, area))}">${esc(f.label)}</a> <small>theme</small></li>`;
     return `<li><a href="${esc(topicHref(f.slug, area))}">${esc(t?.label ?? f.label)}</a> ${how}</li>`;
   };
   return `<section class="yours" aria-labelledby="h-yours"><h2 class="sect" id="h-yours">Your topics</h2><ul>${mine.map(row).join('')}</ul><p class="meta"><a href="/me#follows">What you follow</a></p></section>`;
@@ -1373,7 +1377,7 @@ export function meHtml(ctx: Ctx, me: Me, siteLenses: Lens[], asks: AskRow[]): st
 ${me.lenses.map((l) => `<details class="mylens"><summary><span class="lenstag lc-${esc(l.color)}">${esc(l.name)}</span> <small>${l.terms.length} term${l.terms.length === 1 ? '' : 's'}</small> <a href="/?lens=${esc(l.key)}">Open</a></summary>${lensForm(l)}
 <form method="post" action="/me/lens-delete" class="meform inline">${hidden({ key: l.key, back: '/me#lenses' })}<button type="submit" class="ghost">Remove this lens</button></form></details>`).join('')}
 ${me.lenses.length < MAX_OWN_LENSES ? `<details class="mylens"${me.lenses.length ? '' : ' open'}><summary>New lens</summary>${lensForm()}</details>` : ''}</section>`;
-  const follows = `<section class="card" id="follows"><h3>Topics you follow</h3>${me.follows.length ? `<ul class="mefollows">${me.follows.map((f) => `<li><a href="${esc(topicHref(f.slug, f.area))}">${esc(f.label)}</a>${f.area === 'politics' ? ' <small>Politics</small>' : ''} <form method="post" action="/me/unfollow" class="meform inline">${hidden({ slug: f.slug, area: f.area, back: '/me#follows' })}<button type="submit" class="ghost">Unfollow</button></form></li>`).join('')}</ul>`
+  const follows = `<section class="card" id="follows"><h3>Topics you follow</h3>${me.follows.length ? `<ul class="mefollows">${me.follows.map((f) => `<li><a href="${esc(themeOfFollow(f.slug) ? themeHref(themeOfFollow(f.slug)!, f.area) : topicHref(f.slug, f.area))}">${esc(f.label)}</a>${themeOfFollow(f.slug) ? ' <small>Theme</small>' : ''}${f.area === 'politics' ? ' <small>Politics</small>' : ''} <form method="post" action="/me/unfollow" class="meform inline">${hidden({ slug: f.slug, area: f.area, back: '/me#follows' })}<button type="submit" class="ghost">Unfollow</button></form></li>`).join('')}</ul>`
     : '<p class="meta">None yet. Use <b>+ Follow</b> on a topic’s page: the topics you follow are shown first on the front page, with how each stands.</p>'}<p class="meta">Up to ${MAX_FOLLOWS}.</p></section>`;
   const canAsk = me.access.features.includes('ask');
   const asked = `<section class="card" id="asks"><h3>Ask Claude</h3>${canAsk ? `<p class="meta">On a topic’s page, ask a question about it. ${me.askLeft} of ${me.access.askPerDay} questions left today (the day turns at 00:00 UTC).</p>`
@@ -1451,7 +1455,8 @@ export function signalPageHtml(d: PubSignal, ctx: Ctx, q: { sort: SigSort; group
   ].join('');
   const max = Math.max(1e-9, ...topList.map((t) => t.signal));
   const headline = (t: PubSigTerm) => { const h = t.headlines?.[0]; return h?.title ? `<div class="hl">${h.url ? `<a href="${esc(h.url)}" rel="noopener noreferrer nofollow" target="_blank">&ldquo;${esc(h.title)}&rdquo;</a>` : `&ldquo;${esc(h.title)}&rdquo;`}${h.by ? ` <small>${esc(h.by)}</small>` : ''}${h.reactions ? ` <small>&#9650; ${kfmt(h.reactions)}</small>` : ''}</div>` : ''; };
-  const name = (t: PubSigTerm) => `<span class="t" title="${esc([t.label, ...t.members].join(', '))}">${termLink(t)}${t.related.length ? `<small>${esc(t.related.join(' · '))}</small>` : ''}</span>`;
+  // A story's related list is addresses of other stories, not names: its theme says more.
+  const name = (t: PubSigTerm) => `<span class="t" title="${esc([t.label, ...t.members].join(', '))}">${termLink(t)}${t.theme ? `<small>${t.newIn ? 'new in ' : ''}<a href="${esc(themeHref(t.theme.slug, ctx.area))}">${esc(t.theme.name)}</a></small>` : t.theme === null || !t.related.length ? '' : `<small>${esc(t.related.join(' · '))}</small>`}</span>`;
   const rows = topList.map((t) => `<div class="sgrow${isPart(t) ? ' sgpart' : ''}${rowLens(t)}">${name(t)}
 <span class="bar" style="width:${Math.max(2, (100 * t.signal) / max).toFixed(1)}%" role="img" aria-label="${esc(t.parts.map((p, i) => `${gname(i)} ${Math.round(p * 100)}%`).join(', '))}">${t.parts.map((p, i) => (p >= 0.02 ? `<i style="flex:${p.toFixed(3)};background:${sigColor(i)}" title="${esc(gname(i))}"></i>` : '')).join('')}</span>
 <b>${sigPct(t.signal)}</b><span class="cs">${chips(t)}</span>${headline(t)}</div>`).join('');
@@ -1745,13 +1750,14 @@ ${body}<p class="note">Titles, pictures and videos belong to their publishers; e
  */
 export function topicsHtml(all: PubTerms[], ctx: Ctx, q: string, lenses: Lens[] = [], lens?: Lens): string {
   const query = q.trim().toLowerCase().slice(0, 60);
-  const link = (b: PubTerms, t: PubTerms['terms'][number], extra = '') => `<a href="${topicUrl(t.term, ctx.area)}">${esc(t.term)}</a>${extra}`;
+  const nameOf = (t: PubTerms['terms'][number]) => t.label ?? t.term;   // a story's name; a term is its own name
+  const link = (b: PubTerms, t: PubTerms['terms'][number], extra = '') => `<a href="${topicUrl(t.term, ctx.area)}">${esc(nameOf(t))}</a>${extra}`;
   const sections = all.map((b) => {
-    const hits = query ? b.terms.filter((t) => t.term.includes(query)) : b.terms;
+    const hits = query ? b.terms.filter((t) => nameOf(t).toLowerCase().includes(query) || t.term.includes(query)) : b.terms;
     const fresh = hits.filter((t) => t.isNew), rising = hits.filter((t) => !t.isNew && (t.change ?? 0) >= 1.5 && !t.evergreen).sort((a, c) => (c.change ?? 0) - (a.change ?? 0));
-    const az = [...hits].sort((a, c) => a.term.localeCompare(c.term));
+    const az = [...hits].sort((a, c) => nameOf(a).toLowerCase().localeCompare(nameOf(c).toLowerCase()));
     const byLetter = new Map<string, typeof az>();
-    for (const t of az) { const l = /^[a-z]/.test(t.term[0]) ? t.term[0].toUpperCase() : /^\p{L}/u.test(t.term[0]) ? t.term[0].toUpperCase() : '#'; (byLetter.get(l) ?? byLetter.set(l, []).get(l)!).push(t); }
+    for (const t of az) { const f = nameOf(t).toLowerCase()[0] ?? '#', l = /^[a-z]/.test(f) ? f.toUpperCase() : /^\p{L}/u.test(f) ? f.toUpperCase() : '#'; (byLetter.get(l) ?? byLetter.set(l, []).get(l)!).push(t); }
     // With a lens: its topics first and marked, the others after and dimmed; a topic that is not in it but big today is pointed out.
     const mark = lens ? applyLens(hits, lens) : null, inLens = new Set(mark?.ordered.filter((x) => x.inLens).map((x) => x.topic.term));
     const cls = (t: PubTerms['terms'][number]) => (lens ? (inLens.has(t.term) ? ` class="lensin lc-${lens.color}"` : ' class="lensout"') : '');
@@ -1761,7 +1767,7 @@ export function topicsHtml(all: PubTerms[], ctx: Ctx, q: string, lenses: Lens[] 
     const inYours = mark ? mark.ordered.filter((x) => x.inLens).map((x) => x.topic).slice(0, 40) : [];
     const yours = lens ? `<h2 class="sect">In your lens: ${esc(lens.name)} <small class="dim">${inYours.length}</small></h2>${inYours.length ? `<ul class="azl">${inYours.map(chip).join('')}</ul>` : '<p class="meta">No topic of the last two weeks is in this lens.</p>'}${outsideLine(mark!.outside, ctx.area)}` : '';
     return `${all.length > 1 ? `<h2 class="sect">${esc(b.title)}</h2>` : ''}${query ? '' : yours}
-${!query && (fresh.length || rising.length) ? `<div class="panels">${fresh.length ? `<section class="panel"><h3>New</h3><p class="meta" style="margin:-4px 0 8px">Not there the two weeks before</p><ul class="sglist">${lensFirst(fresh).slice(0, 15).map((t) => `<li${cls(t)}><span>${link(b, t)}${tag(t)}</span><small>${t.docs} items</small></li>`).join('')}</ul></section>` : ''}
+${!query && (fresh.length || rising.length) ? `<div class="panels">${fresh.length ? `<section class="panel"><h3>${b.stories ? 'New stories' : 'New'}</h3><p class="meta" style="margin:-4px 0 8px">${b.stories ? 'Unlike any story of the 30 days before' : 'Not there the two weeks before'}</p><ul class="sglist">${lensFirst(fresh).slice(0, 15).map((t) => `<li${cls(t)}><span>${link(b, t)}${tag(t)}</span><small>${t.docs} items</small></li>`).join('')}</ul></section>` : ''}
 ${rising.length ? `<section class="panel"><h3>Rising</h3><p class="meta" style="margin:-4px 0 8px">More than the two weeks before</p><ul class="sglist">${lensFirst(rising).slice(0, 15).map((t) => `<li${cls(t)}><span>${link(b, t)}${tag(t)}</span><small>&times;${(t.change ?? 0).toFixed(1)}</small></li>`).join('')}</ul></section>` : ''}</div>` : ''}
 <h2 class="sect">${query ? `Topics with “${esc(query)}”` : 'All topics, A to Z'} <small class="dim">${hits.length}</small></h2>
 ${hits.length ? `<nav class="az" aria-label="Letters">${[...byLetter.keys()].map((l) => `<a href="#l-${esc(b.slug)}-${esc(l)}">${esc(l)}</a>`).join('')}</nav>${[...byLetter].map(([l, ts]) => `<h3 class="azh" id="l-${esc(b.slug)}-${esc(l)}">${esc(l)}</h3><ul class="azl">${ts.map(chip).join('')}</ul>`).join('')}` : '<p class="meta">No topic matches.</p>'}`;
@@ -1770,6 +1776,71 @@ ${hits.length ? `<nav class="az" aria-label="Letters">${[...byLetter.keys()].map
 <p class="lede">What Signal found people talking about, by itself: every topic named in the posts and articles followed. Each opens its own page, with how it moved and where it shows up. <a href="/signal/method">How topics are found</a>.</p></header>
 <form class="tsearch" method="get" action="/search"><input type="search" name="q" value="${esc(query)}" placeholder="Search topics, items, papers" aria-label="Search topics, items, papers and briefings" maxlength="80"><input type="hidden" name="kinds" value="topics"><button type="submit">Search</button>${lens ? `<input type="hidden" name="lens" value="${esc(lens.key)}">` : ''}${ctx.area === 'politics' ? '<input type="hidden" name="area" value="politics">' : ''}${query ? ` <a href="/topics${[lens ? 'lens=' + esc(lens.key) : '', ctx.area === 'politics' ? 'area=politics' : ''].filter(Boolean).map((x, i) => (i ? '&amp;' : '?') + x).join('')}">All topics</a>` : ''}</form>
 ${sections || '<p class="meta">No published Signal yet.</p>'}`, { description: 'Every topic Signal found in the last two weeks: new, rising, and A to Z.' });
+}
+
+// ---- Themes (docs/grouping-proposal.md, step 4): /themes, /theme/<slug>, and the theme of a story on its page
+/** The theme of a story on its page, or "Uncharted" when the area has themes and it is in none. */
+function storyThemeLine(d: TopicData): string {
+  if (!d.story) return '';
+  if (d.story.theme) return ` &middot; Theme: <a href="${esc(themeHref(d.story.theme.slug, d.area))}">${esc(d.story.theme.name)}</a>`;
+  return d.story.uncharted ? ` &middot; <a href="${esc(areaThemes(d.area))}" title="In no theme yet: it fits none of the themes so far">Uncharted</a>` : '';
+}
+/** The marks of section 5: a new story (unlike any of the 30 days before), and new inside its theme. */
+function storyMarksHtml(d: TopicData): string {
+  if (!d.story) return '';
+  if (d.story.newIn && d.story.theme) return ` <span class="pstate new">● New in ${esc(d.story.theme.name)}</span>`;
+  return d.story.isNew && d.state !== 'new' && d.story.first >= Date.now() - 7 * 86_400_000 ? ' <span class="pstate new">● New story</span>' : '';
+}
+const areaThemes = (area: Area) => '/themes' + (area === 'politics' ? '?area=politics' : '');
+const tsDay = (ts: number) => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+/** Items per week as a small line (oldest first), with what it says in its label. */
+function weekSpark(curve: number[], label: string, w = 220, h = 44): string {
+  if (curve.length < 2) return '';
+  const top = Math.max(1, ...curve) * 1.1, x = (i: number) => (i / (curve.length - 1)) * w, y = (v: number) => h - 3 - (v / top) * (h - 6);
+  const pts = curve.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  return `<svg class="wspark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${esc(`${label}: ${curve.join(', ')}`)}" style="width:100%;max-width:${w}px;height:${h}px"><polygon fill="var(--accent)" fill-opacity=".13" points="0,${h} ${pts} ${w},${h}"/><polyline fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" points="${pts}"/></svg>`;
+}
+const storyLi = (st: ThemeStoryCard, area: Area) => `<li><span><a href="${esc(topicHref(st.slug, area))}">${esc(st.name)}</a>${st.newIn ? ' <small class="up">new in it</small>' : st.isNew && st.first >= Date.now() - 7 * 86_400_000 ? ' <small class="up">new</small>' : ''}</span><small>${tsDay(st.first)}${st.last - st.first > 86_400_000 ? ` – ${tsDay(st.last)}` : ''} &middot; ${st.n} items</small></li>`;
+/** /themes: the themes of an area, the busiest of the last four weeks first, each with its curve over months, what is new in it and its latest stories; then the stories in no theme. */
+export function themesHtml(d: ThemesPublic | null, ctx: Ctx): string {
+  const area = ctx.area, list = d?.themes ?? [];
+  const cards = list.map((t) => `<section class="panel"><h3><a href="${esc(themeHref(t.slug, area))}">${esc(t.name)}</a>${t.lens ? ` <small class="dim">${esc(t.lens.name)}</small>` : ''}</h3>${t.sentence ? `<p>${esc(t.sentence)}</p>` : ''}
+${weekSpark(t.curve, `Items per week over ${t.curve.length} weeks, oldest first`)}<p class="meta">${t.stories} stories, ${t.live} live; ${t.recent.toLocaleString('en-GB')} items in the last four weeks.</p>
+${t.newStories.length ? `<p class="meta"><b>New in it:</b> ${t.newStories.slice(0, 4).map((x) => `<a href="${esc(topicHref(x.slug, area))}">${esc(x.name)}</a>`).join(' &middot; ')}</p>` : ''}<ul class="sglist">${t.top.map((x) => storyLi(x, area)).join('')}</ul></section>`).join('');
+  const un = d?.uncharted;
+  return shell('Themes · Undercurrent', bar(ctx, undefined, 'themes'), `<header class="pagehead"><div class="eyebrow">Over weeks and months</div><h1>Themes</h1>
+<p class="lede">A theme is a group of stories that keep coming back together, such as a run of security incidents around agents. The system proposes them from the stories it found on its own, and an editor approves them; a story belongs to one theme at most. <a href="/topics${area === 'politics' ? '?area=politics' : ''}">All topics</a>.</p></header>
+${list.length ? `<div class="panels">${cards}</div>` : '<p class="meta">No theme yet: themes are proposed once stories have run for a few weeks, and appear here when an editor approves one.</p>'}
+${un?.count ? `<h2 class="sect">Uncharted <small class="dim">${un.count}</small></h2><p class="meta">Stories that fit no theme yet. When several alike keep coming, they are what gets proposed as a new theme.</p><ul class="sglist">${un.stories.map((x) => storyLi(x, area)).join('')}</ul>` : ''}`,
+  { description: 'Themes: stories that keep coming back together over weeks and months.' });
+}
+/** The stories of a theme on a time line: one bar per story from its first to its last item, newest at the top, over the weeks of the curve. */
+function themeTimeline(t: ThemePublic): string {
+  const end = Date.parse(t.to + 'T00:00:00Z') + 86_400_000, start = end - t.weeks * 7 * 86_400_000, rows = t.stories.filter((x) => x.last >= start).slice(0, 40);
+  if (!rows.length) return '';
+  const W = 640, L = 0, row = 16, H = rows.length * row + 18, x = (ms: number) => L + ((Math.max(start, Math.min(end, ms)) - start) / (end - start)) * (W - L);
+  const bars = rows.map((s, i) => `<a href="${esc(topicHref(s.slug, t.area))}"><title>${esc(`${s.name}: ${tsDay(s.first)} to ${tsDay(s.last)}, ${s.n} items`)}</title><rect x="${x(s.first).toFixed(1)}" y="${i * row + 3}" width="${Math.max(3, x(s.last) - x(s.first)).toFixed(1)}" height="${row - 6}" rx="3" fill="var(--accent)" fill-opacity="${s.newIn ? 1 : 0.55}"/></a>`).join('');
+  const months: string[] = [];
+  for (let m = new Date(start); m.getTime() < end; m = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 1))) { const ms = Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), 1); if (ms >= start) months.push(`<text x="${x(ms).toFixed(1)}" y="${H - 3}" font-size="10" fill="var(--muted)">${new Date(ms).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}</text>`); }
+  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${rows.length} stories on a time line, from ${tsDay(start)} to ${tsDay(end)}`)}" style="width:100%;min-width:320px">${bars}${months.join('')}</svg></div>`;
+}
+/** Follow a theme as a topic is followed (src/site/me.ts), under its own address prefix. */
+function themeFollow(ctx: Ctx, t: ThemePublic): string {
+  if (!ctx.users) return '';
+  const slug = followOfTheme(t.slug), here = themeHref(t.slug, t.area), on = !!ctx.me?.follows.some((f) => f.slug === slug && f.area === t.area);
+  return `<div class="meacts"><form method="post" action="/me/${on ? 'unfollow' : 'follow'}" class="meform inline">${hidden({ slug, area: t.area, label: t.name, back: here })}<button type="submit" class="followbtn" aria-pressed="${on}">${on ? '✓ Following' : '+ Follow'}</button></form></div>${msgLine(ctx)}`;
+}
+/** /theme/<slug>: one theme, its curve over months, what is new in it, its stories on a time line and in a list, and where it comes from. */
+export function themeHtml(t: ThemePublic, ctx: Ctx, origin = ''): string {
+  const area = t.area, total = t.curve.reduce((a, b) => a + b, 0);
+  return shell(`${t.name} · Theme · Undercurrent`, bar(ctx, undefined, 'themes'), `<header class="pagehead"><div class="eyebrow">${area === 'politics' ? `<a href="${AREA_HOME[area]}">${AREA_LABEL[area]}</a> &middot; ` : ''}<a href="${esc(areaThemes(area))}">Theme</a>${t.lens ? ` &middot; ${esc(t.lens.name)}` : ''}${t.state === 'retired' ? ' &middot; retired' : ''}</div><h1>${esc(t.name)}</h1>
+${t.sentence ? `<p class="lede">${esc(t.sentence)}</p>` : ''}${t.inside || t.outside ? `<p class="meta">${t.inside ? `<b>In it:</b> ${esc(t.inside)}. ` : ''}${t.outside ? `<b>Not in it:</b> ${esc(t.outside)}.` : ''}${t.notConfused ? ` Not to be confused with ${esc(t.notConfused)}.` : ''}</p>` : ''}${themeFollow(ctx, t)}</header>
+<h2 class="sect">Over ${t.weeks} weeks</h2>${weekSpark(t.curve, `Items in its stories per week, oldest first, to ${t.to}`, 640, 72)}<p class="meta">${total.toLocaleString('en-GB')} items in ${t.stories.length} stories; per week, oldest first, to ${esc(t.to)}.${t.groups.length ? ` From: ${t.groups.slice(0, 6).map((g) => `${esc(g.name)} ${g.n}`).join(', ')} (8 weeks).` : ''}</p>
+${t.newStories.length ? `<h2 class="sect">New in ${esc(t.name)}</h2><ul class="sglist">${t.newStories.map((x) => storyLi(x, area)).join('')}</ul>` : ''}
+<h2 class="sect">Its stories on a time line</h2>${themeTimeline(t) || '<p class="meta">No story in these weeks.</p>'}
+<ul class="sglist">${t.stories.slice(0, 60).map((x) => storyLi(x, area)).join('')}</ul>
+${t.others.length ? `<p class="meta">Other themes: ${t.others.map((o) => `<a href="${esc(themeHref(o.slug, area))}">${esc(o.name)}</a>`).join(' &middot; ')}</p>` : ''}`,
+  { description: t.sentence || `The theme ${t.name}: its stories over weeks and months.`, canonical: origin ? origin + themeHref(t.slug, area) : undefined });
 }
 
 const ITEM_KIND: Record<string, string> = { x: 'X', hn: 'Hacker News', youtube: 'YouTube', rss: 'Blog or news' };
@@ -1945,6 +2016,16 @@ async function vizData(env: Env, parts: string[], url: URL, me: Me | null = null
     const m = parts.length === 4 && parts[1] === 'map' && parts[2] === 'paper' ? /^(\d{4}\.\d{4,5})\.json$/.exec(parts[3]) : null;
     if (m) return jsonOf(await mon(`research-map-paper?id=${m[1]}`));
   }
+  if (parts[0] === 'themes.json' && parts.length === 1) return jsonOf(await env.MONITOR.getByName('main').fetch(new Request('https://internal/mon/themes-public?area=' + parseArea(url.searchParams.get('area')))));   // /themes.json?area=
+  if (parts[0] === 'theme' && parts.length === 2 && parts[1].endsWith('.json')) {   // /theme/<slug>.json: the data behind a theme page
+    const slug = parts[1].slice(0, -5), hint = areaHint(url.searchParams.get('area'));
+    if (!TOPIC_SLUG.test(slug)) return NOT_FOUND_JSON();
+    const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/theme-public?slug=${slug}${hint ? '&area=' + hint : ''}`));
+    if (!r.ok) { await r.body?.cancel(); return NOT_FOUND_JSON(); }
+    const t = (await r.json()) as { redirect?: string; area: Area };
+    if (t.redirect) return new Response(null, { status: 301, headers: { location: `/theme/${t.redirect}.json${t.area === 'politics' ? '?area=politics' : ''}`, 'cache-control': 'public, max-age=3600' } });
+    return new Response(JSON.stringify(t), { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60', 'x-content-type-options': 'nosniff' } });
+  }
   if (parts[0] === 't' && parts.length === 2 && parts[1].endsWith('.json')) {   // /t/<slug>.json: the data behind a topic page
     const slug = parts[1].slice(0, -5), r = TOPIC_SLUG.test(slug) ? await loadTopic(env, slug, { area: areaHint(url.searchParams.get('area')) }) : null;
     if (!r) return NOT_FOUND_JSON();
@@ -2097,6 +2178,18 @@ async function render(env: Env, url: URL, viewer: Viewer = { enabled: false, me:
       .then((r) => (r.ok ? (r.json() as Promise<PubTerms>) : null)).catch(() => null)))).filter((x): x is PubTerms => !!x);
     const lenses = ctx.lenses ?? [];
     return ctx.boards.length ? html(topicsHtml(all, ctx, url.searchParams.get('q') ?? '', lenses, chosenLens(lenses, url.searchParams.get('lens')))) : missing();
+  }
+  if (parts[0] === 'themes' && parts.length === 1) {   // /themes[?area=]: the themes of an area
+    const r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/themes-public?area=${ctx.area}`));
+    return ctx.boards.length ? html(themesHtml(r.ok ? ((await r.json()) as ThemesPublic) : null, ctx)) : missing();
+  }
+  if (parts[0] === 'theme' && parts.length === 2 && TOPIC_SLUG.test(parts[1])) {   // /theme/<slug>: one theme; an address it had before redirects
+    const hint = areaHint(url.searchParams.get('area')), r = await env.MONITOR.getByName('main').fetch(new Request(`https://internal/mon/theme-public?slug=${parts[1]}${hint ? '&area=' + hint : ''}`));
+    if (!r.ok) { await r.body?.cancel(); return missing(); }
+    const t = (await r.json()) as ThemePublic & { redirect?: string; area: Area };
+    if (t.redirect) return new Response(null, { status: 301, headers: { location: themeHref(t.redirect, t.area), 'cache-control': 'public, max-age=3600' } });
+    lensBy[t.area] ??= [...await lensesOf(env, t.area), ...ownLenses(viewer.me, t.area)];
+    return html(themeHtml(t, t.area === ctx.area ? ctx : ctxFor(t.area), url.origin));
   }
   if (parts[0] === 'feeds') {   // /feeds/<address>: a feed page
     if (parts.length === 1) return ctx.views.length ? new Response(null, { status: 302, headers: { location: `/feeds/${ctx.views[0].slug}`, ...NO_STORE } }) : missing();

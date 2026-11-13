@@ -104,7 +104,7 @@ const words = (s: string): string[] => String(s).toLowerCase().normalize('NFKC')
   .map((w) => (/(?:ch|sh|x|ss)es$/.test(w) && w.length > 5 ? w.slice(0, -2) : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w));   // "agents" and "agent", "breaches" and "breach" are one word here
 
 /** The pieces of a topic that carry its names: its term, its label and the other names counted under it. */
-export interface LensTopic { term: string; label?: string; members?: string[]; /** Signal score; used to find the big ones outside the lens. */ signal?: number; /** The bigger topic this one is part of, if any. */ parent?: string }
+export interface LensTopic { term: string; label?: string; members?: string[]; /** The lens of the theme a story is in (src/signal/themes.ts): when set, it decides, in place of the words. */ themeLens?: string | null; /** Signal score; used to find the big ones outside the lens. */ signal?: number; /** The bigger topic this one is part of, if any. */ parent?: string }
 
 const hasRun = (hay: string[], needle: string[]): boolean => {
   for (let i = 0; i + needle.length <= hay.length; i++) if (needle.every((w, j) => hay[i + j] === w)) return true;
@@ -112,7 +112,8 @@ const hasRun = (hay: string[], needle: string[]): boolean => {
 };
 
 /** Whether a topic is in a lens: any lens term is, as whole words in a row, part of any name of the topic. */
-export function lensMatch(lens: Pick<Lens, 'terms'>, topic: LensTopic): boolean {
+export function lensMatch(lens: Pick<Lens, 'terms'> & { key?: string }, topic: LensTopic): boolean {
+  if (typeof topic.themeLens === 'string' && lens.key) return topic.themeLens === lens.key;   // a story in a theme that belongs to a lens
   const names = [topic.term, topic.label, ...(topic.members ?? [])].filter((x): x is string => !!x).map(words);
   return lens.terms.some((t) => { const w = words(t); return w.length > 0 && names.some((n) => hasRun(n, w)); });
 }

@@ -6,6 +6,7 @@ import type { Layout, ReplayFrame } from '../signal/landscape';
 import { rankList, type BriefIn, type LadderRaw, type LandingWindow, type SigTopic } from './landing';
 import type { LandingExtras, PubBoard, PubSignal, PubTopic } from './public';
 import { risingOf, type DepthRaw, type RisingData } from './rising';
+import type { ThemesPublic } from '../signal/themeview';
 
 export interface OverviewData {
   /** The area the numbers are from; the page and the tools of one area never take a board or a briefing from the other. */
@@ -23,6 +24,8 @@ export interface OverviewData {
   replay: ReplayFrame[] | null;
   /** The rank of the biggest topics on each of the last 14 days (the Ladder); null when there is none. */
   ladder: LadderRaw | null;
+  /** The themes of the area (src/signal/themes.ts), biggest of the last four weeks first; null when the area has none. */
+  themes: ThemesPublic | null;
 }
 
 export const briefsOf = (topics: PubTopic[]): BriefIn[] => topics.map((t) => ({ slug: t.slug, title: t.title, publishedAt: t.latest.publishedAt, tldr: t.latest.tldr, themes: t.latest.themes, position: t.position }));
@@ -48,16 +51,20 @@ export async function loadOverview(env: Env, o: { window: LandingWindow; lens?: 
   lenses.push(...(o.own ?? []));
   const lens = chosenLens(lenses, o.lens), board = pickBoard(boards, area);
   const signal = (days: number) => (board ? monitor(env, `signal-public?slug=${board.slug}&days=${days}`).then((r) => (r.ok ? (r.json() as Promise<PubSignal>) : null)).then((d) => (d?.top ? d : null)).catch(() => null) : Promise.resolve(null));
-  const [sig, sig7, landscape, replay, ladder] = await Promise.all([signal(win), win === 7 ? null : signal(7),
+  const [sig, sig7, landscape, replay, ladder, themes] = await Promise.all([signal(win), win === 7 ? null : signal(7),
     board ? monitor(env, `landscape-public?slug=${board.slug}&days=${win}`).then((r) => (r.ok ? (r.json() as Promise<Layout | null>) : null)).catch(() => null) : null,
     board && o.replay && !lens ? monitor(env, `landscape-replay-public?slug=${board.slug}&days=${win}`).then((r) => (r.ok ? (r.json() as Promise<ReplayFrame[]>) : null)).catch(() => null) : null,
-    board ? monitor(env, `ladder-public?slug=${board.slug}`).then((r) => (r.ok ? (r.json() as Promise<LadderRaw | null>) : null)).catch(() => null) : null]);
+    board ? monitor(env, `ladder-public?slug=${board.slug}`).then((r) => (r.ok ? (r.json() as Promise<LadderRaw | null>) : null)).catch(() => null) : null,
+    loadThemes(env, area)]);
   // The cards and the streamgraph want a daily count each: ask for the topics that will be on them (the cards take the first six, the stream up to STREAM_TOPICS).
   const cardTerms = sig ? rankList(sig.top as SigTopic[], lens, 15).rows.filter((r) => !r.part && (!lens || r.inLens)).slice(0, STREAM_TOPICS).map((r) => r.topic.term.toLowerCase()) : [];
   let extras = await monitor(env, `landing-public?spark=${encodeURIComponent(cardTerms.join('|'))}${board && area !== 'ai' ? '&board=' + encodeURIComponent(board.slug) : ''}`).then((r) => (r.ok ? (r.json() as Promise<LandingExtras>) : null)).catch(() => null);
   if (extras && area !== 'ai') extras = { ...extras, papers: [], risingResearch: [], reads: [] };
-  return { area, window: win, lenses, lens, board, sig, sig7: win === 7 ? sig : sig7, extras, briefs, landscape: landscape ?? null, replay: replay ?? null, ladder: ladder ?? null };
+  return { area, window: win, lenses, lens, board, sig, sig7: win === 7 ? sig : sig7, extras, briefs, landscape: landscape ?? null, replay: replay ?? null, ladder: ladder ?? null, themes };
 }
+
+/** The themes of an area, or null when it has none (never fails). */
+export const loadThemes = (env: Env, area: Area): Promise<ThemesPublic | null> => monitor(env, `themes-public?area=${area}`).then((r) => (r.ok ? (r.json() as Promise<ThemesPublic>) : null)).then((d) => (d?.themes?.length ? d : null)).catch(() => null);
 
 /** The Depth chart of an area (the page /rising, /rising.json and the MCP tool `get_rising`): the first published Signal's topics by breadth over 14 days, with the lens applied. Null when there is nothing to draw. */
 export async function loadRising(env: Env, o: { area?: Area; lens?: string | null; boards?: PubBoard[]; own?: Lens[]; origin: string }): Promise<RisingData | null> {

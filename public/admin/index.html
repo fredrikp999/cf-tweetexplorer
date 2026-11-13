@@ -726,6 +726,18 @@ button.sigchip { background: none; font: inherit; font-size: 12.5px; cursor: poi
       <div id="sigAiRuns" style="margin-top:10px"></div>
       <div id="sigAiMeaning" style="margin-top:10px"></div>
     </details>
+    <details class="card" id="sigStories" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Stories <span class="note" id="sigStoriesNote" style="font-weight:400"></span></summary>
+      <div class="note" style="margin:8px 0">A <b>story</b> is a group of posts about one thing, found by meaning as items are read (with AI topic detection on): an item joins the story it is most alike, and a few alike items from two or more groups of sources start a new one. The model names each story once, and again if it grows into something else; the address follows the name and old addresses redirect. Shown here per area beside the topics from merged names. When on, the public pages and the MCP tools list stories as their topics.</div>
+      <div class="optrow"><label class="chk"><input type="checkbox" id="sigStoriesPublic"> Show stories on the public pages and in MCP</label>
+        <button class="go ghost" id="sigStoriesRebuild" type="button">Group again</button><button class="go ghost" id="sigStoriesReload" type="button">Refresh</button></div>
+      <div class="note" id="sigStoriesStatus" style="margin-top:8px"></div>
+      <div id="sigStoriesList" style="margin-top:10px"></div>
+    </details>
+    <details class="card" id="sigThemes" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Themes <span class="note" id="sigThemesNote" style="font-weight:400"></span></summary>
+      <div class="note" style="margin:8px 0">A <b>theme</b> is a group of stories that keep coming back together over weeks or months. Once a week the system groups the stories in no theme and proposes the groups that pass every test (lasting, broad in sources, not generic, not one story, not seen before); the model names them. Nothing is a theme until you approve it. It also proposes changes to themes that exist: split, merge, retire, or a centre that has drifted. Approved themes are public (<a href="/themes" target="_blank" rel="noopener">/themes</a>), and a story names its theme or says <i>Uncharted</i>.</div>
+      <div class="optrow"><button class="go ghost" id="sigThemesRun" type="button">Look for themes now</button><button class="go ghost" id="sigThemesReload" type="button">Refresh</button><span class="note" id="sigThemesStatus"></span></div>
+      <div id="sigThemesList" style="margin-top:10px"></div>
+    </details>
     <details class="card" id="sigFilter" open style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:650">Filtered words <span class="note" id="sigFilterNote" style="font-weight:400"></span></summary>
       <div class="note" style="margin:8px 0">Words and phrases you do not want as topics. They are left out everywhere (this tab, the public pages and the MCP view) and the change applies at once, also to what was counted before. You can also use <b>Hide this term</b> when you open a topic.</div>
       <div id="sigFilterList" class="optrow" style="margin-bottom:10px"></div>
@@ -3454,6 +3466,8 @@ async function loadOverview() {
     const p = await get('/mon/pulse');
     for (const t of (p?.topics ?? []).filter((x) => x.state === 'spike')) add('info', `Research pulse: <b>${esc(t.title)}</b> is at ×${t.ratio.toFixed(2)} of its usual share of AI papers${t.sustained ? ', for a second week' : ''}`, go('signal', 'Signal'));
     if (p?.error) add('warn', `Research pulse: ${esc(p.error)}`, go('signalsetup', 'Setup'));
+    const th = await get('/mon/themes');
+    if (th?.open) add('info', `${th.open} theme proposal${th.open === 1 ? '' : 's'} waiting`, `<a href="#signalsetup" data-tabgo="signalsetup" data-themesjump="1">Themes</a>`);
   }
   if (sigd?.boards?.some((b) => b.public)) for (const g of sigd.groups ?? []) {
     const st = Health.groupStatus(g, sigd.boards, 1);
@@ -3721,7 +3735,153 @@ async function loadSignal() {
   sig.days = sigDays;
   renderSignal();
   if (sigPick) openSigPick();
+  if (!$('#signalsetup').hidden && $('#sigStories').open) loadStories();
+  if (!$('#signalsetup').hidden && $('#sigThemes').open) loadThemes();
 }
+// ---------- Themes (docs/grouping-proposal.md, steps 3 and 4): proposals to answer, the themes there are, "more like these", and two lists about sources
+let themes = null, themeMore = null;
+async function loadThemes() {
+  try { themes = await (await fetch('/mon/themes')).json(); } catch { return; }
+  if (themes.error && !themes.areas) return toast(themes.error);
+  renderThemes();
+}
+function spark(c, w = 120, h = 26) {
+  if (!c || c.length < 2) return '';
+  const top = Math.max(1, ...c), pts = c.map((v, i) => `${((i / (c.length - 1)) * w).toFixed(1)},${(h - 2 - (v / top) * (h - 4)).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Items per week, oldest first: ${c.join(', ')}"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${pts}"/></svg>`;
+}
+function renderThemes() {
+  const t = themes; if (!t) return;
+  const day = (ms) => (ms ? new Date(ms).toISOString().slice(0, 10) : '–'), last = t.last;
+  $('#sigThemesNote').textContent = t.open ? `· ${t.open} waiting` : '';
+  $('#sigThemesStatus').innerHTML = !t.ready ? 'Themes are looked for once stories exist (AI topic detection on and the first grouping done).'
+    : `${last ? `Last looked ${esc(new Date(last.at).toLocaleString())}.` : 'Not looked yet.'} Next weekly run ${t.next ? esc(new Date(t.next).toLocaleDateString()) : 'soon'}.`;
+  const lensSel = (a, cur, name) => `<select name="${name}"><option value="">No lens</option>${a.lenses.map((l) => `<option value="${esc(l.key)}"${l.key === cur ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select>`;
+  const stories = (list) => `<ul class="note" style="margin:4px 0 0;padding-left:18px">${(list || []).slice(0, 12).map((s) => `<li><a href="/t/${esc(s.slug)}" target="_blank" rel="noopener">${esc(s.name)}</a> <span style="opacity:.7">${day(s.first)} → ${day(s.last)}, ${fmt(s.n)} items</span></li>`).join('')}${(list || []).length > 12 ? `<li>and ${list.length - 12} more</li>` : ''}</ul>`;
+  const tests = (ts) => `<div class="note" style="margin-top:4px">${(ts || []).map((x) => `<span title="${esc(x.label)}" style="margin-right:10px">${x.passed ? '✓' : '✗'} ${esc(x.label)}: ${x.value} ${x.rule === 'min' ? '≥' : '≤'} ${x.need}</span>`).join('')}</div>`;
+  const prop = (a, area, p) => {
+    const others = a.themes.filter((x) => x.state === 'active');
+    if (p.kind === 'candidate') return `<div class="card" style="margin:8px 0" data-tprop="${esc(p.id)}"><div class="optrow"><b>New theme?</b> <span class="note">${p.namedBy === 'model' ? 'named by the model' : 'named from its biggest story'}; ${fmt(p.stories.length)} stories, ${fmt(p.items)} items, ${fmt(p.groups.length)} groups</span> ${spark(p.curve)}</div>
+      <div class="optrow" style="margin-top:6px"><input name="name" value="${esc(p.name)}" maxlength="50" style="width:260px" aria-label="Name"><input name="sentence" value="${esc(p.sentence)}" maxlength="200" style="width:420px" placeholder="One sentence on what it is" aria-label="Sentence">${lensSel(a, p.lens, 'lens')}</div>
+      ${p.inside || p.outside ? `<div class="note">In: ${esc(p.inside)} · Not in it: ${esc(p.outside)}</div>` : ''}${p.nearest ? `<div class="note">Nearest theme: ${esc(p.nearest.name)} (${Math.round(p.nearest.sim * 100)}% alike)</div>` : ''}
+      ${stories(p.storyInfo)}${tests(p.tests)}
+      <div class="optrow" style="margin-top:6px"><button class="go" type="button" data-tact="approve">Approve</button>${others.length ? `<select name="into"><option value="">Merge into…</option>${others.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select><button class="go ghost" type="button" data-tact="merge">Merge</button>` : ''}<button class="go ghost" type="button" data-tact="reject">Not a theme</button><button class="go ghost" type="button" data-tact="later">Later</button></div></div>`;
+    const nm = (id) => esc((p.names || {})[id] || id);
+    const head = p.kind === 'split' ? `<b>Split ${nm(p.theme)}?</b> Its stories form two stable groups (${Math.round(p.stable * 100)}% stable).`
+      : p.kind === 'merge' ? `<b>Merge ${nm(p.themes[0])} and ${nm(p.themes[1])}?</b> They have grown together (${Math.round(p.sim * 100)}% alike). The bigger one stays; the other's address redirects.`
+      : p.kind === 'retire' ? `<b>Retire ${nm(p.theme)}?</b> ${p.quietWeeks === null ? 'It has no story.' : `No story for ${p.quietWeeks} weeks.`} It stays findable but leaves the lists.`
+      : `<b>${nm(p.theme)} has drifted</b> ${Math.round(p.drift * 100)}% from where it was approved. Confirm where it is now, or reset it.`;
+    const sides = p.kind === 'split' ? `<div class="grid" style="grid-template-columns:1fr 1fr;gap:10px"><div><div class="note">Stays</div>${stories((p.sideInfo || [])[0])}</div><div><div class="note">New theme</div>${stories((p.sideInfo || [])[1])}<input name="newName" maxlength="50" placeholder="Name of the new theme" style="width:240px;margin-top:4px" aria-label="Name of the new theme"></div></div>` : '';
+    const acts = p.kind === 'drifted' ? '<button class="go" type="button" data-tact="confirm">Confirm</button><button class="go ghost" type="button" data-tact="reset">Reset</button>' : '<button class="go" type="button" data-tact="approve">Do it</button>';
+    return `<div class="card" style="margin:8px 0" data-tprop="${esc(p.id)}"><div>${head}</div>${sides}<div class="optrow" style="margin-top:6px">${acts}<button class="go ghost" type="button" data-tact="reject">Keep it as it is</button><button class="go ghost" type="button" data-tact="later">Later</button></div></div>`;
+  };
+  $('#sigThemesList').innerHTML = Object.entries(t.areas || {}).map(([area, a]) => {
+    if (!a.themes.length && !a.proposals.length && !a.uncharted.length) return '';
+    const rows = a.themes.map((x) => `<tr data-theme="${esc(x.id)}"><td><a href="/theme/${esc(x.slug)}${area === 'politics' ? '?area=politics' : ''}" target="_blank" rel="noopener">${esc(x.name)}</a>${x.state === 'retired' ? ' <span class="note">(retired)</span>' : ''}<div class="note">${esc(x.sentence)}</div></td>
+      <td>${spark(x.curve)}</td><td style="text-align:right">${fmt(x.stories)}<div class="note">${fmt(x.recent)} recent</div></td><td class="note">${fmt(x.sources)} sources<br>${x.groups.slice(0, 2).map((g) => esc(g.name)).join(', ')}</td><td>${lensSel(a, x.lens, 'tlens')}</td>
+      <td><button class="link" type="button" data-tedit>Rename</button> <button class="link" type="button" data-tstate="${x.state === 'retired' ? 'active' : 'retired'}">${x.state === 'retired' ? 'Bring back' : 'Retire'}</button></td></tr>`).join('');
+    const more = themeMore && themeMore.area === area ? `<div class="card" style="margin-top:8px" data-tmore="${area}"><b>A theme from these</b> <span class="note">Stories in no theme alike to the ones you picked; untick any that do not belong.</span>
+      <div class="optrow" style="margin-top:6px"><input name="name" value="${esc(themeMore.name)}" maxlength="50" style="width:260px" aria-label="Name"><input name="sentence" maxlength="200" style="width:380px" placeholder="One sentence on what it is" aria-label="Sentence">${lensSel(a, themeMore.lens, 'lens')}</div>
+      <ul class="note" style="list-style:none;padding:0;margin:6px 0">${[...themeMore.seeds.map((s) => ({ ...s, sim: 1 })), ...themeMore.stories.filter((s) => !themeMore.seeds.some((x) => x.id === s.id))].map((s) => `<li><label class="chk"><input type="checkbox" value="${esc(s.id)}" checked> ${esc(s.name)} <span style="opacity:.7">${day(s.first)} → ${day(s.last)}, ${fmt(s.n)} items${s.sim < 1 ? `, ${Math.round(s.sim * 100)}% alike` : ''}</span></label></li>`).join('')}</ul>
+      <button class="go" type="button" data-tcreate>Create theme</button> <button class="go ghost" type="button" data-tmorecancel>Cancel</button></div>` : '';
+    return `<h3 style="margin:12px 0 4px">${area === 'politics' ? 'Politics' : 'AI'} <small class="note">${fmt(a.themes.filter((x) => x.state === 'active').length)} themes, ${fmt(a.proposals.length)} proposals${last?.areas?.[area]?.looked !== undefined ? `; last run looked at ${fmt(last.areas[area].looked)} stories in no theme` : ''}</small></h3>
+      ${a.proposals.length ? `<div>${a.proposals.map((p) => prop(a, area, p)).join('')}</div>` : '<p class="note">No proposal waiting.</p>'}
+      ${last?.areas?.[area]?.whyNot?.length ? `<details class="note"><summary>Groups that failed a test last time</summary><ul>${last.areas[area].whyNot.map((w) => `<li>${esc(w.names.join(', '))} (${w.stories} stories): failed ${esc(w.failed.join(', '))}</li>`).join('')}</ul></details>` : ''}
+      ${rows ? `<div style="overflow-x:auto;margin-top:8px"><table class="guide" data-tarea="${area}"><thead><tr><th>Theme</th><th>8 weeks</th><th>Stories</th><th>Sources</th><th>Lens</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+      ${a.uncharted.length ? `<details style="margin-top:8px" data-tpick="${area}"><summary class="note" style="cursor:pointer"><b>More like these:</b> start a theme from one or two stories in no theme (${fmt(a.uncharted.length)})</summary><ul class="note" style="list-style:none;padding:0;margin:6px 0;max-height:220px;overflow:auto">${a.uncharted.map((s) => `<li><label class="chk"><input type="checkbox" value="${esc(s.id)}"> ${esc(s.name)} <span style="opacity:.7">${day(s.first)} → ${day(s.last)}, ${fmt(s.n)} items</span></label></li>`).join('')}</ul><button class="go ghost" type="button" data-tmore>Find more like these</button></details>` : ''}${more}
+      ${a.thin.length || a.noisy.length ? `<div class="grid" style="grid-template-columns:1fr 1fr;gap:12px;margin-top:8px"><div><div class="note"><b>Themes heard from one or two sources</b> (where to add sources)</div><ul class="note">${a.thin.map((x) => `<li>${esc(x.name)}: ${x.sources} source${x.sources === 1 ? '' : 's'}</li>`).join('') || '<li>none</li>'}</ul></div>
+        <div><div class="note"><b>Sources that mostly land in no story</b> (14 days; candidates to drop)</div><ul class="note">${a.noisy.map((x) => `<li>${esc(x.label)}: ${fmt(x.none)} of ${fmt(x.read)} items in no story</li>`).join('') || '<li>none</li>'}</ul></div></div>` : ''}`;
+  }).join('') || '<p class="note">No themes or proposals yet.</p>';
+}
+$('#sigThemes').addEventListener('toggle', () => { if ($('#sigThemes').open) loadThemes(); });
+$('#sigThemesReload').addEventListener('click', loadThemes);
+$('#sigThemesRun').addEventListener('click', async (e) => {
+  const b = e.target; b.disabled = true; $('#sigThemesStatus').textContent = 'Looking for themes; naming takes a moment…';
+  try { themes = await post('/mon/theme-run', {}); renderThemes(); toast('Done'); } catch (err) { toast(err.message); renderThemes(); } finally { b.disabled = false; }
+});
+document.addEventListener('click', (e) => { if (e.target.closest('[data-themesjump]')) setTimeout(() => { $('#sigThemes').open = true; loadThemes(); $('#sigThemes').scrollIntoView({ behavior: 'smooth' }); }, 50); });
+$('#sigThemesList').addEventListener('change', async (e) => {
+  const sel = e.target.closest('select[name=tlens]'); if (!sel) return;
+  try { themes = await post('/mon/theme-save', { id: sel.closest('[data-theme]').dataset.theme, lens: sel.value || null }); renderThemes(); toast('Lens saved'); } catch (err) { toast(err.message); }
+});
+$('#sigThemesList').addEventListener('click', async (e) => {
+  try {
+    const act = e.target.closest('[data-tact]');
+    if (act) {
+      const box = act.closest('[data-tprop]'), v = (n) => box.querySelector(`[name=${n}]`)?.value, action = act.dataset.tact;
+      const body = { id: box.dataset.tprop, action, name: v('name'), sentence: v('sentence'), lens: v('lens') || null, into: v('into'), newName: v('newName') };
+      if (action === 'merge' && !body.into) return toast('Choose the theme to merge into');
+      act.disabled = true;
+      const r = await post('/mon/theme-act', body); themes = r; renderThemes();
+      return toast(action === 'approve' && r.result?.theme ? `Theme “${r.result.theme.name}” made` : action === 'later' ? 'Asked again in four weeks if it still passes' : action === 'reject' ? 'Noted' : 'Done');
+    }
+    const row = e.target.closest('[data-theme]');
+    if (row && e.target.closest('[data-tedit]')) {
+      const cur = row.querySelector('a').textContent, name = prompt('A new name for this theme. Its old address will redirect.', cur);
+      if (!name || name.trim() === cur) return;
+      themes = await post('/mon/theme-save', { id: row.dataset.theme, name: name.trim() }); renderThemes(); return toast('Renamed');
+    }
+    if (row && e.target.closest('[data-tstate]')) {
+      const st = e.target.closest('[data-tstate]').dataset.tstate;
+      if (st === 'retired' && !confirm('Retire this theme? It stays findable but leaves the lists, and new stories no longer join it.')) return;
+      themes = await post('/mon/theme-save', { id: row.dataset.theme, state: st }); renderThemes(); return;
+    }
+    if (e.target.closest('[data-tmore]')) {
+      const box = e.target.closest('[data-tpick]'), ids = [...box.querySelectorAll('input:checked')].map((i) => i.value);
+      if (!ids.length || ids.length > 2) return toast('Tick one or two stories');
+      themeMore = await post('/mon/theme-more', { area: box.dataset.tpick, ids }); renderThemes(); return;
+    }
+    if (e.target.closest('[data-tmorecancel]')) { themeMore = null; renderThemes(); return; }
+    if (e.target.closest('[data-tcreate]')) {
+      const box = e.target.closest('[data-tmore]'), v = (n) => box.querySelector(`[name=${n}]`)?.value;
+      const r = await post('/mon/theme-create', { area: box.dataset.tmore, name: v('name'), sentence: v('sentence'), lens: v('lens') || null, stories: [...box.querySelectorAll('input:checked')].map((i) => i.value) });
+      themeMore = null; themes = r; renderThemes(); return toast(`Theme “${r.theme.name}” made`);
+    }
+  } catch (err) { toast(err.message); renderThemes(); }
+});
+
+// ---------- Stories (docs/grouping-proposal.md): per area, beside the topics from merged names
+let stories = null;
+async function loadStories() {
+  try { stories = await (await fetch('/mon/stories')).json(); } catch { return; }
+  if (stories.error && !stories.areas) return toast(stories.error);
+  renderStories();
+}
+function renderStories() {
+  const s = stories; if (!s) return;
+  const bf = s.backfill || {}, when = (ms) => new Date(ms).toISOString().slice(5, 16).replace('T', ' ');
+  $('#sigStoriesPublic').checked = !!s.on;
+  $('#sigStoriesNote').textContent = !s.using ? '· needs AI topics' : !bf.done ? '· grouping' : s.on ? '· public' : '· admin only';
+  $('#sigStoriesStatus').innerHTML = !s.using ? 'Stories are made from what the topic model reads: turn on AI under Topic detection.'
+    : `${bf.done ? 'The last 30 days are grouped.' : `Grouping the last 30 days: ${fmt(bf.n || 0)} items so far${bf.at ? `, up to ${esc(when(bf.at))} UTC` : ''}. The public pages show topics from names until it is done.`}${s.error ? ` <span class="err">${esc(s.error)}</span>` : ''}`;
+  const STATE = { live: 'live', dormant: 'quiet', closed: 'closed' };
+  $('#sigStoriesList').innerHTML = Object.entries(s.areas || {}).map(([area, a]) => {
+    if (!a.stories.length && !a.terms.length) return '';
+    const rows = a.stories.slice(0, 120).map((x) => `<tr><td><a href="/t/${esc(x.slug)}${area === 'politics' ? '?area=politics' : ''}" target="_blank" rel="noopener">${esc(x.name)}</a>${x.isNew ? ' <span class="sigchip up">new story</span>' : ''}${x.named === 'rule' ? ' <span class="note" title="Named from its items until the model names it">(by rule)</span>' : x.named === 'admin' ? ' <span class="note">(yours)</span>' : ''}
+      <div class="note">${esc(x.names.filter((n) => n.toLowerCase() !== x.name.toLowerCase()).slice(0, 4).join(' · '))}</div></td>
+      <td>${STATE[x.state] || esc(x.state)}</td><td style="text-align:right">${fmt(x.n)}</td><td class="note">${x.groups.slice(0, 3).map((g) => `${esc(g.name)} ${g.n}`).join(', ')}${x.groups.length > 3 ? ` +${x.groups.length - 3}` : ''}</td>
+      <td class="note">${esc(when(x.first))} → ${esc(when(x.last))}</td><td><button class="link" type="button" data-srename="${esc(x.id)}" data-sname="${esc(x.name)}">Rename</button></td></tr>`).join('');
+    return `<h3 style="margin:12px 0 4px">${area === 'politics' ? 'Politics' : 'AI'} <small class="note">${fmt(a.stories.length)} stories, ${fmt(a.pool)} items waiting for company${a.public ? ', shown publicly' : ''}</small></h3>
+      <div style="display:grid;grid-template-columns:minmax(0,3fr) minmax(0,1fr);gap:14px;align-items:start">
+      <div style="overflow-x:auto"><table class="guide"><thead><tr><th>Story</th><th>State</th><th>Items</th><th>Groups (14 days)</th><th>First → last (UTC)</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="note">No story yet.</td></tr>'}</tbody></table></div>
+      <div><div class="note"><b>Topics from names</b>${a.board ? ` (${esc(a.board.title)}, 7 days)` : ''}</div><ol class="note" style="margin:4px 0 0;padding-left:18px">${a.terms.map((t) => `<li>${esc(t.label)}</li>`).join('') || '<li>none</li>'}</ol></div></div>`;
+  }).join('') || '<p class="note">No stories yet.</p>';
+}
+$('#sigStories').addEventListener('toggle', () => { if ($('#sigStories').open) loadStories(); });
+$('#sigStoriesReload').addEventListener('click', loadStories);
+$('#sigStoriesPublic').addEventListener('change', async (e) => {
+  try { stories = await post('/mon/stories-set', { public: e.target.checked }); renderStories(); toast(e.target.checked ? 'The public pages show stories (within two minutes)' : 'The public pages show topics from names'); } catch (err) { toast(err.message); }
+});
+$('#sigStoriesRebuild').addEventListener('click', async () => {
+  if (!confirm('Forget every story and group the last 30 days again? The public pages show topics from names until it is done, and new stories are named again by the model (a few cents, inside the daily cap).')) return;
+  try { stories = await post('/mon/stories-rebuild', {}); renderStories(); toast('Grouping again'); } catch (err) { toast(err.message); }
+});
+$('#sigStoriesList').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-srename]'); if (!b) return;
+  const name = prompt('A new name for this story (two to five words). Its old address will redirect, and the system will not rename it again.', b.dataset.sname);
+  if (!name || name.trim() === b.dataset.sname) return;
+  try { await post('/mon/story-rename', { id: b.dataset.srename, name: name.trim() }); await loadStories(); toast('Renamed'); } catch (err) { toast(err.message); }
+});
 const SIG_SRC = { x: 'X', rss: 'RSS', hn: 'Hacker News', youtube: 'YouTube', arxiv: 'arXiv' };
 // One watch, with what can be done to it here. `def` is the group it is in by default; `out` marks one left out of Signal.
 function sigWatchRow(w, def, out) {

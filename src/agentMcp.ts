@@ -23,6 +23,8 @@ import { SEARCH_KINDS, SEARCH_WINDOWS, cleanQuery, windowOfSearch } from './site
 import { loadSearch } from './site/searchData';
 import { resolveFrom } from './site/trailData';
 import { parseFrom } from './signal/trail';
+import { themeMissing, themeOut } from './site/agentText';
+import type { ThemePublic, ThemesPublic } from './signal/themeview';
 import { boardFirstOut, briefingMissing, briefingOut, bucketWindow, catchUpPrompt, digIntoPrompt, itemGoneOut, itemMissing, itemOut, itemsOut, listLensesOut, overviewOut, paperMissing, paperOut, papersOut, searchOut, topicFirstOut, topicMissing, topicOut,
   type Answer, type BoardFirstIn, type BriefingIn, type Detail, type ItemsIn, type PaperIn } from './site/agentText';
 
@@ -156,6 +158,21 @@ export function registerAgentTools(server: McpServer, env: Env, origin: string, 
     const p = new URLSearchParams({ slug, sort, offset: String(offset), ...(kind ? { kind } : {}), ...(day ? { day } : {}), ...(conversation ? { conv: conversation } : {}), ...(area ? { area } : {}) });
     const r = await json<ItemsIn>(await mon(env, `topic-items-public?${p}`));
     return itemsOut(r ?? { found: false }, { topic, kind, sort, day, conversation, offset }, origin, detail as Detail);
+  }));
+
+  // Themes (docs/grouping-proposal.md): groups of stories over weeks or months, approved by an editor. Text and JSON, no view.
+  server.registerTool('get_theme', {
+    title: 'Theme: a subject over weeks',
+    description: 'A theme: a group of stories that keep coming back together over weeks or months (such as "Agent security incidents"), proposed by the system and approved by an editor. What it is and is not, its items per week, its stories newest first with dates, what is new in it this week and where it comes from. Theme addresses come from get_overview (its Themes section) and get_topic (the theme of a story). Story addresses in the answer go to get_topic.',
+    inputSchema: { theme: z.string().min(1).max(64).describe('A theme address such as "agent-security-incidents", or its name'), area: areaHintArg, detail: detailArg },
+    annotations: READ_ONLY,
+  }, ({ theme, area, detail }) => run('get_theme', { theme: asSlug(theme), area, detail }, async () => {
+    const slug = asSlug(theme), ask = (s: string) => mon(env, `theme-public?slug=${encodeURIComponent(s)}${area ? '&area=' + area : ''}`);
+    let r = await json<ThemePublic & { redirect?: string }>(await ask(slug));
+    if (r?.redirect) r = await json<ThemePublic>(await ask(r.redirect));
+    if (r?.slug) return themeOut(r, origin, detail as Detail);
+    const list = await json<ThemesPublic>(await mon(env, `themes-public?area=${area ?? 'ai'}`));
+    return themeMissing(theme, origin, (list?.themes ?? []).map((t) => ({ slug: t.slug, name: t.name })), area ?? 'ai');
   }));
 
   // The source card as text: one item in context. Ids come from get_topic_items and the talk lists of get_topic.

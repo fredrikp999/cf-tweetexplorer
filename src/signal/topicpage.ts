@@ -162,4 +162,10 @@ export interface TopicData {
   prism?: PrismOut | null;
   /** Added by src/site/topicData.ts (they live in the Publish object). */
   briefings?: TopicBriefing[];
+  /**
+   * Set when the topic is a story (docs/grouping-proposal.md): a group of items found by meaning, with an id that stays when it is renamed. `term` is then its address and
+   * `members` the names its items were tagged with most. `isNew`: born unlike every story of the 30 days before it. `theme`: the theme it is in (null: none).
+   * Section 5 marks: `newIn`, a new story inside its theme (this week); `uncharted`, in no theme while the area has themes.
+   */
+  story?: { id: string; first: number; last: number; n: number; state: 'live' | 'dormant' | 'closed'; isNew: boolean; theme: { id: string; slug: string; name: string; lens: string | null } | null; newIn: boolean; uncharted: boolean };
 }

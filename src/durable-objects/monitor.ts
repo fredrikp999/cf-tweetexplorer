@@ -41,6 +41,10 @@ import { complete, defaultTiers, modelOptions } from '../llm/analysis';
 import { embed } from '../lib/embed';
 import { COPY_DAYS, EMBED_BATCH, EMBED_MODEL, EMBED_PER_M, embedText, findCopies, fromBlob, nameSuggestions, nearestNames, toBlob } from '../signal/vectors';
 import { useGateway } from '../llm/gateway.ts';
+import { STORY_NEW_DAYS, assignItems, backgroundOf, isFixed, isNewStory, needsRename, parseStoryName, storyStates, storySystem, storyUser, typicalItems, type Story, type StoryItem, type StoryState } from '../signal/stories';
+import { THEME_WINDOW_WEEKS, assignTheme, discoverThemes, followCentre, moreLikeThese, parseThemeName, refuseName, reviewThemes, suggestLens, themeCurve, themeSystem, themeUser, type Rejected, type Theme, type ThemeCandidate, type ThemeProposal, type ThemeStory } from '../signal/themes';
+import { THEME_LATER_MS, THEME_NAME_MAX, THEME_PUBLIC_WEEKS, THEME_READ_WEEKS, THEME_RUN_MS, heldBack, noisySources, proposalKey, storyMarks, themeStoriesOf, thinThemes, weekly, weeksSince } from '../signal/themeview';
+import { STORY_BACKFILL_DAYS, STORY_BACKFILL_PAGE, chunkBySpan, groupAreas, isNewInWindow, provisionalName, relatedByNames, storyAliases, storyCounts, storyFor, uniqueSlug } from '../signal/storyview';
 
 const SEEN_KEEP = 1000;
 const FEED_KEEP = 500;
@@ -92,8 +96,24 @@ interface Described extends ScoredTerm { label: string; members: string[]; relat
 interface BoardView {
   board: Board; shown: GroupInfo[]; bySlug: Map<string, ScoredTerm>;
   c: { terms: ScoredTerm[]; of: Map<string, string>; groups: GroupInfo[]; from: string; to: string; days: number; baselineOk: boolean; items: Record<string, number> };
-  top?: { top: Described[]; describe: (t: ScoredTerm) => Described };
+  top?: { top: Described[]; describe: (t: ScoredTerm) => Described; items?: Array<{ terms: Set<string> }> };
+  /** Set when the topics are stories (docs/grouping-proposal.md, step 2): each topic's `term` is then its story's address, and this holds the story by that address. */
+  stories?: Map<string, StoryRow>;
 }
+/** A story as stored (src/signal/stories.ts), with what the pages need besides the grouping. */
+interface StoryRow extends Story { theme: string | null; namedN: number; namedTop: string; namedBy: 'rule' | 'model' | 'admin'; slug: string; oldSlugs: string[]; bornNew: boolean }
+type StoryDbRow = { id: string; area: string; name: string; names: string; centre: ArrayBuffer; n: number; first: number; last: number; state: string; fixed: number; theme: string | null; named_n: number; named_top: string; named_by: string; slug: string; old_slugs: string; born_new: number };
+const storyOf = (r: StoryDbRow): StoryRow => ({ id: r.id, area: r.area, name: r.name, names: JSON.parse(r.names) as string[], centre: fromBlob(r.centre), n: r.n, first: r.first, last: r.last, state: r.state as StoryState, fixed: !!r.fixed,
+  theme: r.theme, namedN: r.named_n, namedTop: r.named_top, namedBy: (r.named_by === 'model' || r.named_by === 'admin' ? r.named_by : 'rule'), slug: r.slug, oldSlugs: JSON.parse(r.old_slugs) as string[], bornNew: !!r.born_new });
+/** A theme as stored (src/signal/themes.ts). */
+interface ThemeRow extends Theme { area: Area; slug: string; oldSlugs: string[]; created: number; notConfused: string }
+type ThemeDbRow = { id: string; area: string; name: string; sentence: string; inside: string; outside: string; not_confused: string; lens: string | null; centre: ArrayBuffer; approved_centre: ArrayBuffer; state: string; slug: string; old_slugs: string; created: number };
+const themeOf = (r: ThemeDbRow): ThemeRow => ({ id: r.id, area: parseArea(r.area), name: r.name, sentence: r.sentence, inside: r.inside, outside: r.outside, notConfused: r.not_confused, lens: r.lens,
+  centre: fromBlob(r.centre), approvedCentre: fromBlob(r.approved_centre), state: r.state === 'retired' ? 'retired' : 'active', slug: r.slug, oldSlugs: JSON.parse(r.old_slugs) as string[], created: r.created });
+/** Story names written by the model per wake-up at most, so a backfill that makes hundreds of stories spreads its naming (and its cost) over several. */
+const STORY_NAME_BATCH = 25;
+/** Closed stories are kept as summary rows this long (for themes); their items go with the item log after 30 days. */
+const STORY_KEEP_DAYS = 365;
 const SUMMARY_TOPICS = 24, SUMMARY_PER_BOARD = 12, SUMMARY_KEEP_DAYS = 3, SUMMARY_RETRY_MS = 10 * 60_000;
 /**
  * A feed page: a public page that shows items from what is watched, defined in the admin. `source` is a list ("f:<id>" feed list, "a:<id>" account list,
@@ -174,6 +194,25 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('CREATE TABLE IF NOT EXISTS name_vec (term TEXT PRIMARY KEY, v BLOB NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID');
     // The landscape of the landing page: one layout per Signal, window and day, so tomorrow's starts from today's and the picture stays steady.
     sql.exec('CREATE TABLE IF NOT EXISTS landscape (board TEXT NOT NULL, win INTEGER NOT NULL, day TEXT NOT NULL, at INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (board, win, day)) WITHOUT ROWID');
+    // Stories (src/signal/stories.ts, docs/grouping-proposal.md): groups of items with an id, found per area as items are read. The name is a label that can change; old
+    // addresses stay in old_slugs. `centre`: unit mean vector; `names`: the names its items carried, most used first; `born_new`: unlike every story of the 30 days before it;
+    // `named_by`: rule (made from its items' names), model or admin (never renamed by the system); `theme`: the theme it belongs to, once there are themes. A closed story stays as this row.
+    sql.exec("CREATE TABLE IF NOT EXISTS story (id TEXT PRIMARY KEY, area TEXT NOT NULL, name TEXT NOT NULL, names TEXT NOT NULL DEFAULT '[]', centre BLOB NOT NULL, n INTEGER NOT NULL, first INTEGER NOT NULL, last INTEGER NOT NULL, state TEXT NOT NULL, fixed INTEGER NOT NULL DEFAULT 0, theme TEXT, named_n INTEGER NOT NULL DEFAULT 0, named_top TEXT NOT NULL DEFAULT '', named_by TEXT NOT NULL DEFAULT 'rule', slug TEXT NOT NULL, old_slugs TEXT NOT NULL DEFAULT '[]', born_new INTEGER NOT NULL DEFAULT 0)");
+    sql.exec('CREATE INDEX IF NOT EXISTS story_area ON story (area, state)');
+    sql.exec('CREATE INDEX IF NOT EXISTS story_slug ON story (slug)');
+    // Which story each item is in (one at most, kept as long as the item log), the daily counts per source group (kept a year, for themes), and the items still waiting for company.
+    sql.exec('CREATE TABLE IF NOT EXISTS story_item (watch TEXT NOT NULL, item TEXT NOT NULL, story TEXT NOT NULL, day TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (watch, item)) WITHOUT ROWID');
+    sql.exec('CREATE INDEX IF NOT EXISTS story_item_story ON story_item (story, day)');
+    sql.exec('CREATE INDEX IF NOT EXISTS story_item_day ON story_item (day)');
+    sql.exec('CREATE TABLE IF NOT EXISTS story_day (story TEXT NOT NULL, day TEXT NOT NULL, grp TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (story, day, grp)) WITHOUT ROWID');
+    // Themes (src/signal/themes.ts): groups of stories over weeks or months, proposed once a week and approved by the admin. `centre` follows its stories slowly; `approved_centre`
+    // is where it was approved (the limit of the drift). A retired theme stays as a row, findable but in no list. `old_slugs`: addresses it had (also of themes merged into it).
+    sql.exec("CREATE TABLE IF NOT EXISTS theme (id TEXT PRIMARY KEY, area TEXT NOT NULL, name TEXT NOT NULL, sentence TEXT NOT NULL DEFAULT '', inside TEXT NOT NULL DEFAULT '', outside TEXT NOT NULL DEFAULT '', not_confused TEXT NOT NULL DEFAULT '', lens TEXT, centre BLOB NOT NULL, approved_centre BLOB NOT NULL, state TEXT NOT NULL, slug TEXT NOT NULL, old_slugs TEXT NOT NULL DEFAULT '[]', created INTEGER NOT NULL)");
+    // What the weekly run proposes: kind candidate | split | merge | retire | drifted, the data in `payload`; state open | approved | rejected | later. A rejected candidate keeps
+    // its centre in the payload, so the same group is not proposed again; `later_until` holds a put-off proposal back.
+    sql.exec("CREATE TABLE IF NOT EXISTS theme_proposal (id TEXT PRIMARY KEY, area TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, payload TEXT NOT NULL, state TEXT NOT NULL, later_until INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL)");
+    sql.exec('CREATE INDEX IF NOT EXISTS theme_proposal_area ON theme_proposal (area, state)');
+    sql.exec("CREATE TABLE IF NOT EXISTS story_pool (watch TEXT NOT NULL, item TEXT NOT NULL, area TEXT NOT NULL, day TEXT NOT NULL, ts INTEGER NOT NULL, grp TEXT NOT NULL, names TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (watch, item)) WITHOUT ROWID");
     this.backfillSignal();
     this.backfillItemLog();
     this.backfillItemNumbers();
@@ -219,6 +258,8 @@ export class MonitorDO extends DurableObject<Env> {
     let next = wake ? Math.min(wake, tidy) : tidy;
     const sums = this.summaryWake(); if (sums) next = Math.min(next, sums);
     const prism = this.prismWake(); if (prism) next = Math.min(next, prism);
+    const stories = this.storyWake(); if (stories) next = Math.min(next, stories);
+    const themes = this.themeWake(); if (themes) next = Math.min(next, themes);
     const pulse = this.pulseWake(); if (pulse) next = Math.min(next, pulse);
     next = Math.min(next, this.researchWake());
     const map = this.mapWake(); if (map) next = Math.min(next, map);
@@ -231,6 +272,8 @@ export class MonitorDO extends DurableObject<Env> {
     try { await this.summaryStep(Date.now() + 20_000); } catch (err) { console.error('topic summaries failed', err instanceof Error ? err.message : String(err)); }   // before the naming work: a day's summaries cost cents, and the cap is shared
     try { await this.prismStep(Date.now() + 15_000); } catch (err) { console.error('topic conversations failed', err instanceof Error ? err.message : String(err)); }   // after the summaries: the cap is shared, and a day's summaries matter more than a day's names
     try { await this.processAi(Date.now() + 20_000); } catch (err) { console.error('signal topics failed', err instanceof Error ? err.message : String(err)); }
+    try { await this.storyStep(Date.now() + 15_000); } catch (err) { console.error('stories failed', err instanceof Error ? err.message : String(err)); this.setMeta('storyError', err instanceof Error ? err.message : String(err)); }   // after the reading: the first grouping needs what was read
+    try { await this.themeStep(Date.now() + 20_000); } catch (err) { console.error('themes failed', err instanceof Error ? err.message : String(err)); }   // once a week
     this.pruneSignal();
     const researchUntil = Date.now() + 25_000;
     try { await this.pulseStep(researchUntil); await this.researchStep(researchUntil); } catch (err) { console.error('research pulse failed', err instanceof Error ? err.message : String(err)); }
@@ -431,8 +474,12 @@ export class MonitorDO extends DurableObject<Env> {
     const pub = new Set(this.boards().filter((b) => b.public && (!boardSlug || b.slug === boardSlug)).flatMap((b) => b.groups)), { of } = await this.groups();
     const days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), series: Record<string, number[]> = {};
     const days30 = Array.from({ length: HEAT_DAYS }, (_, i) => dayOf(now - (HEAT_DAYS - 1 - i) * 86_400_000)), heat = days30.map(() => 0);
+    // A card of a story asks by its address: its own items are counted, not the mentions of a name.
+    const areas = [...new Set(this.boards().filter((b) => b.public && (!boardSlug || b.slug === boardSlug)).map(areaOf))].filter((a) => this.storiesOn(a));
+    const storyBy = new Map(areas.length && spark.length ? sql.exec<{ id: string; slug: string }>(`SELECT id, slug FROM story WHERE slug IN (SELECT value FROM json_each(?)) AND area IN (SELECT value FROM json_each(?)) ORDER BY last ASC`, JSON.stringify(spark), JSON.stringify(areas)).toArray().map((r) => [r.slug, r.id] as const) : []);
     for (const term of spark) {
-      const c30 = this.dailyCounts(this.namesOf(term), (w) => { const g = of.get(w); return !!g && pub.has(g); }, days30);
+      const keep = (w: string) => { const g = of.get(w); return !!g && pub.has(g); }, sid = storyBy.get(term);
+      const c30 = sid ? this.storyDaily(sid, keep, days30) : this.dailyCounts(this.namesOf(term), keep, days30);
       series[term] = c30.slice(-14);
       c30.forEach((v, i) => { heat[i] += v; });
     }
@@ -454,7 +501,7 @@ export class MonitorDO extends DurableObject<Env> {
     if (!found) return { found: false as const };
     const { v, topic } = found, slug = topicSlug(topic.term), proof = v.board.proof === true;
     if (!proof) return { found: true as const, slug, label: topic.label, area: areaOf(v.board), proof, total: 0, items: [] as EvItem[] };
-    const offset = Math.max(0, Math.min(5000, Number(p.get('offset')) || 0)), c = v.c, got = await this.topicItems(v, [topic.term, ...topic.members]);
+    const offset = Math.max(0, Math.min(5000, Number(p.get('offset')) || 0)), c = v.c, got = await this.topicItems(v, topic);
     // A5: the same day, kind and order as the topic page (src/signal/brush.ts); here newest is the default, and "reacted" without a kind is ordered within each kind, one kind after the other
     const { items, meta } = got, pr = this.prismOut(v.board.slug, slug, items, meta, proof);
     const brush = parseBrush({ day: p.get('day'), kind: p.get('kind'), conv: p.get('conv'), sort: p.get('sort') }, recentDays(Date.now(), 14).filter((d) => d >= c.from), 'newest', pr ? pr.out.groups.map((g) => g.id) : []);
@@ -520,8 +567,9 @@ export class MonitorDO extends DurableObject<Env> {
         // The topics below the top: only those whose own name fits, so a page of thousands of names costs a scan and no more.
         for (const raw of v.c.terms) {
           if (covered.has(raw.term)) continue;
-          if (!topicQuality(words, { term: raw.term, label: raw.term, members: [], summary: '' }).quality) continue;
-          put({ term: raw.term, label: raw.term, members: [], signal: raw.signal, isNew: raw.isNew, change: raw.change });
+          const s = v.stories?.get(raw.term), label = s?.name ?? raw.term, members = s ? storyAliases(s.name, s.names) : [];
+          if (!topicQuality(words, { term: raw.term, label, members, summary: '' }).quality) continue;
+          put({ term: raw.term, label, members, signal: raw.signal, isNew: raw.isNew, change: raw.change });
         }
       }
       const ranked = rankTopics([...found.values()]);
@@ -849,6 +897,12 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('DELETE FROM ai_terms WHERE n = 1 AND day < ?', dayOf(now - 7 * 86_400_000));
     sql.exec('DELETE FROM item_vec WHERE day < ?', dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
     sql.exec('DELETE FROM name_vec WHERE at < ?', now - SIGNAL_KEEP_DAYS * 86_400_000);
+    // Stories: which item is in which as long as the items are kept; daily counts and closed stories a year (themes are found over months); the pool is never over two days old.
+    sql.exec('DELETE FROM story_item WHERE day < ?', dayOf(now - SIGNAL_KEEP_DAYS * 86_400_000));
+    sql.exec('DELETE FROM story_day WHERE day < ?', dayOf(now - STORY_KEEP_DAYS * 86_400_000));
+    sql.exec("DELETE FROM story WHERE state = 'closed' AND last < ?", now - STORY_KEEP_DAYS * 86_400_000);
+    sql.exec('DELETE FROM story_pool WHERE ts < ?', now - 3 * 86_400_000);
+    sql.exec("DELETE FROM theme_proposal WHERE state != 'rejected' AND state != 'open' AND created < ?", now - STORY_KEEP_DAYS * 86_400_000);   // answered proposals a year; a no is kept for good
     this.setMeta('signalPruned', today());
   }
 
@@ -1086,6 +1140,11 @@ export class MonitorDO extends DurableObject<Env> {
           for (const x of t) sql.exec('INSERT INTO ai_terms (day, watch, term, n) VALUES (?, ?, ?, 1) ON CONFLICT (day, watch, term) DO UPDATE SET n = n + 1', row.day, row.watch, x);
         }
       });
+      // Stories: the items just read, with their vectors and names (copies are left out: they count once, as the post they repeat). Never stops the reading.
+      try {
+        const alias = this.aliasFn();
+        await this.storiesFromRead(read.filter((r) => meaning.vecs.has(keyOf(r))).map((r) => ({ watch: r.watch, item: r.item, day: r.day, v: meaning.vecs.get(keyOf(r))!, names: [...new Set((topics.get(at.get(r.seq)!) ?? []).map(alias))] })));
+      } catch (err) { console.error('stories failed', err instanceof Error ? err.message : String(err)); }
       this.noteCopies(rows.filter((r) => meaning.copies.has(keyOf(r))).map((r) => ({ text: r.text, of: meaning.copies.get(keyOf(r))! })));
       if (!gaveUp) await this.suggestNames([...new Set([...topics.values()].flat())], meaning.names);
       if (!failed) this.setMeta('aiStatus', {});
@@ -1218,18 +1277,26 @@ export class MonitorDO extends DurableObject<Env> {
   private async landscapePublic(slug: string, daysIn: number): Promise<Layout | null> {
     const board = this.boards().find((b) => b.public && b.slug === slug), win = daysIn === 3 || daysIn === 7 ? daysIn : 1;
     if (!board) return null;
-    const c = await this.compute(win, new Set(board.groups)), shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
+    // Stories: one bubble per story; stories whose items share names sit together (each item is in one story, so shared items cannot say it).
+    const sv = this.storiesOn(areaOf(board)) ? await this.boardView(board, win) : null;
+    const c = sv ? sv.c : await this.compute(win, new Set(board.groups)), shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
     if (!shown.length) return null;
-    const { top, items } = this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), 30);
+    const { top, items = [] } = sv ? this.boardTop(sv) : this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), 30);
     const seen = new Set<string>(), own = top.filter((t) => !t.parent).sort((a, b) => b.signal - a.signal).filter((t) => { const k = topicSlug(t.term); return seen.has(k) ? false : (seen.add(k), true); }).slice(0, 24);
     if (!own.length) return null;
+    // With themes, the dashed circles are themes (section 6): stories of one theme are made to go together, and the circle takes the theme's name. Without, stories whose items share names.
+    const themeBy = new Map(sv ? this.themeRows(areaOf(board)).filter((x) => x.state === 'active').map((x) => [x.id, x] as const) : []), themeOfT = (t: (typeof own)[number]) => { const id = sv?.stories?.get(t.term)?.theme; return id ? themeBy.get(id) : undefined; };
+    const byTheme = themeBy.size > 0, namesFor = (t: (typeof own)[number]) => (byTheme ? (themeOfT(t) ? ['theme:' + themeOfT(t)!.id] : []) : sv ? this.topicNames(sv, t).map((x) => x.toLowerCase()) : [t.term, ...t.members]);
+    const together = byTheme ? [...new Set(own.map((t) => themeOfT(t)?.id).filter((x): x is string => !!x))].flatMap((id) => Array.from({ length: 3 }, () => ({ terms: new Set(['theme:' + id]) }))) : items;
     const sql = this.ctx.storage.sql, day = today(), now = Date.now(), want = own.map((t) => topicSlug(t.term)).sort().join('|');
     const read = (q: string, ...a: Array<string | number>) => { const r = sql.exec<{ at: number; json: string }>(q, ...a).toArray()[0]; try { return r ? { at: r.at, layout: cleanLayout(JSON.parse(r.json)) } : null; } catch { return null; } };
     const kept = read('SELECT at, json FROM landscape WHERE board = ? AND win = ? AND day = ?', board.id, win, day);
     if (kept?.layout && now - kept.at < 3 * 3_600_000 && layoutKeys(kept.layout) === want) return kept.layout;
     const prev = kept?.layout ?? read('SELECT at, json FROM landscape WHERE board = ? AND win = ? AND day < ? ORDER BY day DESC LIMIT 1', board.id, win, day)?.layout ?? null;
     const topics = own.map((t) => ({ key: topicSlug(t.term), label: t.label, score: t.signal }));
-    const layout = layoutLandscape(topics, coCounts(own.map((t) => ({ key: topicSlug(t.term), names: [t.term, ...t.members] })), items), prev);
+    const laid = layoutLandscape(topics, coCounts(own.map((t) => ({ key: topicSlug(t.term), names: namesFor(t) })), together), prev);
+    const themeOfKey = new Map(own.map((t) => [topicSlug(t.term), themeOfT(t)?.name] as const));
+    const layout: Layout = byTheme ? { ...laid, clusters: laid.clusters.map((c) => ({ ...c, name: themeOfKey.get(c.lead) ?? c.name })) } : laid;
     sql.exec('INSERT OR REPLACE INTO landscape (board, win, day, at, json) VALUES (?, ?, ?, ?, ?)', board.id, win, day, now, JSON.stringify(layout));
     sql.exec('DELETE FROM landscape WHERE day < ?', dayOf(now - 14 * 86_400_000));
     return layout;
@@ -1242,9 +1309,10 @@ export class MonitorDO extends DurableObject<Env> {
   private async depthPublic(slug: string): Promise<(DepthLayout & { days: string[]; baselineOk: boolean; meta: Array<{ key: string; term: string; members: string[]; isNew: boolean; change: number | null }> }) | null> {
     const board = this.boards().find((b) => b.public && b.slug === slug);
     if (!board) return null;
-    const c = await this.compute(7, new Set(board.groups)), shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
+    const sv = this.storiesOn(areaOf(board)) ? await this.boardView(board, 7) : null;
+    const c = sv ? sv.c : await this.compute(7, new Set(board.groups)), shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
     if (!shown.length) return null;
-    const { top } = this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), 30);
+    const { top } = sv ? this.boardTop(sv) : this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), 30);
     const seen = new Set<string>(), own = top.filter((t) => !t.parent).sort((a, b) => b.signal - a.signal).filter((t) => { const k = topicSlug(t.term); return seen.has(k) ? false : (seen.add(k), true); }).slice(0, DEPTH_TOPICS);
     if (!own.length) return null;
     const sql = this.ctx.storage.sql, T = this.tables(), now = Date.now(), all = Array.from({ length: DEPTH_DAYS + DEPTH_WINDOW - 1 }, (_, i) => dayOf(now - (DEPTH_DAYS + DEPTH_WINDOW - 2 - i) * 86_400_000)), at = new Map(all.map((d, i) => [d, i] as const));
@@ -1252,17 +1320,25 @@ export class MonitorDO extends DurableObject<Env> {
     const on = new Set(shown.map((g) => g.key)), had = new Set(sql.exec<{ watch: string }>(`SELECT DISTINCT watch FROM ${T.items} WHERE day >= ?`, all[0]).toArray().map((r) => r.watch)), info = new Map<string, { kind: string; group: string }>();
     for (const w of this.watches()) { const g = c.of.get(w.id); if (g && on.has(g) && !w.briefing && had.has(w.id)) info.set(w.id, { kind: sourceOf(w), group: g }); }
     const kinds = (['x', 'hn', 'youtube', 'rss', 'arxiv'] as string[]).filter((k) => [...info.values()].some((x) => x.kind === k));
-    const owner = new Map<string, number[]>();
-    own.forEach((t, i) => { for (const name of new Set([t.term, ...t.members].flatMap((x) => this.namesOf(x)))) (owner.get(name) ?? owner.set(name, []).get(name)!).push(i); });
     const daily = own.map(() => all.map(() => new Map<string, number>()));
-    for (const r of sql.exec<{ day: string; watch: string; term: string; n: number }>(`SELECT day, watch, term, n FROM ${T.terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify([...owner.keys()]), all[0])) {
-      const d = at.get(r.day);
-      if (d === undefined || !info.has(r.watch)) continue;
-      for (const i of owner.get(r.term) ?? []) daily[i][d].set(r.watch, (daily[i][d].get(r.watch) ?? 0) + r.n);
+    const add = (i: number, day: string, watch: string, n: number) => { const d = at.get(day); if (d !== undefined && info.has(watch)) daily[i][d].set(watch, (daily[i][d].get(watch) ?? 0) + n); };
+    if (sv) {   // a story's own items, per source and day
+      const pos = new Map(own.map((t, i) => [sv.stories!.get(t.term)?.id ?? '', i] as const));
+      for (const r of sql.exec<{ story: string; day: string; watch: string; n: number }>('SELECT story, day, watch, COUNT(*) AS n FROM story_item WHERE story IN (SELECT value FROM json_each(?)) AND day >= ? GROUP BY story, day, watch', JSON.stringify([...pos.keys()]), all[0])) {
+        const i = pos.get(r.story); if (i !== undefined) add(i, r.day, r.watch, r.n);
+      }
+    } else {
+      const owner = new Map<string, number[]>();
+      own.forEach((t, i) => { for (const name of new Set([t.term, ...t.members].flatMap((x) => this.namesOf(x)))) (owner.get(name) ?? owner.set(name, []).get(name)!).push(i); });
+      for (const r of sql.exec<{ day: string; watch: string; term: string; n: number }>(`SELECT day, watch, term, n FROM ${T.terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify([...owner.keys()]), all[0])) {
+        for (const i of owner.get(r.term) ?? []) add(i, r.day, r.watch, r.n);
+      }
     }
     const layout = depthLayout(own.map((t, i) => ({ key: topicSlug(t.term), label: t.label, score: t.signal, reach: reachSeries(daily[i].map((m) => [...m]), info, kinds) })),
       kinds, { kinds: kinds.length, groups: new Set([...info.values()].map((x) => x.group)).size, sources: info.size });
-    return { ...layout, days: all.slice(DEPTH_WINDOW - 1), baselineOk: c.baselineOk, meta: own.map((t) => ({ key: topicSlug(t.term), term: t.term, members: t.members, isNew: t.isNew, change: t.change })) };
+    const themeBy = new Map(sv ? this.themeRows(areaOf(board)).filter((x) => x.state === 'active').map((x) => [x.id, x] as const) : []);
+    const themeFor = (t: (typeof own)[number]) => { const id = sv?.stories?.get(t.term)?.theme, th = id ? themeBy.get(id) : undefined; return th ? { theme: { slug: th.slug, name: th.name }, themeLens: th.lens } : {}; };
+    return { ...layout, days: all.slice(DEPTH_WINDOW - 1), baselineOk: c.baselineOk, meta: own.map((t) => ({ key: topicSlug(t.term), term: t.term, members: t.members, isNew: t.isNew, change: t.change, ...themeFor(t) })) };
   }
   /**
    * The Ladder of a published Signal (src/signal/ladder.ts): the rank of its biggest topics on each of the last 14 days, by the score Signal gives (the share of each group's items that mention
@@ -1271,9 +1347,10 @@ export class MonitorDO extends DurableObject<Env> {
   private async ladderPublic(slug: string): Promise<(Ladder & { days: string[]; baselineOk: boolean; meta: Array<{ key: string; term: string; members: string[]; isNew: boolean; change: number | null }> }) | null> {
     const board = this.boards().find((b) => b.public && b.slug === slug);
     if (!board) return null;
-    const c = await this.compute(LADDER_DAYS, new Set(board.groups)), shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
+    const sv = this.storiesOn(areaOf(board)) ? await this.boardView(board, LADDER_DAYS) : null;
+    const c = sv ? sv.c : await this.compute(LADDER_DAYS, new Set(board.groups)), shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
     if (!shown.length) return null;
-    const { top } = this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), LADDER_POOL + 10);
+    const { top } = sv ? this.boardTop(sv) : this.describeTopics({ ...c, groups: shown }, c.terms.filter(notSteady), LADDER_POOL + 10);
     const seen = new Set<string>(), own = top.filter((t) => !t.parent).sort((a, b) => b.signal - a.signal).filter((t) => { const k = topicSlug(t.term); return seen.has(k) ? false : (seen.add(k), true); }).slice(0, LADDER_POOL);
     if (!own.length) return null;
     const sql = this.ctx.storage.sql, T = this.tables(), now = Date.now(), all = Array.from({ length: LADDER_DAYS + LADDER_WINDOW - 1 }, (_, i) => dayOf(now - (LADDER_DAYS + LADDER_WINDOW - 2 - i) * 86_400_000)), at = new Map(all.map((d, i) => [d, i] as const));
@@ -1282,13 +1359,19 @@ export class MonitorDO extends DurableObject<Env> {
       const g = gi.get(c.of.get(r.watch) ?? ''), d = at.get(r.day);
       if (g !== undefined && d !== undefined) items[g][d] += r.n;
     }
-    const owner = new Map<string, number[]>();
-    own.forEach((t, i) => { for (const name of new Set([t.term, ...t.members].flatMap((x) => this.namesOf(x)))) (owner.get(name) ?? owner.set(name, []).get(name)!).push(i); });
     const mentions = own.map(() => shown.map(() => all.map(() => 0)));
-    for (const r of sql.exec<{ day: string; watch: string; term: string; n: number }>(`SELECT day, watch, term, n FROM ${T.terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify([...owner.keys()]), all[0])) {
-      const g = gi.get(c.of.get(r.watch) ?? ''), d = at.get(r.day);
-      if (g === undefined || d === undefined) continue;
-      for (const i of owner.get(r.term) ?? []) mentions[i][g][d] += r.n;
+    const add = (i: number, day: string, watch: string, n: number) => { const g = gi.get(c.of.get(watch) ?? ''), d = at.get(day); if (g !== undefined && d !== undefined) mentions[i][g][d] += n; };
+    if (sv) {   // a story's own items, per group and day
+      const pos = new Map(own.map((t, i) => [sv.stories!.get(t.term)?.id ?? '', i] as const));
+      for (const r of sql.exec<{ story: string; day: string; watch: string; n: number }>('SELECT story, day, watch, COUNT(*) AS n FROM story_item WHERE story IN (SELECT value FROM json_each(?)) AND day >= ? GROUP BY story, day, watch', JSON.stringify([...pos.keys()]), all[0])) {
+        const i = pos.get(r.story); if (i !== undefined) add(i, r.day, r.watch, r.n);
+      }
+    } else {
+      const owner = new Map<string, number[]>();
+      own.forEach((t, i) => { for (const name of new Set([t.term, ...t.members].flatMap((x) => this.namesOf(x)))) (owner.get(name) ?? owner.set(name, []).get(name)!).push(i); });
+      for (const r of sql.exec<{ day: string; watch: string; term: string; n: number }>(`SELECT day, watch, term, n FROM ${T.terms} WHERE term IN (SELECT value FROM json_each(?)) AND day >= ?`, JSON.stringify([...owner.keys()]), all[0])) {
+        for (const i of owner.get(r.term) ?? []) add(i, r.day, r.watch, r.n);
+      }
     }
     const weights = shown.map((g) => g.weight), ladder = ladderOf(own.map((t, i) => ({ key: topicSlug(t.term), label: t.label, scores: dayScores(mentions[i], items, weights) })));
     const on = new Set(ladder.topics.map((t) => t.key));
@@ -1404,19 +1487,25 @@ export class MonitorDO extends DurableObject<Env> {
   private async signalPublic(slug: string, daysIn: number) {
     const board = this.boards().find((b) => b.public && b.slug === slug);
     if (!board) return { groups: [] };
-    const c = await this.compute(daysIn, new Set(board.groups));
+    // Where the area has stories, the topics are its stories (all of them: a story at the level of the week before is still a story, not background).
+    const stories = this.storiesOn(areaOf(board)), sv = stories ? await this.boardView(board, Math.min(SIGNAL_MAX_DAYS, Math.max(1, Math.floor(daysIn) || 7))) : null;
+    const c = sv ? sv.c : await this.compute(daysIn, new Set(board.groups));
     const shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0);
     if (!shown.length) return { groups: [] };
-    const idx = new Map(shown.map((g, i) => [g.key, i] as const)), { days, by } = this.volume(c.of, shown), pool = c.terms.filter(notSteady);
-    const { top, describe } = this.describeTopics({ ...c, groups: shown }, pool, 30);
+    const idx = new Map(shown.map((g, i) => [g.key, i] as const)), { days, by } = this.volume(c.of, shown), pool = sv ? c.terms : c.terms.filter(notSteady);
+    const { top, describe } = sv ? this.boardTop(sv) : this.describeTopics({ ...c, groups: shown }, pool, 30);
     // Terms and what goes with them, never the items themselves.
+    const themeBy = new Map(sv ? this.themeRows(areaOf(board)).filter((x) => x.state === 'active').map((x) => [x.id, x] as const) : []);
+    const themeOf_ = (term: string) => { if (!sv) return null; const st = sv.stories?.get(term), th = st?.theme ? themeBy.get(st.theme) : undefined; return { theme: th ? { slug: th.slug, name: th.name } : null, themeLens: th ? th.lens : null, ...(themeBy.size ? { newIn: !!th && !!st && storyMarks({ theme: th.id, bornNew: st.bornNew, first: st.first }, Date.now(), true).newIn } : {}) }; };
     const out = (t: ScoredTerm & { parent?: string; label?: string; related?: string[]; members?: string[]; reactions?: number; headlines?: Array<{ title: string; url: string; by: string; reactions?: number }> }) => ({ term: t.term, ...(t.parent ? { parent: t.parent } : {}), label: t.label ?? t.term, related: t.related ?? [], members: t.members ?? [], signal: t.signal, change: t.change, isNew: t.isNew, kind: t.kind, breadth: t.breadth, active: t.active,
       top: idx.get(t.topGroup) ?? 0, parts: shown.map((g) => t.groups.find((x) => x.key === g.key)?.part ?? 0), shares: shown.map((g) => t.groups.find((x) => x.key === g.key)?.share ?? 0),
       // Items are shown only on a Signal that has sources switched on (its proof pages show them too).
       reactions: t.reactions ?? 0,
+      // A story's theme (section 4): named on the cards, and its lens decides the story's lens (in place of the words of its names).
+      ...(themeOf_(t.term) ?? {}),
       ...(board.proof ? { headlines: (t.headlines ?? []).slice(0, 1).map((h) => ({ title: h.title, url: h.url, by: h.by, reactions: h.reactions ?? 0 })) } : {}) });
     return {
-      slug: board.slug, title: board.title, description: board.description, proof: board.proof === true, ai: this.tables().ai,
+      slug: board.slug, title: board.title, description: board.description, proof: board.proof === true, ai: this.tables().ai, stories,
       days: c.days, from: c.from, to: c.to, baselineOk: c.baselineOk, volumeDays: days, steadyHidden: c.terms.length - pool.length,
       groups: shown.map((g) => ({ name: g.name, weight: g.weight, items: c.items[g.key] ?? 0, perDay: by[g.key] })),
       top: top.map(out), rising: rising(c.terms, 10).map((t) => out(describe(t))),
@@ -1574,25 +1663,47 @@ export class MonitorDO extends DurableObject<Env> {
 
   // ---- The topic page /t/<slug> (src/signal/topicpage.ts): one topic of the published Signals, the one data set behind the page, /t/<slug>.json and later the MCP tool
   /** A published Signal over its last 7 days, kept for two minutes: the lookup of an address, the page and the summaries all start here. */
-  private async boardView(board: Board, days: 1 | 3 | 7 = 7): Promise<BoardView> {
-    const k = `bv|${board.slug}${days === 7 ? '' : '|' + days}`, hit = this.pubCache.get(k);
+  /** `terms`: the topics as merged terms even where the area shows stories (the fallback for an address that is no story). */
+  private async boardView(board: Board, days = 7, terms = false): Promise<BoardView> {
+    const area = areaOf(board), story = !terms && this.storiesOn(area);
+    const k = `bv|${board.slug}|${days}|${story ? 's' : 't'}`, hit = this.pubCache.get(k);
     if (hit && Date.now() - hit.at < 120_000) return hit.v as BoardView;
-    const c = await this.compute(days, new Set(board.groups));
+    const c = story ? await this.storyCompute(days, new Set(board.groups), area) : await this.compute(days, new Set(board.groups));
     const shown = c.groups.filter((g) => g.weight > 0 && (c.items[g.key] ?? 0) > 0), bySlug = new Map<string, ScoredTerm>();
     for (const t of c.terms) { const sl = topicSlug(t.term); if (!bySlug.has(sl)) bySlug.set(sl, t); }   // strongest first: when two names share an address, the stronger holds it
-    const v: BoardView = { board, c, shown, bySlug };
+    const v: BoardView = { board, c, shown, bySlug, ...('index' in c ? { stories: c.index as Map<string, StoryRow> } : {}) };
     this.pubCache.set(k, { at: Date.now(), v });
     return v;
   }
-  private boardTop(v: BoardView): NonNullable<BoardView['top']> { return (v.top ??= this.describeTopics({ ...v.c, groups: v.shown }, v.c.terms.filter(notSteady), 40)); }
+  private boardTop(v: BoardView): NonNullable<BoardView['top']> { return (v.top ??= v.stories ? this.storyTop(v) : this.describeTopics({ ...v.c, groups: v.shown }, v.c.terms.filter(notSteady), 40)); }
   /** A topic by its address. If it is in several published Signals, the page takes the one where its score is highest and lists the others. */
   /** `hint`: the area a link came from. The same address can exist on boards in both areas: the hinted area wins, else AI, and the other one is listed in `alsoIn`. */
+  /** Where an area shows stories, the address is a story's first (its own, one it had before, or a name of it, which redirect); else the merged terms as before, so old links keep working. */
   private async findTopic(slug: string, hint: Area | null = null) {
+    return (await this.findStory(slug, hint)) ?? (await this.findTermTopic(slug, hint));
+  }
+  private async findStory(slug: string, hint: Area | null) {
+    const found: Array<{ v: BoardView; raw: ScoredTerm }> = [];
+    for (const days of [7, 3, 1] as const) {
+      for (const b of this.boards().filter((x) => x.public && this.storiesOn(areaOf(x)))) {
+        const v = await this.boardView(b, days);
+        if (!v.shown.length || !v.stories) continue;
+        const hit = storyFor(slug, [...v.stories.values()]), raw = hit ? v.bySlug.get(hit.story.slug) : undefined;
+        if (raw) found.push({ v, raw });
+      }
+      if (found.length) break;
+    }
+    const ranked = rankByArea(found.map((f) => ({ area: areaOf(f.v.board), signal: f.raw.signal })), hint).map((i) => found[i]), best = ranked[0];
+    if (!best) return null;
+    const { top, describe } = this.boardTop(best.v);
+    return { v: best.v, topic: top.find((t) => t.term === best.raw.term) ?? describe(best.raw), alsoIn: ranked.slice(1).map((f) => ({ slug: f.v.board.slug, title: f.v.board.title, area: areaOf(f.v.board) })) };
+  }
+  private async findTermTopic(slug: string, hint: Area | null) {
     const found: Array<{ v: BoardView; raw: ScoredTerm }> = [];
     // The week first; a topic of the front page's shorter windows (today, 3 days) that the week does not have is looked for there, so its link never ends on "not found".
     for (const days of [7, 3, 1] as const) {
       for (const b of this.boards().filter((x) => x.public)) {
-        const v = await this.boardView(b, days), raw = v.shown.length ? v.bySlug.get(slug) : undefined;
+        const v = await this.boardView(b, days, true), raw = v.shown.length ? v.bySlug.get(slug) : undefined;
         if (raw) found.push({ v, raw });
       }
       if (found.length) break;
@@ -1605,10 +1716,13 @@ export class MonitorDO extends DurableObject<Env> {
     return { v: best.v, topic, alsoIn: ranked.slice(1).map((f) => ({ slug: f.v.board.slug, title: f.v.board.title, area: areaOf(f.v.board) })) };
   }
   /** The items behind a topic over the last 14 days (every kind of source), with the numbers each source gave. Briefing posts are left out of the evidence: they were written from the other sources. */
-  private async topicItems(v: BoardView, names: string[]) {
-    const r = await this.signalItems({ terms: names, days: 14, group: '', watch: '', offset: 0, limit: 1, only: new Set(v.board.groups), all: true });
+  /** For a story: its own items (src/signal/stories.ts), not the items that carry its names. */
+  private async topicItems(v: BoardView, topic: { term: string; members: string[] }) {
+    const s = v.stories?.get(topic.term);
+    const hits = s ? await this.storyHits(s.id, new Set(v.board.groups))
+      : (await this.signalItems({ terms: [topic.term, ...topic.members], days: 14, group: '', watch: '', offset: 0, limit: 1, only: new Set(v.board.groups), all: true })).hits ?? [];
     const watches = new Map(this.watches().map((w) => [w.id, w] as const)), from = Date.parse(v.c.from + 'T00:00:00Z');
-    const hits = r.hits ?? [], items: EvItem[] = [], wide: EvItem[] = [], meta = new Map<EvItem, { watch: string; item: string; matched: string[] }>();
+    const items: EvItem[] = [], wide: EvItem[] = [], meta = new Map<EvItem, { watch: string; item: string; matched: string[] }>();
     for (const h of hits) {
       const w = watches.get(h.watch);
       if (!w || w.briefing || sourceOf(w) === 'arxiv') continue;   // papers have their own angle
@@ -1618,6 +1732,98 @@ export class MonitorDO extends DurableObject<Env> {
       if (h.ts >= from) items.push(item);
     }
     return { hits, items, wide, meta };
+  }
+  /** The names a topic goes by, for matching papers, videos and briefings: a story's name and the names its items carried; a term topic's names. */
+  private topicNames(v: BoardView, t: { term: string; label: string; members: string[] }): string[] {
+    return v.stories?.has(t.term) ? [t.label, ...t.members] : [t.term, ...t.members];
+  }
+  /** Items per day of a topic over `days` (ISO, oldest first), from the board's groups: a story's own items, or a term topic's mentions in the terms table. */
+  private topicDaily(v: BoardView, t: { term: string; members: string[] }, days: string[], groupOf: Map<string, string>): number[] {
+    const boardGroups = new Set(v.board.groups), keep = (w: string) => boardGroups.has(groupOf.get(w) ?? ''), s = v.stories?.get(t.term);
+    return s ? this.storyDaily(s.id, keep, days) : this.dailyCounts([...new Set([t.term, ...t.members].flatMap((x) => this.namesOf(x)))], keep, days);
+  }
+  private storyDaily(id: string, keep: (watch: string) => boolean, days: string[]): number[] {
+    const counts = days.map(() => 0), at = new Map(days.map((d, i) => [d, i] as const));
+    for (const r of this.ctx.storage.sql.exec<{ day: string; watch: string; n: number }>('SELECT day, watch, COUNT(*) AS n FROM story_item WHERE story = ? AND day >= ? GROUP BY day, watch', id, days[0])) {
+      const i = at.get(r.day);
+      if (i !== undefined && keep(r.watch)) counts[i] += r.n;
+    }
+    return counts;
+  }
+  /** A story's items of the last 14 days from these groups, newest first, in the shape of signalItems' `hits` (`matched`: the names the item was read to have). */
+  private async storyHits(id: string, only: Set<string>) {
+    const { of } = await this.groups(), labels = new Map(this.watches().map((w) => [w.id, w.label] as const)), alias = this.aliasFn();
+    const rows = this.ctx.storage.sql.exec<{ watch: string; item: string; ts: number; title: string; url: string; disc: string; by: string; likes: number; replies: number; views: number; topics: string | null }>(
+      'SELECT l.watch, l.item, l.ts, l.title, l.url, l.disc, l.by, l.likes, l.replies, l.views, a.topics FROM story_item si JOIN item_log l ON l.watch = si.watch AND l.item = si.item LEFT JOIN ai_item a ON a.watch = si.watch AND a.item = si.item WHERE si.story = ? AND si.day >= ? ORDER BY l.ts DESC LIMIT 4000',
+      id, dayOf(Date.now() - 13 * 86_400_000)).toArray();
+    return rows.filter((r) => only.has(of.get(r.watch) ?? '')).map((r) => ({ watch: r.watch, item: r.item, matched: [...new Set(((JSON.parse(r.topics ?? '[]') ?? []) as string[]).map(alias))], label: labels.get(r.watch) ?? r.watch,
+      ts: r.ts, title: cleanTitle(r.title, 200), url: r.url, discussionUrl: r.disc, by: r.by, likes: r.likes, replies: r.replies, views: r.views }));
+  }
+
+  // ---- Stories on the pages (docs/grouping-proposal.md, step 2): where an area has stories, Signal's topics are its stories, scored the way terms are
+  /** Whether the public pages of an area show stories: unless the admin turned it off, once the topic model is in use, the first grouping is done and the area has stories. */
+  private storiesOn(area: Area): boolean {
+    if (!this.getMeta('storiesPublic', true) || !this.storyBackfill().done || !this.tables().ai) return false;
+    return this.ctx.storage.sql.exec('SELECT 1 FROM story WHERE area = ? LIMIT 1', area).toArray().length > 0;
+  }
+  /**
+   * Like `compute`, with stories in place of terms: each story's items per source group, scored by src/signal/score.ts as terms are (the weighted share per group), under the
+   * story's address as its `term`. Papers are in no story, so their sources count neither for nor against. "New" is the story's own mark (section 5), not "not seen before".
+   */
+  private async storyCompute(daysIn: number, only: Set<string>, area: Area) {
+    const days = Math.min(SIGNAL_MAX_DAYS, Math.max(1, Math.floor(daysIn) || 7)), now = Date.now(), DAY = 86_400_000, sql = this.ctx.storage.sql;
+    const to = dayOf(now), from = dayOf(now - (days - 1) * DAY), prevTo = dayOf(now - days * DAY), prevFrom = dayOf(now - (2 * days - 1) * DAY);
+    const all = await this.groups(), of = all.of, groups = all.groups.filter((g) => only.has(g.key));
+    const plain = new Set(this.watches().filter((w) => sourceOf(w) !== 'arxiv').map((w) => w.id));
+    const itemsIn = (a: string, b: string) => {
+      const out: Record<string, number> = {};
+      for (const r of sql.exec<{ watch: string; n: number }>('SELECT watch, SUM(n) AS n FROM ai_items WHERE day >= ? AND day <= ? GROUP BY watch', a, b)) { const g = of.get(r.watch); if (g && plain.has(r.watch)) out[g] = (out[g] ?? 0) + r.n; }
+      return out;
+    };
+    const items = itemsIn(from, to), prevItems = itemsIn(prevFrom, prevTo), allow = new Set(groups.filter((g) => g.weight > 0).map((g) => g.key));
+    const sources = new Set<string>(), perGroup = new Map<string, number>();
+    for (const r of sql.exec<{ watch: string }>('SELECT DISTINCT watch FROM ai_items WHERE day >= ? AND day <= ?', from, to)) {
+      const g = of.get(r.watch) ?? '';
+      if (allow.has(g) && plain.has(r.watch)) { sources.add(r.watch); perGroup.set(g, (perGroup.get(g) ?? 0) + 1); }
+    }
+    const per = (a: string, b: string) => sql.exec<{ story: string; watch: string; n: number }>('SELECT si.story, si.watch, COUNT(*) AS n FROM story_item si JOIN story s ON s.id = si.story WHERE s.area = ? AND si.day >= ? AND si.day <= ? GROUP BY si.story, si.watch', area, a, b).toArray();
+    const cur = storyCounts(per(from, to), of, allow, perGroup), prev = storyCounts(per(prevFrom, prevTo), of, allow, perGroup);
+    // Scored by story id (an id has no spaces and never ends in a plural "s" of another id, so score.ts folds and drops nothing), then given its address.
+    const scored = scoreTerms({ groups, items, prevItems, cur: cur.counts, prev: prev.counts, voices: cur.voices, minVoices: sources.size >= 2 ? 2 : 1 });
+    const ids = scored.terms.map((t) => t.term);
+    const byId = new Map(ids.length ? sql.exec<StoryDbRow>('SELECT * FROM story WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify(ids)).toArray().map((r) => [r.id, storyOf(r)] as const) : []);
+    const fromMs = Date.parse(from + 'T00:00:00Z'), index = new Map<string, StoryRow>(), terms: ScoredTerm[] = [];
+    for (const t of scored.terms) {
+      const s = byId.get(t.term);
+      if (!s || index.has(s.slug)) continue;
+      index.set(s.slug, s);
+      terms.push({ ...t, term: s.slug, isNew: isNewInWindow(s, fromMs) });
+    }
+    return { days, from, to, of, groups, excluded: all.excluded, everyGroup: all.groups.map((g) => ({ key: g.key, name: g.name })), items, prevItems, baselineOk: scored.baselineOk, active: scored.active, terms, index };
+  }
+  /** The items of an area's stories in from..to from the groups `allow` lets in, with what describing a story needs. */
+  private storyWindowItems(area: Area, of: Map<string, string>, allow: Set<string>, from: string, to: string) {
+    return this.ctx.storage.sql.exec<{ story: string; watch: string; ts: number; title: string | null; url: string | null; by: string | null; eng: number | null; topics: string | null }>(
+      'SELECT si.story, si.watch, si.ts, l.title, l.url, l.by, l.eng, a.topics FROM story_item si JOIN story s ON s.id = si.story LEFT JOIN item_log l ON l.watch = si.watch AND l.item = si.item LEFT JOIN ai_item a ON a.watch = si.watch AND a.item = si.item WHERE s.area = ? AND si.day >= ? AND si.day <= ?',
+      area, from, to).toArray().filter((r) => allow.has(of.get(r.watch) ?? ''));
+  }
+  /**
+   * The stories of a board's window as Signal lists topics (`describeTopics` for terms): its name, the names its items carried, the stories that share names with it, reactions and
+   * its two most reacted items. Ordered by score, lifted by reactions as topics are. `items`: each item's names, for the landscape (stories whose items share names sit together).
+   */
+  private storyTop(v: BoardView): NonNullable<BoardView['top']> {
+    const stories = v.stories!, list = [...stories.values()], slugOf = new Map(list.map((s) => [s.id, s.slug] as const)), alias = this.aliasFn();
+    const rows = this.storyWindowItems(areaOf(v.board), v.c.of, new Set(v.shown.map((g) => g.key)), v.c.from, v.c.to), by = new Map<string, typeof rows>();
+    for (const r of rows) { const sl = slugOf.get(r.story); if (sl) (by.get(sl) ?? by.set(sl, []).get(sl)!).push(r); }
+    const items = rows.map((r) => ({ terms: new Set(((JSON.parse(r.topics ?? '[]') ?? []) as string[]).map(alias)) }));
+    const describe = (t: ScoredTerm): Described & { headlines: Array<{ title: string; url: string; by: string; group: string; ts: number; reactions: number }> } => {
+      const s = stories.get(t.term), its = by.get(t.term) ?? [];
+      const headlines = [...its].sort((a, b) => (b.eng ?? 0) - (a.eng ?? 0) || b.ts - a.ts).slice(0, 2).map((r) => ({ title: cleanTitle(r.title ?? ''), url: r.url ?? '', by: r.by ?? '', group: v.c.of.get(r.watch) ?? '', ts: r.ts, reactions: r.eng ?? 0 }));
+      return { ...t, label: s?.name ?? t.term, members: s ? storyAliases(s.name, s.names) : [], related: s ? relatedByNames(s, list).map((id) => slugOf.get(id)!).filter(Boolean) : [],
+        reactions: its.reduce((n, r) => n + (r.eng ?? 0), 0), headlines };
+    };
+    const own = v.c.terms.slice(0, 40), eng = own.map((t) => (by.get(t.term) ?? []).reduce((n, r) => n + Math.min(REACTION_CAP, r.eng ?? 0), 0));
+    return { top: boostByEngagement(own.map((t) => ({ lead: t })), eng).map((x) => describe(x.lead)), describe, items };
   }
   /** New papers (last 30 days) that are about the subject: its name in the title, or, for a name of two words or more, in the abstract. With who is paying attention to each. Abstracts only: full text is never read. */
   private topicPapers(names: string[]) {
@@ -1645,13 +1851,13 @@ export class MonitorDO extends DurableObject<Env> {
   private async topicData(slug: string, hint: Area | null = null, brush: BrushAsk = {}): Promise<TopicData | null> {
     const found = await this.findTopic(slug, hint);
     if (!found) return null;
-    const { v, topic, alsoIn } = found, { board, c } = v, proof = board.proof === true, names = [topic.term, ...topic.members], canonical = topicSlug(topic.term);
-    const { hits, items, wide, meta } = await this.topicItems(v, names), now = Date.now();
+    const { v, topic, alsoIn } = found, { board, c } = v, proof = board.proof === true, names = this.topicNames(v, topic), canonical = topicSlug(topic.term);
+    const { hits, items, wide, meta } = await this.topicItems(v, topic), now = Date.now();
     const days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), counts = days.map(() => 0);
     for (const h of hits) { const d = days.indexOf(dayOf(h.ts)); if (d >= 0) counts[d]++; }
     const papers = this.topicPapers(names), segments = evidenceSegments(items, papers, proof), state = topicState(topic);
-    const heatDays = Array.from({ length: HEAT_DAYS }, (_, i) => dayOf(now - (HEAT_DAYS - 1 - i) * 86_400_000)), boardGroups = new Set(board.groups), { of: groupOf } = await this.groups();
-    const heat = { days: heatDays, counts: this.dailyCounts([...new Set(names.flatMap((x) => this.namesOf(x)))], (w) => boardGroups.has(groupOf.get(w) ?? ''), heatDays) };
+    const heatDays = Array.from({ length: HEAT_DAYS }, (_, i) => dayOf(now - (HEAT_DAYS - 1 - i) * 86_400_000)), { of: groupOf } = await this.groups();
+    const heat = { days: heatDays, counts: this.topicDaily(v, topic, heatDays, groupOf) }, st = v.stories?.get(topic.term);
     const byKind: TopicData['counts'] = {};
     for (const i of items) byKind[i.kind] = (byKind[i.kind] ?? 0) + 1;
     // A5: the Talk list narrowed to a day and a kind and ordered as asked, each kind within itself (src/signal/brush.ts). The day must be one the items cover (from the start of the window).
@@ -1683,12 +1889,13 @@ export class MonitorDO extends DurableObject<Env> {
       // Step 7: the order the kinds of source had it in, items over time, and videos. Titles and links only on a Signal that shows its sources.
       first: firstByKind(wide, { since: now - 14 * 86_400_000, hide: !proof }), timeline: timelineDots(wide, { from: now - 14 * 86_400_000, to: now, hide: !proof }),
       watch: this.topicWatch(wide, names, proof), heat,
+      ...(st ? { story: { id: st.id, first: st.first, last: st.last, n: st.n, state: st.state, isNew: st.bornNew, ...this.storyTheme(st, areaOf(board)) } } : {}),
     };
   }
   /** The small card of a topic (state, 14 days of mentions, one line): for the related topics of a page and for /t/<slug>/peek. Counts are the terms table's (as the heat calendar's), the line the stored summary's first sentence or one made from the numbers. */
   private async topicBrief(v: BoardView, t: { term: string; label: string; members: string[]; change: number | null; isNew: boolean }, slug: string, area: Area, groups?: Map<string, string>): Promise<TopicBrief> {
-    const now = Date.now(), days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), boardGroups = new Set(v.board.groups), groupOf = groups ?? (await this.groups()).of;
-    const counts = this.dailyCounts([...new Set([t.term, ...t.members].flatMap((x) => this.namesOf(x)))], (w) => boardGroups.has(groupOf.get(w) ?? ''), days), state = topicState(t);
+    const now = Date.now(), days = Array.from({ length: 14 }, (_, i) => dayOf(now - (13 - i) * 86_400_000)), groupOf = groups ?? (await this.groups()).of;
+    const counts = this.topicDaily(v, t, days, groupOf), state = topicState(t);
     const sm = this.ctx.storage.sql.exec<{ day: string; text: string }>('SELECT day, text FROM topic_summary WHERE slug = ? ORDER BY day DESC LIMIT 1', slug).toArray()[0];
     const line = (sm && summaryFresh(sm.day) ? oneLine(sm.text) : '') || numbersLine(t.label, state, counts);
     return { slug, label: t.label, area, state, days, counts, line };
@@ -1714,10 +1921,10 @@ export class MonitorDO extends DurableObject<Env> {
     if (!ITEM_ID.test(id)) return { found: false as const };
     const found = await this.findTopic(slug, hint);
     if (!found) return { found: false as const };
-    const { v, topic } = found, canonical = topicSlug(topic.term), proof = v.board.proof === true, area = areaOf(v.board), names = [topic.term, ...topic.members];
+    const { v, topic } = found, canonical = topicSlug(topic.term), proof = v.board.proof === true, area = areaOf(v.board), names = this.topicNames(v, topic);
     if (slug !== canonical) return { found: true as const, redirect: canonical, area };
     const t: CardTopic = { slug: canonical, label: topic.label, term: topic.term, members: topic.members, area, board: { slug: v.board.slug, title: v.board.title } };
-    const { wide, meta } = proof ? await this.topicItems(v, names) : { wide: [] as EvItem[], meta: new Map<EvItem, { watch: string; item: string; matched: string[] }>() };
+    const { wide, meta } = proof ? await this.topicItems(v, topic) : { wide: [] as EvItem[], meta: new Map<EvItem, { watch: string; item: string; matched: string[] }>() };
     const pool: EvItem[] = [...wide];
     for (const w of this.topicWatch(wide, names, proof)) if (w.id && !pool.some((i) => i.id === w.id)) pool.push({ id: w.id, kind: 'youtube', by: w.by, source: w.source, title: w.title, url: w.url, discussionUrl: '', ts: w.ts, likes: -1, replies: -1, views: w.views ?? -1 });
     const item = inTimeOrder(pool).find((i) => i.id === id);
@@ -1741,7 +1948,7 @@ export class MonitorDO extends DurableObject<Env> {
         const ai = this.aiTopics(row.day), alias = this.aliasFn(), have = new Set((ai ? ai.get(key) ?? [] : extractTerms(row.match)).map(alias)), seen = new Set([canonical]), also: Array<{ slug: string; label: string }> = [];
         for (const o of this.boardTop(v).top) {
           const sl = topicSlug(o.term);
-          if (o.parent || seen.has(sl) || ![o.term, ...o.members].some((x) => have.has(alias(x)))) continue;
+          if (o.parent || seen.has(sl) || !this.topicNames(v, o).some((x) => have.has(alias(x.toLowerCase())))) continue;
           seen.add(sl); also.push({ slug: sl, label: o.label });
         }
         extras.alsoIn = also.slice(0, 6);
@@ -1837,7 +2044,7 @@ export class MonitorDO extends DurableObject<Env> {
       if (!found) continue;
       const board = found.v.board.slug, canonical = topicSlug(found.topic.term);
       if (done.has(board + '\n' + canonical)) continue;
-      const names = [found.topic.term, ...found.topic.members], { items, meta } = await this.topicItems(found.v, names), pis = this.prismItems(items, meta);
+      const { items, meta } = await this.topicItems(found.v, found.topic), pis = this.prismItems(items, meta);
       let prev: Prism | null = null;   // the newest earlier day that had groups: a day with none in between does not break the line
       for (const r of sql.exec<{ json: string }>('SELECT json FROM topic_prism WHERE board = ? AND slug = ? AND day < ? ORDER BY day DESC LIMIT 3', board, canonical, day)) {
         const j = JSON.parse(r.json) as Partial<Prism>;
@@ -1917,7 +2124,7 @@ export class MonitorDO extends DurableObject<Env> {
       if (this.aiSpend().cost >= cfg.dailyCap) break;
       const found = await this.findTopic(slug);
       if (!found) continue;
-      const names = [found.topic.term, ...found.topic.members], { items } = await this.topicItems(found.v, names), picked = pickSummaryItems(items).slice(0, SUMMARY_ITEMS);
+      const names = this.topicNames(found.v, found.topic), { items } = await this.topicItems(found.v, found.topic), picked = pickSummaryItems(items).slice(0, SUMMARY_ITEMS);
       if (picked.length < 2) continue;   // too little to write from
       const papers = this.topicPapers(names).list.slice(0, 3).map((p) => p.title);
       let cost = 0, tin = 0, tout = 0, parsed: ReturnType<typeof parseSummary> = null, failed = '';
@@ -1945,13 +2152,488 @@ export class MonitorDO extends DurableObject<Env> {
     sql.exec('DELETE FROM topic_summary WHERE day < ?', dayOf(Date.now() - SUMMARY_KEEP_DAYS * 86_400_000));
   }
 
+  // ---- Stories (src/signal/stories.ts, docs/grouping-proposal.md, step 1): items go into stories per area as the topic model reads them; the model names each story once.
+  // The first run goes through the last 30 days in time order (a few hours of items per step), so there are stories at once; until it is done the pages show terms.
+  /** Which area and group each source's items go to: sources of a group on a Signal (published or not), except papers, which have the Research map. */
+  private async storyScope(): Promise<{ area: Map<string, Area>; group: Map<string, string> }> {
+    const { of } = await this.groups(), areas = groupAreas(this.boards()), area = new Map<string, Area>(), group = new Map<string, string>();
+    for (const w of this.watches()) {
+      const g = of.get(w.id), a = g ? areas.get(g) : undefined;
+      if (!g || !a || sourceOf(w) === 'arxiv') continue;
+      area.set(w.id, a); group.set(w.id, g);
+    }
+    return { area, group };
+  }
+  private storyRows(area: string): StoryRow[] {
+    return this.ctx.storage.sql.exec<StoryDbRow>("SELECT * FROM story WHERE area = ? AND state != 'closed'", area).toArray().map(storyOf);
+  }
+  /** What everything in an area has in common: the mean of its items' vectors over the last two weeks, worked out once a day. Stories are compared with it taken away. */
+  private storyBg(area: Area, scope: Map<string, Area>): Float32Array {
+    const all = this.getMeta<Record<string, { day: string; v: number[] }>>('storyBg', {}), have = all[area];
+    if (have?.day === today()) return Float32Array.from(have.v);
+    const ids = [...scope].filter(([, a]) => a === area).map(([w]) => w);
+    const rows = this.ctx.storage.sql.exec<{ v: ArrayBuffer }>("SELECT v FROM item_vec WHERE day >= ? AND copy = '' AND watch IN (SELECT value FROM json_each(?)) ORDER BY day DESC LIMIT 4000", dayOf(Date.now() - 14 * 86_400_000), JSON.stringify(ids)).toArray();
+    const bg = backgroundOf(rows.map((r) => fromBlob(r.v)));
+    this.setMeta('storyBg', { ...all, [area]: { day: today(), v: Array.from(bg, (x) => Math.round(x * 1e7) / 1e7) } });
+    return bg;
+  }
+  private storyBackfill(): { at: number; key: string; done: boolean; n: number } { return this.getMeta('storyBackfill', { at: 0, key: '', done: false, n: 0 }); }
+  /**
+   * Puts items of one area into its stories (assignItems) and stores what changed: joins, centres, woken stories, births (named by rule until the model names them) and the pool.
+   * `now`: the time it is, or during the backfill the time its items have reached, so the pool and the lifecycle follow the items' own time.
+   */
+  private storyAssign(area: Area, items: Array<StoryItem & { watch: string; item: string; day: string }>, now: number, bg: Float32Array): void {
+    const sql = this.ctx.storage.sql, stories = this.storyRows(area), byId = new Map(stories.map((s) => [s.id, s] as const));
+    const changes = storyStates(stories, now);   // a story quiet for 14 days takes nothing more
+    for (const ch of changes) byId.get(ch.id)!.state = ch.state;
+    const fresh = items.filter((i) => !sql.exec('SELECT 1 FROM story_item WHERE watch = ? AND item = ?', i.watch, i.item).toArray().length);
+    if (!fresh.length && !changes.length) return;
+    const pool = sql.exec<{ watch: string; item: string; day: string; ts: number; grp: string; names: string; v: ArrayBuffer }>('SELECT p.watch, p.item, p.day, p.ts, p.grp, p.names, v.v FROM story_pool p JOIN item_vec v ON v.watch = p.watch AND v.item = p.item WHERE p.area = ?', area).toArray()
+      .map((r) => ({ key: `${r.watch}\n${r.item}`, watch: r.watch, item: r.item, day: r.day, ts: r.ts, group: r.grp, names: JSON.parse(r.names) as string[], v: fromBlob(r.v) }));
+    const res = assignItems(fresh, stories.filter((s) => s.state !== 'closed'), pool, bg, now), meta = new Map([...pool, ...fresh].map((i) => [i.key, i] as const));
+    const earlier = sql.exec<{ centre: ArrayBuffer }>('SELECT centre FROM story WHERE area = ? AND first >= ?', area, now - STORY_NEW_DAYS * 86_400_000).toArray().map((r) => fromBlob(r.centre));
+    const taken = (slug: string) => sql.exec("SELECT 1 FROM story WHERE area = ? AND slug = ? AND state != 'closed'", area, slug).toArray().length > 0;
+    // One theme per story (section 4): a new story takes the theme it is closest to, if close enough; a story in no theme is looked at again as its centre moves.
+    const themes = this.themeRows(area).filter((t) => t.state === 'active');
+    this.ctx.storage.transactionSync(() => {
+      for (const ch of changes) sql.exec('UPDATE story SET state = ? WHERE id = ?', ch.state, ch.id);
+      const put = (story: string, key: string) => {
+        const it = meta.get(key);
+        if (!it) return;
+        if (sql.exec('INSERT OR IGNORE INTO story_item (watch, item, story, day, ts) VALUES (?, ?, ?, ?, ?)', it.watch, it.item, story, it.day, it.ts).rowsWritten)
+          sql.exec('INSERT INTO story_day (story, day, grp, n) VALUES (?, ?, ?, 1) ON CONFLICT (story, day, grp) DO UPDATE SET n = n + 1', story, it.day, it.group);
+      };
+      for (const j of res.joins) put(j.story, j.key);
+      for (const t of res.touched) {
+        const s = byId.get(t.id)!, theme = s.theme ?? (themes.length ? assignTheme(t.centre, themes, bg) : null);
+        sql.exec('UPDATE story SET centre = ?, n = ?, last = ?, names = ?, fixed = ?, theme = ? WHERE id = ?', toBlob(t.centre), t.n, t.last, JSON.stringify(t.names), isFixed(s, now) ? 1 : 0, theme, t.id);
+      }
+      for (const id of res.woke) sql.exec("UPDATE story SET state = 'live' WHERE id = ?", id);
+      for (const b of res.births) {
+        const id = crypto.randomUUID().replace(/-/g, '').slice(0, 12), name = provisionalName(b.names), bornNew = isNewStory(b.centre, earlier, bg);
+        sql.exec("INSERT INTO story (id, area, name, names, centre, n, first, last, state, fixed, named_n, named_top, named_by, slug, old_slugs, born_new, theme) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'live', 0, 0, '', 'rule', ?, '[]', ?, ?)",
+          id, area, name, JSON.stringify(b.names.slice(0, 12)), toBlob(b.centre), b.items.length, b.first, b.last, uniqueSlug(name, taken), bornNew ? 1 : 0, themes.length ? assignTheme(b.centre, themes, bg) : null);
+        earlier.push(b.centre);
+        for (const k of b.items) put(id, k);
+      }
+      sql.exec('DELETE FROM story_pool WHERE area = ?', area);
+      for (const p of res.pool) { const it = meta.get(p.key)!; sql.exec('INSERT OR REPLACE INTO story_pool (watch, item, area, day, ts, grp, names) VALUES (?, ?, ?, ?, ?, ?, ?)', it.watch, it.item, area, it.day, it.ts, it.group, JSON.stringify(it.names)); }
+    });
+  }
+  /** The items the topic model has just read, into stories. While the first grouping runs, only items it has passed are taken here (at its time); it takes the others in order. */
+  private async storiesFromRead(read: Array<{ watch: string; item: string; day: string; v: Float32Array; names: string[] }>): Promise<void> {
+    if (!read.length || !this.tables().ai) return;
+    const bf = this.storyBackfill(), scope = await this.storyScope(), sql = this.ctx.storage.sql, byArea = new Map<Area, Array<StoryItem & { watch: string; item: string; day: string }>>();
+    for (const r of read) {
+      const area = scope.area.get(r.watch);
+      if (!area) continue;
+      const ts = sql.exec<{ ts: number }>('SELECT ts FROM item_log WHERE watch = ? AND item = ?', r.watch, r.item).toArray()[0]?.ts ?? Date.parse(r.day + 'T12:00:00Z');
+      if (!bf.done && ts > bf.at) continue;
+      (byArea.get(area) ?? byArea.set(area, []).get(area)!).push({ key: `${r.watch}\n${r.item}`, watch: r.watch, item: r.item, day: r.day, ts, v: r.v, names: r.names, group: scope.group.get(r.watch)! });
+    }
+    for (const [area, items] of byArea) this.storyAssign(area, items, bf.done ? Date.now() : bf.at, this.storyBg(area, scope.area));
+  }
+  /** The first grouping: the last 30 days of read items, oldest first, a few hours of items per step, until the deadline. Carries on at the next wake-up. */
+  private async storyBackfillStep(deadline: number): Promise<void> {
+    let st = this.storyBackfill();
+    if (st.done || !this.tables().ai) return;
+    const sql = this.ctx.storage.sql, scope = await this.storyScope(), alias = this.aliasFn(), bgs = new Map<Area, Float32Array>(), floor = Date.now() - STORY_BACKFILL_DAYS * 86_400_000;
+    if (st.at < floor) st = { ...st, at: floor, key: '' };
+    while (Date.now() < deadline) {
+      const rows = sql.exec<{ watch: string; item: string; day: string; ts: number; v: ArrayBuffer; topics: string }>(
+        `SELECT v.watch, v.item, v.day, l.ts, v.v, a.topics FROM item_log l JOIN item_vec v ON v.watch = l.watch AND v.item = l.item JOIN ai_item a ON a.watch = l.watch AND a.item = l.item
+         WHERE l.day >= ?1 AND v.copy = '' AND (l.ts > ?2 OR (l.ts = ?2 AND l.watch || char(10) || l.item > ?3)) ORDER BY l.ts, l.watch, l.item LIMIT ?4`, dayOf(st.at), st.at, st.key, STORY_BACKFILL_PAGE).toArray();
+      if (!rows.length) { st = { ...st, done: true }; this.setMeta('storyBackfill', st); this.storyLifecycle(Date.now()); this.pubCache.clear(); return; }
+      const chunk = chunkBySpan(rows), last = chunk[chunk.length - 1], byArea = new Map<Area, Array<StoryItem & { watch: string; item: string; day: string }>>();
+      for (const r of chunk) {
+        const area = scope.area.get(r.watch);
+        if (!area) continue;
+        (byArea.get(area) ?? byArea.set(area, []).get(area)!).push({ key: `${r.watch}\n${r.item}`, watch: r.watch, item: r.item, day: r.day, ts: r.ts, v: fromBlob(r.v), names: [...new Set(((JSON.parse(r.topics) ?? []) as string[]).map(alias))], group: scope.group.get(r.watch)! });
+      }
+      for (const [area, items] of byArea) this.storyAssign(area, items, last.ts, bgs.get(area) ?? bgs.set(area, this.storyBg(area, scope.area)).get(area)!);
+      st = { ...st, at: last.ts, key: `${last.watch}\n${last.item}`, n: st.n + chunk.length };
+      this.setMeta('storyBackfill', st);
+    }
+  }
+  /** Live to dormant after three quiet days, to closed after 14. */
+  private storyLifecycle(now: number): void {
+    const sql = this.ctx.storage.sql, rows = sql.exec<{ id: string; last: number; state: string }>("SELECT id, last, state FROM story WHERE state != 'closed'").toArray();
+    const changes = storyStates(rows.map((r) => ({ id: r.id, last: r.last, state: r.state as StoryState })), now);
+    if (changes.length) this.ctx.storage.transactionSync(() => { for (const ch of changes) sql.exec('UPDATE story SET state = ? WHERE id = ?', ch.state, ch.id); });
+  }
+  /** When to wake for stories: the first grouping, the day's lifecycle, or stories still named by rule while the model may spend. 0 when there is nothing to do. */
+  private storyWake(): number {
+    if (!this.tables().ai) return 0;
+    if (!this.storyBackfill().done || this.getMeta('storyDay', '') !== today()) return Date.now() + 1000;
+    const c = this.aiConfig();
+    if (c.enabled && c.model && this.aiSpend().cost < c.dailyCap && this.ctx.storage.sql.exec("SELECT 1 FROM story WHERE state != 'closed' AND named_by = 'rule' AND named_n = 0 LIMIT 1").toArray().length) return Date.now() + 5000;
+    return 0;
+  }
+  private async storyStep(deadline: number): Promise<void> {
+    await this.storyBackfillStep(deadline);
+    if (this.storyBackfill().done && this.getMeta('storyDay', '') !== today()) { this.storyLifecycle(Date.now()); this.setMeta('storyDay', today()); }
+    await this.storyNameStep(deadline);
+    if (this.getMeta<string>('storyError', '')) this.setMeta('storyError', '');
+  }
+  /**
+   * Names stories with the Signal topic model from their most typical items: each new story once, and again when it has grown into something else (needsRename). Biggest first,
+   * STORY_NAME_BATCH a wake-up, inside the daily cap, recorded in Costs as "Story names (AI)". A story the model could not name keeps its name by rule. The admin's names stay.
+   */
+  private async storyNameStep(deadline: number): Promise<void> {
+    const cfg = this.aiConfig(), sql = this.ctx.storage.sql;
+    if (!cfg.enabled || !cfg.model) return;
+    const todo = sql.exec<StoryDbRow>("SELECT * FROM story WHERE state != 'closed' AND named_by != 'admin' ORDER BY n DESC LIMIT 300").toArray().map(storyOf)
+      .filter((s) => (s.namedBy === 'rule' && s.namedN === 0) || needsRename(s, s.namedN, s.namedTop)).slice(0, STORY_NAME_BATCH);
+    if (!todo.length) return;
+    const scope = await this.storyScope();
+    for (const s of todo) {
+      if (Date.now() > deadline || this.aiSpend().cost >= cfg.dailyCap) return;
+      const rows = sql.exec<{ watch: string; item: string; title: string; v: ArrayBuffer }>('SELECT si.watch, si.item, l.title, v.v FROM story_item si JOIN item_log l ON l.watch = si.watch AND l.item = si.item JOIN item_vec v ON v.watch = si.watch AND v.item = si.item WHERE si.story = ? ORDER BY si.ts DESC LIMIT 300', s.id).toArray();
+      const typical = typicalItems(rows.map((r) => ({ key: `${r.watch}\n${r.item}`, v: fromBlob(r.v), title: r.title })), s.centre, this.storyBg(parseArea(s.area), scope.area));
+      let name = '';
+      if (typical.length) try {
+        const r = await complete(this.env, cfg.model, [storySystem(), storyUser(typical.map((t) => t.title), s.names)], { maxTokens: 60, mock: () => JSON.stringify({ name: s.names[0] ?? s.name }) });
+        if (r.cost) { this.setMeta('aiSpend', { day: today(), cost: this.aiSpend().cost + r.cost }); await recordCost(this.env, { kind: 'signal', ref: 'stories', label: 'Story names (AI)', llm: r.cost, tokensIn: r.tokensIn, tokensOut: r.tokensOut, calls: 1, model: cfg.model }); }
+        name = parseStoryName(r.text);
+      } catch (err) { console.error('story name failed', s.id, err instanceof Error ? err.message : String(err)); }
+      if (name) this.storyRename(s, name, 'model');
+      else sql.exec('UPDATE story SET named_n = ?, named_top = ? WHERE id = ?', Math.max(1, s.n), s.names[0] ?? '', s.id);   // not asked again until it has grown into something else
+    }
+  }
+  /** A story gets a new name. Its address follows the name and the old one is kept, so links to it redirect; the day's summary and conversations move with it. */
+  private storyRename(s: StoryRow, name: string, by: 'model' | 'admin'): { name: string; slug: string } {
+    const sql = this.ctx.storage.sql;
+    const taken = (slug: string) => sql.exec("SELECT 1 FROM story WHERE area = ? AND slug = ? AND state != 'closed' AND id != ?", s.area, slug, s.id).toArray().length > 0;
+    const slug = uniqueSlug(name, taken), old = slug === s.slug ? s.oldSlugs : [...new Set([s.slug, ...s.oldSlugs])].filter((x) => x !== slug).slice(0, 20);
+    this.ctx.storage.transactionSync(() => {
+      sql.exec('UPDATE story SET name = ?, slug = ?, old_slugs = ?, named_by = ?, named_n = ?, named_top = ? WHERE id = ?', name, slug, JSON.stringify(old), by, Math.max(1, s.n), s.names[0] ?? '', s.id);
+      if (slug !== s.slug) { sql.exec('UPDATE OR REPLACE topic_summary SET slug = ? WHERE slug = ?', slug, s.slug); sql.exec('UPDATE OR REPLACE topic_prism SET slug = ? WHERE slug = ?', slug, s.slug); }
+    });
+    this.pubCache.clear();
+    return { name, slug };
+  }
+  /**
+   * What the admin's Stories block shows (Signal setup): per area the stories still open and the newest closed ones, with their source groups over 14 days, beside the topics
+   * Signal would list from merged terms. Read only.
+   */
+  private async storiesAdmin() {
+    const sql = this.ctx.storage.sql, { groups, of } = await this.groups(), gname = new Map(groups.map((g) => [g.key, g.name] as const)), now = Date.now(), from = dayOf(now - 13 * 86_400_000);
+    const out: Record<string, unknown> = {};
+    for (const area of LENS_AREAS) {
+      const rows = sql.exec<StoryDbRow>("SELECT * FROM story WHERE area = ? AND (state != 'closed' OR last >= ?) ORDER BY (state = 'closed'), last DESC LIMIT 300", area, now - 14 * 86_400_000).toArray().map(storyOf);
+      const per = new Map<string, Map<string, number>>();
+      for (const r of sql.exec<{ story: string; watch: string; n: number }>('SELECT si.story, si.watch, COUNT(*) AS n FROM story_item si JOIN story s ON s.id = si.story WHERE s.area = ? AND si.day >= ? GROUP BY si.story, si.watch', area, from)) {
+        const g = of.get(r.watch) ?? '', m = per.get(r.story) ?? per.set(r.story, new Map()).get(r.story)!;
+        m.set(g, (m.get(g) ?? 0) + r.n);
+      }
+      const board = this.boards().find((b) => b.public && areaOf(b) === area) ?? this.boards().find((b) => areaOf(b) === area);
+      let terms: Array<{ term: string; label: string }> = [];
+      if (board) { const v = await this.boardView(board, 7, true); if (v.shown.length) terms = this.boardTop(v).top.filter((t) => !t.parent).slice(0, 30).map((t) => ({ term: t.term, label: t.label })); }
+      out[area] = {
+        stories: rows.map((s) => ({ id: s.id, name: s.name, slug: s.slug, state: s.state, n: s.n, first: s.first, last: s.last, named: s.namedBy, names: s.names.slice(0, 6), oldSlugs: s.oldSlugs, isNew: s.bornNew, theme: s.theme,
+          groups: [...(per.get(s.id) ?? new Map<string, number>())].sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ name: gname.get(k) ?? k, n })) })),
+        pool: sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM story_pool WHERE area = ?', area).one().n, board: board ? { slug: board.slug, title: board.title } : null, terms, public: this.storiesOn(area),
+      };
+    }
+    return { on: this.getMeta('storiesPublic', true), backfill: this.storyBackfill(), using: this.tables().ai, error: this.getMeta<string>('storyError', ''), areas: out };
+  }
+
+  // ---- Themes (src/signal/themes.ts, docs/grouping-proposal.md, steps 3 and 4): once a week each area's stories in no theme are grouped, the groups that pass every test
+  // are named by the model and proposed to the admin, with what to do about the themes that exist. Nothing becomes a theme without the admin.
+  private themeRows(area?: Area): ThemeRow[] {
+    const sql = this.ctx.storage.sql;
+    return (area ? sql.exec<ThemeDbRow>('SELECT * FROM theme WHERE area = ? ORDER BY created', area) : sql.exec<ThemeDbRow>('SELECT * FROM theme ORDER BY created')).toArray().map(themeOf);
+  }
+  /** The stories of an area seen since `since`, with their daily counts per group, as themes.ts reads them. */
+  private themeStories(area: Area, since: number): ThemeStory[] {
+    const sql = this.ctx.storage.sql;
+    const rows = sql.exec<{ id: string; name: string; centre: ArrayBuffer; first: number; last: number; n: number; theme: string | null }>('SELECT id, name, centre, first, last, n, theme FROM story WHERE area = ? AND last >= ?', area, since).toArray()
+      .map((r) => ({ ...r, centre: fromBlob(r.centre) }));
+    const days = sql.exec<{ story: string; day: string; grp: string; n: number }>('SELECT d.story, d.day, d.grp, d.n FROM story_day d JOIN story s ON s.id = d.story WHERE s.area = ? AND s.last >= ? AND d.day >= ?', area, since, dayOf(since)).toArray();
+    return themeStoriesOf(rows, days);
+  }
+  /** The titles of a story's most reacted items, for naming. */
+  private storyTitles(id: string, k: number): string[] {
+    return this.ctx.storage.sql.exec<{ title: string }>('SELECT l.title FROM story_item si JOIN item_log l ON l.watch = si.watch AND l.item = si.item WHERE si.story = ? ORDER BY l.eng DESC, l.ts DESC LIMIT ?', id, k).toArray().map((r) => r.title).filter(Boolean);
+  }
+  /** Once a week, once stories exist. */
+  private themeWake(): number {
+    if (!this.tables().ai || !this.storyBackfill().done) return 0;
+    return Math.max(this.getMeta<number>('themeNext', 0), Date.now() + 1000);
+  }
+  private async themeStep(deadline: number): Promise<void> {
+    if (!this.tables().ai || !this.storyBackfill().done || this.getMeta<number>('themeNext', 0) > Date.now()) return;
+    this.setMeta('themeNext', Date.now() + THEME_RUN_MS);   // set first: a run that fails waits a week, not a minute (the admin can run it now)
+    await this.themeRunAll(deadline);
+  }
+  private async themeRunAll(deadline: number): Promise<Record<string, unknown>> {
+    const out: Record<string, unknown> = {};
+    for (const area of LENS_AREAS) {
+      if (!this.ctx.storage.sql.exec('SELECT 1 FROM story WHERE area = ? LIMIT 1', area).toArray().length) continue;
+      try { out[area] = await this.themeRun(area, deadline); } catch (err) { out[area] = { error: err instanceof Error ? err.message : String(err) }; console.error('themes failed', area, out[area]); }
+    }
+    this.setMeta('themeLast', { at: Date.now(), areas: out });
+    this.pubCache.clear();
+    return out;
+  }
+  /**
+   * One area's weekly run: each theme follows its recent stories a little (never past its drift limit), stories in no theme that now fit one join it, then the stories in no
+   * theme are grouped (discoverThemes), the candidates are named by the Signal topic model (inside the daily cap, "Theme names (AI)" in Costs), and the themes that exist are
+   * reviewed (split, merge, retire, drifted). Last week's open proposals are replaced; those put off (Later) hold their like back for four weeks.
+   */
+  private async themeRun(area: Area, deadline: number) {
+    const sql = this.ctx.storage.sql, now = Date.now(), WEEK = 7 * 86_400_000, scope = await this.storyScope(), bg = this.storyBg(area, scope.area);
+    const stories = this.themeStories(area, now - THEME_READ_WEEKS * WEEK), recentFrom = now - THEME_WINDOW_WEEKS * WEEK;
+    for (const t of this.themeRows(area).filter((x) => x.state === 'active')) {
+      const mine = stories.filter((s) => s.theme === t.id && s.last >= recentFrom);
+      if (mine.length) sql.exec('UPDATE theme SET centre = ? WHERE id = ?', toBlob(followCentre(t, mine.map((s) => s.centre), bg, mine.map((s) => s.n))), t.id);
+    }
+    const themes = this.themeRows(area), active = themes.filter((t) => t.state === 'active');
+    let attached = 0;
+    if (active.length) for (const s of stories) if (!s.theme) { const th = assignTheme(s.centre, active, bg); if (th) { sql.exec('UPDATE story SET theme = ? WHERE id = ?', th, s.id); s.theme = th; attached++; } }
+    // What the admin said before: no (a candidate's centre is never proposed again) and later (held back four weeks).
+    const rejected: Rejected[] = [], later: Array<{ key: string; centre?: number[] }> = [];
+    for (const p of sql.exec<{ key: string; payload: string; state: string; later_until: number }>("SELECT key, payload, state, later_until FROM theme_proposal WHERE area = ? AND state IN ('rejected', 'later')", area)) {
+      const pl = JSON.parse(p.payload) as { centre?: number[] };
+      if (p.state === 'rejected' && pl.centre) rejected.push({ id: p.key, centre: pl.centre });
+      if (p.state === 'later' && p.later_until > now) later.push({ key: p.key, centre: pl.centre });
+    }
+    // The bar for "generic": every item of the area in the window, in a story or not (items are kept 30 days; the story counts reach further back).
+    const ids = JSON.stringify([...scope.area].filter(([, a]) => a === area).map(([w]) => w)), d30 = dayOf(now - 30 * 86_400_000);
+    const inStories = sql.exec<{ n: number | null }>('SELECT SUM(d.n) AS n FROM story_day d JOIN story s ON s.id = d.story WHERE s.area = ? AND d.day >= ?', area, dayOf(recentFrom)).one().n ?? 0;
+    const read30 = sql.exec<{ n: number | null }>('SELECT SUM(n) AS n FROM ai_items WHERE day >= ? AND watch IN (SELECT value FROM json_each(?))', d30, ids).one().n ?? 0;
+    const placed30 = sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM story_item si JOIN story s ON s.id = si.story WHERE s.area = ? AND si.day >= ?', area, d30).one().n;
+    const oldest = sql.exec<{ d: string | null }>('SELECT MIN(d.day) AS d FROM story_day d JOIN story s ON s.id = d.story WHERE s.area = ?', area).one().d;
+    const found = discoverThemes({ stories, themes, rejected, areaItems: inStories + Math.max(0, read30 - placed30), bg, now, historyWeeks: weeksSince(oldest, now) });
+    const fresh = found.candidates.filter((c) => !heldBack({ key: proposalKey({ kind: 'candidate', key: c.key }), centre: c.centre }, later, bg));
+    const byId = new Map(stories.map((s) => [s.id, s] as const)), info = this.storyInfo(fresh.flatMap((c) => c.stories));
+    const cfg = this.aiConfig(), taken = themes.map((t) => t.name), lenses = this.lenses(area), rows: Array<{ kind: string; key: string; payload: unknown }> = [];
+    let named = 0;
+    for (const [i, c] of fresh.entries()) {
+      const storyNames = c.stories.map((id) => byId.get(id)?.name ?? '').filter(Boolean);
+      let nm: ReturnType<typeof parseThemeName> = null;
+      if (i < THEME_NAME_MAX && cfg.enabled && cfg.model && Date.now() < deadline && this.aiSpend().cost < cfg.dailyCap) {
+        try {
+          const list = [...c.typical, ...c.stories.filter((id) => !c.typical.includes(id))].map((id) => ({ name: byId.get(id)?.name ?? '', titles: this.storyTitles(id, 2) }));
+          const r = await complete(this.env, cfg.model, [themeSystem(), themeUser(list, c.nearest?.name ?? null)], { maxTokens: 300,
+            mock: () => JSON.stringify({ name: `${storyNames[0] ?? 'Mock'} and related`, sentence: 'A mock theme.', notConfused: c.nearest?.name ?? '', inside: '', outside: '' }) });
+          if (r.cost) { this.setMeta('aiSpend', { day: today(), cost: this.aiSpend().cost + r.cost }); await recordCost(this.env, { kind: 'signal', ref: 'themes', label: 'Theme names (AI)', llm: r.cost, tokensIn: r.tokensIn, tokensOut: r.tokensOut, calls: 1, model: cfg.model }); }
+          nm = parseThemeName(r.text, taken);
+          if (nm) named++;
+        } catch (err) { console.error('theme name failed', err instanceof Error ? err.message : String(err)); }
+      }
+      // Without the model, the name of its biggest story that could be a theme's; the admin can change it before approving.
+      const name = nm?.name ?? storyNames.find((n) => !refuseName(n) && !taken.some((t) => t.toLowerCase() === n.toLowerCase())) ?? '';
+      if (name) taken.push(name);
+      rows.push({ kind: 'candidate', key: proposalKey({ kind: 'candidate', key: c.key }), payload: { ...c, name, namedBy: nm ? 'model' : 'rule', sentence: nm?.sentence ?? '', notConfused: nm?.notConfused ?? '', inside: nm?.inside ?? '', outside: nm?.outside ?? '',
+        lens: suggestLens(storyNames, lenses), storyInfo: c.stories.map((id) => info.get(id)).filter(Boolean) } });
+    }
+    const names = new Map(themes.map((t) => [t.id, t.name] as const));
+    const review = reviewThemes({ themes: active, stories, bg, now }).filter((p) => !heldBack({ key: proposalKey(p) }, later, bg));
+    for (const p of review) {
+      const sideInfo = p.kind === 'split' ? p.sides.map((side) => { const m = this.storyInfo(side); return side.map((id) => m.get(id)).filter(Boolean); }) : undefined;
+      rows.push({ kind: p.kind, key: proposalKey(p), payload: { ...p, names: Object.fromEntries((p.kind === 'merge' ? p.themes : [p.theme]).map((id) => [id, names.get(id) ?? id])), ...(sideInfo ? { sideInfo } : {}) } });
+    }
+    this.ctx.storage.transactionSync(() => {
+      sql.exec("DELETE FROM theme_proposal WHERE area = ? AND (state = 'open' OR (state = 'later' AND later_until <= ?))", area, now);
+      for (const r of rows) sql.exec("INSERT INTO theme_proposal (id, area, kind, key, payload, state, later_until, created) VALUES (?, ?, ?, ?, ?, 'open', 0, ?)", crypto.randomUUID().replace(/-/g, '').slice(0, 12), area, r.kind, r.key, JSON.stringify(r.payload), now);
+    });
+    return { looked: found.looked, candidates: fresh.length, named, held: found.candidates.length - fresh.length, unstable: found.unstable, review: review.length, attached,
+      whyNot: found.rejected.slice(0, 6).map((c) => ({ stories: c.stories.length, failed: c.failed, names: c.typical.map((id) => byId.get(id)?.name ?? '').filter(Boolean).slice(0, 3) })) };
+  }
+  /** What the admin and the pages show of these stories: address, name, dates, size, state and the New mark. */
+  private storyInfo(ids: string[]): Map<string, { id: string; slug: string; name: string; first: number; last: number; n: number; state: string; isNew: boolean; theme: string | null }> {
+    if (!ids.length) return new Map();
+    return new Map(this.ctx.storage.sql.exec<{ id: string; slug: string; name: string; first: number; last: number; n: number; state: string; born_new: number; theme: string | null }>('SELECT id, slug, name, first, last, n, state, born_new, theme FROM story WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify([...new Set(ids)])).toArray()
+      .map((r) => [r.id, { id: r.id, slug: r.slug, name: r.name, first: r.first, last: r.last, n: r.n, state: r.state, isNew: !!r.born_new, theme: r.theme }] as const));
+  }
+  /** The weighted mean of stories' centres (raw space, like the stories). */
+  private storyMean(ids: string[]): number[] {
+    const rows = this.ctx.storage.sql.exec<{ centre: ArrayBuffer; n: number }>('SELECT centre, n FROM story WHERE id IN (SELECT value FROM json_each(?))', JSON.stringify(ids)).toArray();
+    if (!rows.length) throw new Error('none of those stories exists any more');
+    const vs = rows.map((r) => fromBlob(r.centre)), out = new Array<number>(vs[0].length).fill(0), total = rows.reduce((t, r) => t + Math.max(1, r.n), 0);
+    vs.forEach((v, i) => { for (let j = 0; j < out.length; j++) out[j] += (v[j] * Math.max(1, rows[i].n)) / total; });
+    return out;
+  }
+  private themeFields(area: Area, raw: Record<string, unknown>, prev?: ThemeRow) {
+    const text = (v: unknown, n: number, d = '') => (v === undefined ? d : String(v ?? '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, n));
+    const name = text(raw.name, 50, prev?.name);
+    const why = refuseName(name);
+    if (why) throw new Error(`the name: ${why}`);
+    if (this.themeRows(area).some((t) => t.id !== prev?.id && t.state === 'active' && t.name.toLowerCase() === name.toLowerCase())) throw new Error('another theme has that name');
+    const lens = raw.lens === undefined ? prev?.lens ?? null : this.lenses(area).some((l) => l.key === raw.lens) ? String(raw.lens) : null;
+    return { name, sentence: text(raw.sentence, 200, prev?.sentence), inside: text(raw.inside, 160, prev?.inside), outside: text(raw.outside, 160, prev?.outside), notConfused: text(raw.notConfused, 50, prev?.notConfused), lens };
+  }
+  private themeSlugTaken(area: Area, id = ''): (slug: string) => boolean {
+    const others = this.themeRows(area).filter((t) => t.id !== id);
+    return (slug) => others.some((t) => t.slug === slug || t.oldSlugs.includes(slug));
+  }
+  /**
+   * A new theme: its stories join it, and so do earlier stories in no theme that are close enough to it (a theme approved today has a past), so it never starts empty.
+   */
+  private themeCreate(area: Area, raw: Record<string, unknown>, centre: ArrayLike<number>, storyIds: string[], bg: Float32Array): ThemeRow {
+    const f = this.themeFields(area, raw), sql = this.ctx.storage.sql, id = crypto.randomUUID().replace(/-/g, '').slice(0, 12), slug = uniqueSlug(f.name, this.themeSlugTaken(area));
+    this.ctx.storage.transactionSync(() => {
+      sql.exec("INSERT INTO theme (id, area, name, sentence, inside, outside, not_confused, lens, centre, approved_centre, state, slug, old_slugs, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, '[]', ?)",
+        id, area, f.name, f.sentence, f.inside, f.outside, f.notConfused, f.lens, toBlob(centre), toBlob(centre), slug, Date.now());
+      sql.exec('UPDATE story SET theme = ? WHERE id IN (SELECT value FROM json_each(?)) AND area = ?', id, JSON.stringify(storyIds), area);
+    });
+    const t = this.themeRows(area).find((x) => x.id === id)!;
+    this.attachPast(area, [t], bg);
+    return t;
+  }
+  /** Stories of the last year in no theme that fit one of these themes. */
+  private attachPast(area: Area, themes: ThemeRow[], bg: Float32Array): number {
+    const sql = this.ctx.storage.sql, rows = sql.exec<{ id: string; centre: ArrayBuffer }>('SELECT id, centre FROM story WHERE area = ? AND theme IS NULL AND last >= ?', area, Date.now() - STORY_KEEP_DAYS * 86_400_000).toArray();
+    let n = 0;
+    this.ctx.storage.transactionSync(() => { for (const r of rows) { const th = assignTheme(fromBlob(r.centre), themes, bg); if (th) { sql.exec('UPDATE story SET theme = ? WHERE id = ?', th, r.id); n++; } } });
+    return n;
+  }
+  /** One theme into another: its stories move, its addresses redirect to the one that stays, and it is retired. */
+  private themeMerge(keep: ThemeRow, gone: ThemeRow): void {
+    const sql = this.ctx.storage.sql;
+    this.ctx.storage.transactionSync(() => {
+      sql.exec('UPDATE story SET theme = ? WHERE theme = ?', keep.id, gone.id);
+      sql.exec('UPDATE theme SET old_slugs = ? WHERE id = ?', JSON.stringify([...new Set([...keep.oldSlugs, gone.slug, ...gone.oldSlugs])].slice(0, 40)), keep.id);
+      sql.exec("UPDATE theme SET state = 'retired', slug = ?, old_slugs = '[]' WHERE id = ?", `${gone.slug}-merged-${gone.id.slice(0, 4)}`, gone.id);
+    });
+  }
+  /** The admin's answer to a proposal: approve (with the name, sentence and lens as edited), merge into a theme, no, or later. */
+  private async themeAct(b: Record<string, unknown>) {
+    const sql = this.ctx.storage.sql, row = sql.exec<{ id: string; area: string; kind: string; key: string; payload: string; state: string }>('SELECT id, area, kind, key, payload, state FROM theme_proposal WHERE id = ?', String(b.id ?? '')).toArray()[0];
+    if (!row) throw new Error('unknown proposal');
+    if (row.state !== 'open') throw new Error('that proposal was already answered');
+    const p = JSON.parse(row.payload), area = parseArea(row.area), action = String(b.action ?? ''), now = Date.now();
+    const done = (state: string, until = 0) => sql.exec('UPDATE theme_proposal SET state = ?, later_until = ? WHERE id = ?', state, until, row.id);
+    const themeById = (id: unknown) => { const t = this.themeRows(area).find((x) => x.id === String(id ?? '')); if (!t) throw new Error('unknown theme'); return t; };
+    if (action === 'later') { done('later', now + THEME_LATER_MS); return { ok: true }; }
+    // No to a candidate is remembered for good (its centre); no to a change of a theme ("keep it as it is") holds it back four weeks.
+    if (action === 'reject') { if (row.kind === 'candidate') done('rejected'); else done('later', now + THEME_LATER_MS); return { ok: true }; }
+    const scope = await this.storyScope(), bg = this.storyBg(area, scope.area);
+    let out: unknown = { ok: true };
+    if (row.kind === 'candidate' && action === 'merge') {
+      const into = themeById(b.into), cand = p as ThemeCandidate, mine = this.themeStories(area, 0).filter((s) => cand.stories.includes(s.id));
+      sql.exec('UPDATE story SET theme = ? WHERE id IN (SELECT value FROM json_each(?)) AND area = ?', into.id, JSON.stringify(cand.stories), area);
+      if (mine.length) sql.exec('UPDATE theme SET centre = ? WHERE id = ?', toBlob(followCentre(into, mine.map((s) => s.centre), bg, mine.map((s) => s.n))), into.id);
+    } else if (row.kind === 'candidate' && action === 'approve') {
+      const cand = p as ThemeCandidate & { name: string; sentence: string; inside: string; outside: string; notConfused: string; lens: string | null };
+      const t = this.themeCreate(area, { name: b.name ?? cand.name, sentence: b.sentence ?? cand.sentence, inside: b.inside ?? cand.inside, outside: b.outside ?? cand.outside, notConfused: cand.notConfused, lens: b.lens === undefined ? cand.lens : b.lens }, cand.centre, cand.stories, bg);
+      out = { ok: true, theme: { id: t.id, slug: t.slug, name: t.name } };
+    } else if (row.kind === 'merge' && action === 'approve') {
+      const [a, c] = (p as { themes: [string, string] }).themes.map(themeById), size = (t: ThemeRow) => sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM story WHERE theme = ?', t.id).one().n;
+      const [keep, gone] = size(a) >= size(c) ? [a, c] : [c, a];
+      this.themeMerge(keep, gone);
+    } else if (row.kind === 'retire' && action === 'approve') {
+      sql.exec("UPDATE theme SET state = 'retired' WHERE id = ?", themeById(p.theme).id);
+    } else if (row.kind === 'drifted' && (action === 'confirm' || action === 'reset')) {
+      const t = themeById(p.theme);
+      if (action === 'confirm') sql.exec('UPDATE theme SET approved_centre = centre WHERE id = ?', t.id); else sql.exec('UPDATE theme SET centre = approved_centre WHERE id = ?', t.id);
+    } else if (row.kind === 'split' && action === 'approve') {
+      const t = themeById(p.theme), [keepSide, newSide] = (p as { sides: [string[], string[]] }).sides;
+      const c0 = this.storyMean(keepSide), nt = this.themeCreate(area, { name: b.newName, sentence: b.sentence ?? '', lens: t.lens }, this.storyMean(newSide), newSide, bg);
+      sql.exec('UPDATE theme SET centre = ?, approved_centre = ? WHERE id = ?', toBlob(c0), toBlob(c0), t.id);
+      out = { ok: true, theme: { id: nt.id, slug: nt.slug, name: nt.name } };
+    } else throw new Error('that action does not fit this proposal');
+    done('approved');
+    this.pubCache.clear();
+    return out;
+  }
+  /**
+   * What the admin's Themes block shows (Signal setup): per area the themes with their size, curve, sources and lens; the open proposals; stories in no theme to start one
+   * from ("More like these"); and the two lists of section 6b. Read only.
+   */
+  private async themesAdmin() {
+    const sql = this.ctx.storage.sql, now = Date.now(), { groups } = await this.groups(), gname = new Map(groups.map((g) => [g.key, g.name] as const)), labels = new Map(this.watches().map((w) => [w.id, w.label] as const));
+    const scope = await this.storyScope(), out: Record<string, unknown> = {};
+    let open = 0;
+    for (const area of LENS_AREAS) {
+      const themes = this.themeRows(area), stories = this.themeStories(area, now - THEME_READ_WEEKS * 7 * 86_400_000), recent = now - THEME_WINDOW_WEEKS * 7 * 86_400_000;
+      const sources = new Map<string, Set<string>>();
+      for (const r of sql.exec<{ theme: string; watch: string }>('SELECT s.theme, si.watch FROM story_item si JOIN story s ON s.id = si.story WHERE s.area = ? AND s.theme IS NOT NULL GROUP BY s.theme, si.watch', area)) (sources.get(r.theme) ?? sources.set(r.theme, new Set()).get(r.theme)!).add(r.watch);
+      const proposals = sql.exec<{ id: string; kind: string; payload: string; created: number }>("SELECT id, kind, payload, created FROM theme_proposal WHERE area = ? AND state = 'open' ORDER BY created, id", area).toArray().map((r) => {
+        const { centre: _c, ...pl } = JSON.parse(r.payload) as Record<string, unknown>;   // the centre is for the Monitor, not the page
+        return { id: r.id, kind: r.kind, created: r.created, ...pl };
+      });
+      open += proposals.length;
+      const d14 = dayOf(now - 13 * 86_400_000), read = new Map<string, number>(), inStory = new Map<string, number>(), mineW = new Set([...scope.area].filter(([, a]) => a === area).map(([w]) => w));
+      for (const r of sql.exec<{ watch: string; n: number }>("SELECT watch, COUNT(*) AS n FROM item_vec WHERE copy = '' AND day >= ? GROUP BY watch", d14)) if (mineW.has(r.watch)) read.set(r.watch, r.n);
+      for (const r of sql.exec<{ watch: string; n: number }>('SELECT watch, COUNT(*) AS n FROM story_item WHERE day >= ? GROUP BY watch', d14)) inStory.set(r.watch, r.n);
+      const tname = new Map(themes.map((t) => [t.id, t.name] as const)), info = this.storyInfo(stories.filter((s) => !s.theme && s.last >= recent).map((s) => s.id));
+      out[area] = {
+        themes: themes.map((t) => {
+          const mine = stories.filter((s) => s.theme === t.id), groupsOf = new Map<string, number>();
+          for (const s of mine) for (const g of Object.values(s.days)) for (const [k, n] of Object.entries(g)) groupsOf.set(k, (groupsOf.get(k) ?? 0) + n);
+          return { id: t.id, name: t.name, slug: t.slug, sentence: t.sentence, inside: t.inside, outside: t.outside, lens: t.lens, state: t.state, created: t.created, stories: mine.length, recent: mine.filter((s) => s.last >= recent).length,
+            last: mine.length ? Math.max(...mine.map((s) => s.last)) : null, curve: themeCurve(mine, 8, now), sources: sources.get(t.id)?.size ?? 0,
+            groups: [...groupsOf].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, n]) => ({ name: gname.get(k) ?? k, n })) };
+        }),
+        proposals, uncharted: [...info.values()].sort((a, b) => b.n - a.n).slice(0, 80),
+        thin: thinThemes(new Map([...sources].filter(([id]) => themes.some((t) => t.id === id && t.state === 'active')))).map((x) => ({ ...x, name: tname.get(x.theme) ?? x.theme })),
+        noisy: noisySources(read, inStory).slice(0, 15).map((x) => ({ ...x, label: labels.get(x.watch) ?? x.watch })),
+        lenses: this.lenses(area).map((l) => ({ key: l.key, name: l.name })),
+      };
+    }
+    return { open, last: this.getMeta('themeLast', null), next: this.getMeta<number>('themeNext', 0), ready: this.tables().ai && this.storyBackfill().done, areas: out };
+  }
+
+  // ---- Themes on the public pages (step 4)
+  /** Whether an area shows themes: it has a published Signal and stories are shown there. */
+  private themesShown(area: Area): boolean { return this.boards().some((b) => b.public && areaOf(b) === area) && this.storiesOn(area); }
+  /** A story's theme as the pages name it, and the marks of section 5. */
+  private storyTheme(s: { theme: string | null; bornNew: boolean; first: number }, area: Area) {
+    const themes = this.themeRows(area), t = s.theme ? themes.find((x) => x.id === s.theme) : undefined, marks = storyMarks({ theme: t?.state === 'active' ? t.id : null, bornNew: s.bornNew, first: s.first }, Date.now(), themes.some((x) => x.state === 'active'));
+    return { theme: t && t.state === 'active' ? { id: t.id, slug: t.slug, name: t.name, lens: t.lens } : null, ...marks };
+  }
+  /** The themes of an area for /themes and get_overview: each with its curve over months, its stories now and what is new in it. */
+  private themesPublic(area: Area) {
+    if (!this.themesShown(area)) return { area, themes: [], uncharted: { count: 0, stories: [] } };
+    const now = Date.now(), WEEK = 7 * 86_400_000, stories = this.themeStories(area, now - THEME_PUBLIC_WEEKS * WEEK), info = this.storyInfo(stories.map((s) => s.id));
+    const lensName = new Map(this.lenses(area).map((l) => [l.key, l.name] as const)), card = (id: string) => { const s = info.get(id)!; return { slug: s.slug, name: s.name, first: s.first, last: s.last, n: s.n, isNew: s.isNew, state: s.state }; };
+    const themes = this.themeRows(area).filter((t) => t.state === 'active').map((t) => {
+      const mine = stories.filter((s) => s.theme === t.id), curve = weekly(mine.flatMap((s) => Object.entries(s.days).map(([day, g]) => ({ day, n: Object.values(g).reduce((a, b) => a + b, 0) }))), THEME_PUBLIC_WEEKS, now);
+      const newIn = mine.filter((s) => storyMarks({ theme: t.id, bornNew: info.get(s.id)?.isNew ?? false, first: s.first }, now, true).newIn);
+      return { slug: t.slug, name: t.name, sentence: t.sentence, lens: t.lens ? { key: t.lens, name: lensName.get(t.lens) ?? t.lens } : null, stories: mine.length, live: mine.filter((s) => info.get(s.id)?.state === 'live').length,
+        items: curve.reduce((a, b) => a + b, 0), last: mine.length ? Math.max(...mine.map((s) => s.last)) : null, curve, recent: curve.slice(-4).reduce((a, b) => a + b, 0),
+        newStories: newIn.map((s) => card(s.id)), top: [...mine].sort((a, b) => b.last - a.last).slice(0, 5).map((s) => card(s.id)) };
+    }).sort((a, b) => b.recent - a.recent || b.items - a.items);
+    const unch = stories.filter((s) => !s.theme && info.get(s.id)?.state !== 'closed').sort((a, b) => b.n - a.n);
+    return { area, weeks: THEME_PUBLIC_WEEKS, themes, uncharted: { count: unch.length, stories: unch.slice(0, 12).map((s) => card(s.id)) } };
+  }
+  /** One theme for /theme/<slug>, /theme/<slug>.json and get_theme: an address it had before redirects; a retired theme still opens, marked. Null when there is none. */
+  private async themePublic(slug: string, hint: Area | null) {
+    const areas = (hint ? [hint, ...LENS_AREAS.filter((a) => a !== hint)] : [...LENS_AREAS]).filter((a) => this.themesShown(a));
+    let t: ThemeRow | undefined;
+    for (const a of areas) {
+      const rows = this.themeRows(a);
+      t = rows.find((x) => x.state === 'active' && x.slug === slug);
+      if (t) break;
+      const moved = rows.find((x) => x.state === 'active' && x.oldSlugs.includes(slug));
+      if (moved) return { redirect: moved.slug, area: a };
+      t = rows.find((x) => x.slug === slug);
+      if (t) break;
+    }
+    if (!t) return null;
+    const now = Date.now(), WEEK = 7 * 86_400_000, sql = this.ctx.storage.sql, { groups } = await this.groups(), gname = new Map(groups.map((g) => [g.key, g.name] as const));
+    const ids = sql.exec<{ id: string }>('SELECT id FROM story WHERE theme = ?', t.id).toArray().map((r) => r.id), info = this.storyInfo(ids);
+    const days = sql.exec<{ day: string; grp: string; n: number }>('SELECT d.day, d.grp, d.n FROM story_day d JOIN story s ON s.id = d.story WHERE s.theme = ? AND d.day >= ?', t.id, dayOf(now - THEME_PUBLIC_WEEKS * WEEK)).toArray();
+    const byGroup = new Map<string, number>();
+    for (const d of days) if (d.day >= dayOf(now - THEME_WINDOW_WEEKS * WEEK)) byGroup.set(d.grp, (byGroup.get(d.grp) ?? 0) + d.n);
+    const list = [...info.values()].sort((a, b) => b.first - a.first).slice(0, 200).map((s) => ({ slug: s.slug, name: s.name, first: s.first, last: s.last, n: s.n, state: s.state, isNew: s.isNew,
+      newIn: storyMarks({ theme: t!.id, bornNew: s.isNew, first: s.first }, now, true).newIn }));
+    const lens = t.lens ? this.lenses(t.area).find((l) => l.key === t!.lens) : undefined;
+    return { slug: t.slug, area: t.area, name: t.name, sentence: t.sentence, inside: t.inside, outside: t.outside, notConfused: t.notConfused, state: t.state, created: t.created,
+      lens: lens ? { key: lens.key, name: lens.name, color: lens.color } : null, weeks: THEME_PUBLIC_WEEKS, curve: weekly(days, THEME_PUBLIC_WEEKS, now), to: today(),
+      groups: [...byGroup].sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ name: gname.get(k) ?? k, n })), stories: list, newStories: list.filter((s) => s.newIn),
+      others: this.themeRows(t.area).filter((x) => x.state === 'active' && x.id !== t!.id).map((x) => ({ slug: x.slug, name: x.name })) };
+  }
+
   private removeWatch(id: string): void {
     const sql = this.ctx.storage.sql;
     sql.exec('DELETE FROM watches WHERE id = ?', id);
     sql.exec('DELETE FROM seen WHERE watch = ?', id);
     sql.exec('DELETE FROM terms WHERE watch = ?', id);
     sql.exec('DELETE FROM day_items WHERE watch = ?', id);
-    for (const t of ['ai_queue', 'ai_item', 'ai_terms', 'ai_items', 'item_log', 'item_vec']) sql.exec(`DELETE FROM ${t} WHERE watch = ?`, id);
+    for (const t of ['ai_queue', 'ai_item', 'ai_terms', 'ai_items', 'item_log', 'item_vec', 'story_item', 'story_pool']) sql.exec(`DELETE FROM ${t} WHERE watch = ?`, id);
   }
 
   // ---- HTTP API (same routes and JSON as the local server)
@@ -2035,6 +2717,23 @@ export class MonitorDO extends DurableObject<Env> {
         }
         if (name === 'signal-ai') return json(this.aiStatus());
         if (name === 'prism-status') return json(this.prismStatus());
+        if (name === 'stories') return json(await this.storiesAdmin());   // the admin's Stories block
+        if (name === 'themes') return json(await this.themesAdmin());   // the admin's Themes block
+        if (name === 'themes-public') {   // /themes, get_overview: kept for two minutes
+          const area = parseArea(url.searchParams.get('area')), k = `themes|${area}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
+          const v = this.themesPublic(area);
+          this.pubCache.set(k, { at: Date.now(), v });
+          return json(v);
+        }
+        if (name === 'theme-public') {   // /theme/<slug>, get_theme: kept for two minutes
+          const slug = (url.searchParams.get('slug') ?? '').toLowerCase().slice(0, 64), hint = areaHint(url.searchParams.get('area')), k = `theme|${slug}|${hint ?? ''}`, hit = this.pubCache.get(k);
+          if (hit && Date.now() - hit.at < 120_000) return hit.v ? json(hit.v) : json({ error: 'not found' }, 404);
+          const v = await this.themePublic(slug, hint);
+          if (this.pubCache.size > 300) this.pubCache.delete(this.pubCache.keys().next().value as string);
+          this.pubCache.set(k, { at: Date.now(), v });
+          return v ? json(v) : json({ error: 'not found' }, 404);
+        }
         if (name === 'signal-filter') return json(this.filterInfo());
         if (name === 'signal-public-items') {
           const out = await this.signalPublicItems(url.searchParams.get('slug') ?? '', (url.searchParams.get('term') ?? '').toLowerCase().slice(0, 80), Number(url.searchParams.get('days')));
@@ -2127,9 +2826,10 @@ export class MonitorDO extends DurableObject<Env> {
           if (hit && Date.now() - hit.at < 120_000) return json(hit.v);
           const board = this.boards().find((b) => b.public && b.slug === slug);
           if (!board) return json({ error: 'not found' }, 404);
-          const c = await this.compute(14, new Set(board.groups));
-          const v = { slug: board.slug, title: board.title, days: c.days, baselineOk: c.baselineOk,
-            terms: c.terms.slice(0, 400).map((t) => ({ term: t.term, signal: t.signal, docs: t.docs, isNew: t.isNew, change: t.change, evergreen: t.evergreen, kind: t.kind, breadth: t.breadth })) };
+          // Where the area has stories, these are its stories (`term` is the address, `label` the name).
+          const sv = this.storiesOn(areaOf(board)) ? await this.boardView(board, 14) : null, c = sv ? sv.c : await this.compute(14, new Set(board.groups));
+          const v = { slug: board.slug, title: board.title, days: c.days, baselineOk: c.baselineOk, stories: !!sv,
+            terms: c.terms.slice(0, 400).map((t) => ({ term: t.term, ...(sv ? { label: sv.stories!.get(t.term)?.name ?? t.term } : {}), signal: t.signal, docs: t.docs, isNew: t.isNew, change: t.change, evergreen: t.evergreen, kind: t.kind, breadth: t.breadth })) };
           this.pubCache.set(k, { at: Date.now(), v });
           return json(v);
         }
@@ -2268,6 +2968,49 @@ export class MonitorDO extends DurableObject<Env> {
         const pair = `${String(b.name ?? '').toLowerCase().trim()}\n${String(b.like ?? '').toLowerCase().trim()}`;
         this.setMeta('nameDismissed', [pair, ...this.getMeta<string[]>('nameDismissed', []).filter((x) => x !== pair)].slice(0, 300));
         return json(this.aiStatus());
+      }
+      if (name === 'story-rename') {   // the admin names a story: the name stays (the system no longer renames it), the old address redirects
+        const row = this.ctx.storage.sql.exec<StoryDbRow>('SELECT * FROM story WHERE id = ?', String(b.id ?? '')).toArray()[0];
+        if (!row) throw new Error('unknown story');
+        const name = String(b.name ?? '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+        if (!name) throw new Error('give the story a name');
+        return json(this.storyRename(storyOf(row), name, 'admin'));
+      }
+      if (name === 'theme-run') return json({ ran: await this.themeRunAll(Date.now() + 60_000), ...(await this.themesAdmin()) });   // the weekly run, now (it does not move the next weekly run)
+      if (name === 'theme-act') { const r = await this.themeAct(b); return json({ result: r, ...(await this.themesAdmin()) }); }   // approve, merge into, no or later
+      if (name === 'theme-save') {   // change a theme: name (the old address redirects), sentence, what is in and out, lens, retired or active
+        const t = this.themeRows().find((x) => x.id === String(b.id ?? ''));
+        if (!t) throw new Error('unknown theme');
+        const f = this.themeFields(t.area, b, t), slug = f.name.toLowerCase() === t.name.toLowerCase() ? t.slug : uniqueSlug(f.name, this.themeSlugTaken(t.area, t.id));
+        const old = slug === t.slug ? t.oldSlugs : [...new Set([t.slug, ...t.oldSlugs])].filter((x) => x !== slug).slice(0, 40), state = b.state === 'retired' ? 'retired' : b.state === 'active' ? 'active' : t.state;
+        this.ctx.storage.sql.exec('UPDATE theme SET name = ?, sentence = ?, inside = ?, outside = ?, not_confused = ?, lens = ?, slug = ?, old_slugs = ?, state = ? WHERE id = ?', f.name, f.sentence, f.inside, f.outside, f.notConfused, f.lens, slug, JSON.stringify(old), state, t.id);
+        return json(await this.themesAdmin());
+      }
+      if (name === 'theme-more') {   // "more like these": the stories in no theme alike to one or two the admin picked, to start a theme from
+        const area = parseArea(b.area), ids = (Array.isArray(b.ids) ? b.ids : []).map(String).slice(0, 2);
+        if (!ids.length) throw new Error('pick one or two stories');
+        const scope = await this.storyScope(), bg = this.storyBg(area, scope.area), stories = this.themeStories(area, Date.now() - THEME_WINDOW_WEEKS * 7 * 86_400_000);
+        const seeds = this.themeStories(area, 0).filter((s) => ids.includes(s.id));
+        if (!seeds.length) throw new Error('those stories no longer exist');
+        const r = moreLikeThese(seeds.map((s) => s.centre), stories, bg), info = this.storyInfo([...ids, ...r.stories.map((x) => x.id)]);
+        return json({ area, seeds: ids.map((id) => info.get(id)).filter(Boolean), stories: r.stories.map((x) => ({ ...info.get(x.id), sim: x.sim })), name: seeds[0].name, lens: suggestLens(seeds.map((s) => s.name), this.lenses(area)) });
+      }
+      if (name === 'theme-create') {   // a theme by hand, from the stories the admin chose
+        const area = parseArea(b.area), ids = (Array.isArray(b.stories) ? b.stories : []).map(String).slice(0, 200);
+        if (!ids.length) throw new Error('choose at least one story');
+        const scope = await this.storyScope(), t = this.themeCreate(area, b, this.storyMean(ids), ids, this.storyBg(area, scope.area));
+        return json({ theme: { id: t.id, slug: t.slug, name: t.name }, ...(await this.themesAdmin()) });
+      }
+      if (name === 'stories-set') {   // whether the public pages and MCP show stories (on) or merged terms (off)
+        this.setMeta('storiesPublic', b.public !== false);
+        return json(await this.storiesAdmin());
+      }
+      if (name === 'stories-rebuild') {   // forget every story and group the last 30 days again (after a change of thresholds); the pages show terms until it is done
+        const sql = this.ctx.storage.sql;
+        this.ctx.storage.transactionSync(() => { for (const t of ['story', 'story_item', 'story_day', 'story_pool']) sql.exec(`DELETE FROM ${t}`); });   // themes stay: new stories join them as they are born
+        this.setMeta('storyBackfill', { at: 0, key: '', done: false, n: 0 }); this.setMeta('storyBg', {}); this.setMeta('storyDay', ''); this.setMeta('storyError', '');
+        await this.reschedule();
+        return json(await this.storiesAdmin());
       }
       if (name === 'signal-filter-set') {   // the whole list of words to leave out
         this.setMeta('signalFilter', cleanFilter(b.words));

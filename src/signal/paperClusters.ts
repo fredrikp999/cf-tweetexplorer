@@ -43,9 +43,12 @@ function unit(v: Float64Array): Float64Array { const len = Math.sqrt(dot(v, v)) 
 /** As many groups as the papers can fill: 40 for 4,000 papers, fewer for fewer. */
 export const groupsFor = (n: number) => Math.max(1, Math.min(MAX_GROUPS, Math.round(Math.sqrt(n / 2.5))));
 
-export function clusterPapers(papers: ClusterInput[], maxGroups = groupsFor(papers.length)): PaperClusterResult {
-  if (!papers.length) return { assign: [], leaves: [], joins: [] };
-  const docs = papers.map((p) => unit(Float64Array.from(p.vector))), dim = docs[0].length;
+/** What the vector part of the grouping gives: unit vectors, the group of each (largest group first, no gaps), each group's centre, and the joins. */
+export interface VectorClusters { docs: Float64Array[]; assign: number[]; centres: Float64Array[]; joins: Array<[number, number]> }
+/** The grouping by meaning alone (spherical k-means, then Ward's joins). Also used for the stories of src/signal/themes.ts. */
+export function clusterVectors(vectors: Array<ArrayLike<number>>, maxGroups = groupsFor(vectors.length)): VectorClusters {
+  if (!vectors.length) return { docs: [], assign: [], centres: [], joins: [] };
+  const docs = vectors.map((v) => unit(Float64Array.from(v))), dim = docs[0].length;
   const k = Math.max(1, Math.min(maxGroups, docs.length)), rnd = mulberry(SEED);
   // Starting points far apart from each other (k-means++), then a fixed number of rounds.
   const centres: Float64Array[] = [Float64Array.from(docs[Math.floor(rnd() * docs.length)])], far = docs.map(() => 2);
@@ -77,12 +80,18 @@ export function clusterPapers(papers: ClusterInput[], maxGroups = groupsFor(pape
   for (const g of assign) sizes.set(g, (sizes.get(g) ?? 0) + 1);
   const order = [...sizes].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([g]) => g), renumber = new Map(order.map((g, i) => [g, i] as const));
   const finalAssign = assign.map((g) => renumber.get(g)!);
+  return { docs, assign: finalAssign, centres: order.map((g) => centres[g]), joins: joinsOf(docs, finalAssign, order.length) };
+}
+
+export function clusterPapers(papers: ClusterInput[], maxGroups = groupsFor(papers.length)): PaperClusterResult {
+  if (!papers.length) return { assign: [], leaves: [], joins: [] };
+  const { docs, assign: finalAssign, centres, joins } = clusterVectors(papers.map((p) => p.vector), maxGroups);
   // Words per paper: only for describing the groups, the grouping itself is done.
   const counted = papers.map((p) => new Set([...termsOf(p.title), ...termsOf(p.abstract)]));
   const df = new Map<string, number>();
   for (const m of counted) for (const t of m) df.set(t, (df.get(t) ?? 0) + 1);
-  const typical = (g: number) => docs.map((d, i) => [i, finalAssign[i] === renumber.get(g) ? dot(d, centres[g]) : -2] as const).filter(([, x]) => x > -2).sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, CENTRAL).map(([i]) => i);
-  return { assign: finalAssign, leaves: order.map((g, i) => ({ terms: telling(i, finalAssign, counted, df, papers.length), central: typical(g) })), joins: joinsOf(docs, finalAssign, order.length) };
+  const typical = (g: number) => docs.map((d, i) => [i, finalAssign[i] === g ? dot(d, centres[g]) : -2] as const).filter(([, x]) => x > -2).sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, CENTRAL).map(([i]) => i);
+  return { assign: finalAssign, leaves: centres.map((_, i) => ({ terms: telling(i, finalAssign, counted, df, papers.length), central: typical(i) })), joins };
 }
 
 /** What makes a group different from the rest: terms many of its papers have and few others do. A longer phrase replaces the words inside it. */

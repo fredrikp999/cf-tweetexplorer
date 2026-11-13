@@ -16,6 +16,7 @@ import { itemHref, type SourceCard } from '../signal/sourcecard.ts';
 import { overviewQuestions, papersQuestions, topicQuestions } from './questions.ts';
 import { fromValue, neighbours, type From } from '../signal/trail.ts';
 import { prismLayout } from '../signal/prism.ts';
+import { themeHref, type ThemePublic, type ThemesPublic } from '../signal/themeview.ts';
 import { roughly, STATE_LABEL, topicSlug, type EvItem, type EvKind, type TopicData, type TopicState } from '../signal/topicpage.ts';
 
 export type Detail = 'brief' | 'full';
@@ -101,6 +102,8 @@ export interface OverviewIn {
   replay?: ReplayFrame[] | null;
   /** The rank of the biggest topics per day over 14 days (the Ladder). */
   ladder?: LadderRaw | null;
+  /** The themes of the area (stories that come back together over weeks), when there are any. */
+  themes?: ThemesPublic | null;
 }
 const stateOf = (t: SigTopic, baselineOk: boolean): TopicState | null => (t.isNew ? 'new' : t.change !== null && t.change >= 1.5 ? 'rising' : t.change !== null && baselineOk && t.change <= 0.67 ? 'falling' : null);
 
@@ -130,6 +133,7 @@ export function overviewOut(d: OverviewIn, origin: string, detail: Detail = 'bri
     topics: ranked, outsideLens: rank.outside.map((t) => ({ slug: slugOf(t), label: t.label, url: urlOf(t) })),
     research: !ai ? null : { newPapers: rs.newPapers, paperDays, discussed: rs.discussed, risingTopics: (extras?.risingResearch ?? []).map((r) => ({ slug: r.slug, title: r.title, state: r.state, url: `${origin}/research/${r.slug}` })),
       mostDiscussed: rs.top.map((p) => ({ id: p.id, title: p.title, url: `https://arxiv.org/abs/${p.id}` })), mapUrl: origin + '/research/map' },
+    themes: (d.themes?.themes ?? []).map((t) => ({ slug: t.slug, name: t.name, sentence: t.sentence, url: origin + themeHref(t.slug, area), stories: t.stories, lastFourWeeks: t.recent, newStories: t.newStories.map((s) => ({ slug: s.slug, name: s.name, url: origin + topicPath(s.slug, area) })), lens: t.lens?.key ?? null })),
     read: !ai ? null : { articles: reads.articles.map((i) => ({ title: i.title, url: i.url, source: i.source, by: i.by })), hackerNews: reads.hn.map((i) => ({ title: i.title, url: i.url, points: i.reactions })) },
   };
   if (!sig) {
@@ -147,11 +151,13 @@ export function overviewOut(d: OverviewIn, origin: string, detail: Detail = 'bri
   const secLad = lad && movers.length ? `## The ladder, ${lad.days.length} days\nRank today and how it moved in ${lad.span} days (order by Signal score per day, not volume).\n${movers.map((t) => `${t.rank[t.rank.length - 1]}. ${link(t.label, t.url)} ${code(t.slug)}: ${t.move}`).join('\n')}` : '';
   const secOut = rank.outside.length ? `## Outside ${lensName}, big ${win === 1 ? 'today' : 'in this period'}\n${rank.outside.map((t) => `- ${link(t.label, urlOf(t))} ${code(slugOf(t))}`).join('\n')}` : '';
   const secRes = extras && ai ? `## Research\n${plural(rs.newPapers, 'new paper')} in the last ${paperDays} days${lens ? ` in ${lens.name}` : ''}; ${plural(rs.discussed, 'paper')} being discussed this week (named in posts, Hacker News or Hugging Face). ${link('Research map', origin + '/research/map')}.${rs.top.length ? `\nMost discussed: ${rs.top.map((p) => link(p.title, `https://arxiv.org/abs/${p.id}`) + ' ' + code(p.id)).join('; ')}` : ''}${data.research!.risingTopics.length ? `\nRising research topics: ${data.research!.risingTopics.map((r) => link(r.title, r.url)).join(', ')}` : ''}` : '';
+  const ths = data.themes.slice(0, detail === 'full' ? 12 : 5);
+  const secThemes = ths.length ? `## Themes (stories that keep coming back over weeks)\n${ths.map((t) => `- ${link(t.name, t.url)} ${code(t.slug)}: ${plural(t.stories, 'story', 'stories')}, ${plural(t.lastFourWeeks, 'item')} in four weeks${t.newStories.length ? `; new in it: ${t.newStories.slice(0, 3).map((s) => link(s.name, s.url)).join(', ')}` : ''}`).join('\n')}${d.themes?.uncharted.count ? `\n${plural(d.themes.uncharted.count, 'story', 'stories')} in no theme yet (uncharted).` : ''}` : '';
   const li = (i: ReadItem) => `- ${link(i.title, i.url)} (${flat(i.source, 40)}${i.reactions ? `, ${num(i.reactions)} points` : ''})`;
   const secRead = ai && (reads.articles.length || reads.hn.length) ? `## Read\n${[...reads.articles.map(li), ...reads.hn.map(li)].join('\n')}` : '';
   const lensNote = lens ? '' : lenses.length ? `Lenses: ${lenses.map((l) => code(l.key)).join(', ')}.` : '';
   const next = first ? `${code('get_topic')} with ${code(`topic: "${first.slug}"`)}${ai ? '' : ` and ${code('area: "politics"')}`} for the summary and evidence${lensNote ? '. ' + lensNote : ''}${ai && rs.top[0] ? `; ${code('get_paper')} with ${code(`id: "${rs.top[0].id}"`)} for a paper` : ''}.` : `${code('list_lenses')}.`;
-  return { text: assemble(lead, [secBrief, secTop, secRise, secOut, secRes, secRead, secLad], next, detail), data };
+  return { text: assemble(lead, [secBrief, secTop, secRise, secThemes, secOut, secRes, secRead, secLad], next, detail), data };
 }
 
 // ---- get_topic
@@ -194,11 +200,14 @@ export function topicOut(t: TopicData, origin: string, detail: Detail = 'brief',
     sourcesShown: t.board.proof,
     lens: lens ?? null,
     questions: topicQuestions({ label: t.label, state: t.state, phase: life?.phase ?? null, peakDay: life ? t.series.days[life.peak] ?? null : null, days: t.series.days, papers: t.papers.matched, firstOrder: t.first.arrivals.map((a) => KIND_TITLE[a.kind]) }),
+    story: t.story ? { id: t.story.id, isNew: t.story.isNew, newInTheme: t.story.newIn, uncharted: t.story.uncharted, theme: t.story.theme ? { slug: t.story.theme.slug, name: t.story.theme.name, url: origin + themeHref(t.story.theme.slug, t.area ?? 'ai') } : null } : null,
     first: firstData(t.first), timeline: t.timeline, watch: t.watch.map((v) => ({ ...v, thumbnail: `https://i.ytimg.com/vi/${v.video}/mqdefault.jpg` })),
   };
   const lead = [`**${t.label}**${st ? ` is ${st}` : ''} (${link('topic page', url)}${(t.area ?? 'ai') === 'ai' ? '' : `, area: ${AREA_LABEL[t.area]}`}). ${t.summary ? t.summary.text : t.fallback}`,
     t.summary ? `_Summary written by an AI on ${t.summary.day} from ${plural(t.summary.itemCount, 'item')}; follow the links below to read the originals._` : '_No written summary yet; the line above is built from the numbers._',
     `${plural(recent, 'mention')} in the last ${wd} days${t.change !== null && t.change !== undefined && t.state ? `; against the period before: ×${t.change.toFixed(1)}` : ''}${t.isNew ? ' (not seen before)' : ''}.${life ? ' ' + life.words : ''}`];
+  if (t.story?.theme) lead.push(`A story in the theme ${link(t.story.theme.name, origin + themeHref(t.story.theme.slug, t.area ?? 'ai'))}${t.story.newIn ? ' (new in it this week)' : ''}; ${code('get_theme')} with ${code(`theme: "${t.story.theme.slug}"`)} for the theme.`);
+  else if (t.story?.uncharted) lead.push('A story in no theme yet (uncharted): it fits none of the themes so far.');
   const secEv = t.evidence.length ? `## Evidence, per kind of source (never added together)\n${t.evidence.map((e) => `- **${e.label}**: ${e.lines.join('; ')}${e.names?.length ? ` (${e.names.join(', ')})` : ''}`).join('\n')}\nSignal score: ${pct(t.signal)}, the share of items that mention it, averaged over the groups of sources and weighted; in ${plural(t.breadth, 'group')} (${t.kind}). ${link('How this is worked out', origin + '/signal/method')}.` : '';
   const per = full ? 8 : 2;
   const secTalk = talkKinds.length ? `## What is being said\n${talkKinds.map((k) => `**${KIND_LABEL[k]}**\n${t.talk.filter((i) => i.kind === k).slice(0, per).map((i) => '- ' + itemLine(i)).join('\n')}`).join('\n')}\n${THIRD_PARTY}` : t.board.proof ? '' : '## What is being said\nThis Signal does not show its sources, so the items behind the topic are not public.';
@@ -426,4 +435,28 @@ export function itemOut(c: SourceCard, origin: string, detail: Detail = 'brief')
   const secAlso = c.alsoIn.length ? `## Also in\n${c.alsoIn.map((o) => `- ${link(o.label, origin + topicPath(o.slug, t.area))} ${code(o.slug)}`).join('\n')}` : '';
   const hints = [c.before ? `${code('get_item')} with ${code(`item: "${c.before.id}"`)} for the one before` : '', c.after ? `${code('get_item')} with ${code(`item: "${c.after.id}"`)} for the one after` : '', `${code('get_topic')} with ${code(`topic: "${t.slug}"`)} for the topic`].filter(Boolean);
   return { text: assemble(lead, [secWhy, secCopies, secNear, secAlso, THIRD_PARTY], (full ? hints : hints.slice(0, 3)).join('; ') + '.', detail), data };
+}
+
+// ---- get_theme
+const monthDay = (ts: number): string => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+/** One theme: what it is, how it moved by week, its stories (newest first) and what is new in it. */
+export function themeOut(t: ThemePublic, origin: string, detail: Detail = 'brief'): Answer {
+  const url = origin + themeHref(t.slug, t.area), full = detail === 'full', storyUrl = (slug: string) => origin + topicPath(slug, t.area);
+  const total = t.curve.reduce((a, b) => a + b, 0), last4 = t.curve.slice(-4).reduce((a, b) => a + b, 0);
+  const data = { slug: t.slug, name: t.name, area: t.area, url, sentence: t.sentence, inside: t.inside || null, outside: t.outside || null, notConfusedWith: t.notConfused || null, state: t.state, lens: t.lens ? { key: t.lens.key, name: t.lens.name } : null,
+    curve: { weeks: t.weeks, to: t.to, items: t.curve, itemsAre: 'items in its stories per week, oldest first' }, groups: t.groups,
+    stories: t.stories.map((s) => ({ ...s, url: storyUrl(s.slug) })), newStories: t.newStories.map((s) => ({ ...s, url: storyUrl(s.slug) })), others: t.others.map((o) => ({ ...o, url: origin + themeHref(o.slug, t.area) })) };
+  const lead = [`**${t.name}** (${link('theme page', url)}${t.area === 'ai' ? '' : `, area: ${AREA_LABEL[t.area]}`})${t.state === 'retired' ? ', a retired theme' : ''}. ${t.sentence}`,
+    `${plural(t.stories.length, 'story', 'stories')}; ${plural(last4, 'item')} in the last four weeks, ${plural(total, 'item')} in ${t.weeks} weeks.${t.lens ? ` Lens: ${t.lens.name}.` : ''}`,
+    '_A theme is a group of stories that keep coming back together, proposed by the system and approved by an editor._'];
+  const secIn = t.inside || t.outside || t.notConfused ? `## What is in it\n${[t.inside ? `- In: ${t.inside}` : '', t.outside ? `- Not in it: ${t.outside}` : '', t.notConfused ? `- Not to be confused with: ${t.notConfused}` : ''].filter(Boolean).join('\n')}` : '';
+  const secNew = t.newStories.length ? `## New in it this week\n${t.newStories.map((s) => `- ${link(s.name, storyUrl(s.slug))} ${code(s.slug)}, from ${monthDay(s.first)}`).join('\n')}` : '';
+  const secCurve = `## By week\n${t.curve.slice(full ? 0 : -8).join(', ')} (items per week, oldest first, to ${t.to})`;
+  const secStories = t.stories.length ? `## Stories, newest first\n${t.stories.slice(0, full ? 40 : 10).map((s) => `- ${link(s.name, storyUrl(s.slug))} ${code(s.slug)}: ${monthDay(s.first)} to ${monthDay(s.last)}, ${plural(s.n, 'item')}${s.state === 'closed' ? ', over' : ''}`).join('\n')}` : '';
+  const secGroups = t.groups.length ? `## Where it comes from (8 weeks)\n${t.groups.slice(0, 6).map((g) => `${g.name} ${num(g.n)}`).join(', ')}` : '';
+  const first = t.newStories[0] ?? t.stories[0];
+  return { text: assemble(lead, [secIn, secNew, secStories, secCurve, secGroups], first ? `${code('get_topic')} with ${code(`topic: "${first.slug}"`)}${t.area === 'ai' ? '' : ` and ${code('area: "politics"')}`} for a story.` : `${code('get_overview')}.`, detail), data };
+}
+export function themeMissing(asked: string, origin: string, themes: Array<{ slug: string; name: string }>, area: Area = 'ai'): Answer {
+  return { text: `No theme ${code(asked)}${area === 'ai' ? '' : ' in ' + AREA_LABEL[area]}.${themes.length ? ` Themes: ${themes.map((t) => `${link(t.name, origin + themeHref(t.slug, area))} ${code(t.slug)}`).join(', ')}.` : ' There are no themes yet.'}`, data: { asked, themes }, error: true };
 }

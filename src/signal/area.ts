@@ -55,7 +55,7 @@ export const areaPath = (area: Area, sub = ''): string => (area === 'ai' ? '/' +
 export function areaOfRequest(parts: string[], query: URLSearchParams, boards: Array<{ slug: string; aliases?: string[]; area?: string }>, topics: Array<{ slug: string; area?: string }>): Area {
   if (parts[0] === 'politics') return 'politics';
   if (parts[0] === 'signal' && parts[1]) { const b = boards.find((x) => x.slug === parts[1] || x.aliases?.includes(parts[1])); if (b) return areaOf(b); }
-  else if (parts.length >= 1 && parts[0] !== 't' && parts[0] !== 'search' && parts[0] !== 'topics') { const t = topics.find((x) => x.slug === parts[0]); if (t) return areaOf(t); }
-  const shared = parts[0] === 'search' || parts[0] === 'topics' || (parts[0] === 'signal' && parts.length === 1);
+  else if (parts.length >= 1 && parts[0] !== 't' && parts[0] !== 'search' && parts[0] !== 'topics' && parts[0] !== 'themes' && parts[0] !== 'theme') { const t = topics.find((x) => x.slug === parts[0]); if (t) return areaOf(t); }
+  const shared = parts[0] === 'search' || parts[0] === 'topics' || parts[0] === 'themes' || parts[0] === 'theme' || (parts[0] === 'signal' && parts.length === 1);
   return shared ? parseArea(query.get('area')) : 'ai';
 }

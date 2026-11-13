@@ -5,9 +5,10 @@ import { risingQuestions } from './questions.ts';
 import { KIND_NAME, MIN_CLIMB, ZONE_LABEL, reachWords, zoneOf, type DepthLayout, type Reach, type Zone } from '../signal/depth.ts';
 import { LENS_PALETTE, lensesOfTopic, type Lens } from '../signal/lens.ts';
 import { topicState, type TopicState } from '../signal/topicpage.ts';
+import { themeHref } from '../signal/themeview.ts';
 
 /** What the Monitor answers (`/mon/depth-public`). */
-export type DepthRaw = DepthLayout & { days: string[]; baselineOk: boolean; meta: Array<{ key: string; term: string; members: string[]; isNew: boolean; change: number | null }> };
+export type DepthRaw = DepthLayout & { days: string[]; baselineOk: boolean; meta: Array<{ key: string; term: string; members: string[]; isNew: boolean; change: number | null; /** The theme the story is in, when topics are stories. */ theme?: { slug: string; name: string }; themeLens?: string | null }> };
 
 export interface RisingTopic {
   slug: string; label: string; url: string; state: TopicState | null; change: number | null; score: number; r: number; first: number;
@@ -16,6 +17,7 @@ export interface RisingTopic {
   /** Breadth today against `span` days ago. */ rise: number;
   zone: Zone | null;
   /** Today's reach in words; null when no source had it in the last days. */ reach: string | null;
+  /** The theme a story is in (src/signal/themes.ts), with its page; absent for a topic that is no story or a story in no theme. */ theme?: { slug: string; name: string; url: string };
 }
 export interface RisingData {
   area: Area; lens: { key: string; name: string } | null; lenses: Array<{ key: string; name: string; color: string; light: string; dark: string }>;
@@ -31,11 +33,12 @@ export function risingOf(raw: DepthRaw | null | undefined, o: { area: Area; lens
   if (!raw?.topics?.length || !raw.days?.length) return null;
   const meta = new Map(raw.meta.map((m) => [m.key, m] as const)), last = raw.days.length - 1;
   const topics: RisingTopic[] = raw.topics.map((t) => {
-    const m = meta.get(t.key), mine = lensesOfTopic(o.lenses, { term: m?.term ?? t.label, label: t.label, members: m?.members ?? [] }), inLens = o.lens ? mine.some((l) => l.key === o.lens!.key) : null;
+    const m = meta.get(t.key), mine = lensesOfTopic(o.lenses, { term: m?.term ?? t.label, label: t.label, members: m?.members ?? [], themeLens: m?.themeLens }), inLens = o.lens ? mine.some((l) => l.key === o.lens!.key) : null;
     const state = m ? (m.isNew ? 'new' : raw.baselineOk ? topicState(m) : m.change !== null && m.change >= 1.5 ? 'rising' : null) : null, now = t.b[last] ?? 0;
     return { slug: t.key, label: t.label, url: o.origin + topicHref(t.key, o.area), state, change: m?.change ?? null, score: Math.round(t.score * 10_000) / 10_000, r: t.r, first: t.first,
       lensColor: o.lens ? (inLens ? o.lens.color : null) : mine[0]?.color ?? null, inLens, b: t.b, x: t.x, y: t.y, k: t.k, g: t.g, s: t.s, m: t.m, rise: t.rise,
-      zone: now > 0 ? zoneOf(now) : null, reach: now > 0 ? reachWords({ k: t.k[last], g: t.g[last], s: t.s[last], m: t.m[last] }, raw.kinds, raw.watched) : null };
+      zone: now > 0 ? zoneOf(now) : null, reach: now > 0 ? reachWords({ k: t.k[last], g: t.g[last], s: t.s[last], m: t.m[last] }, raw.kinds, raw.watched) : null,
+      ...(m?.theme ? { theme: { ...m.theme, url: o.origin + themeHref(m.theme.slug, o.area) } } : {}) };
   });
   return { area: o.area, lens: o.lens ? { key: o.lens.key, name: o.lens.name } : null,
     lenses: o.lenses.map((l) => ({ key: l.key, name: l.name, color: l.color, light: LENS_PALETTE[l.color].light, dark: LENS_PALETTE[l.color].dark })),
@@ -72,7 +75,7 @@ export function risingOut(d: RisingData | null, origin: string, area: Area = 'ai
   const lead = [`**Rising from the deep** (${AREA_LABEL[d.area]}, ${dayWords(d.days[0])} to ${dayWords(d.days[d.days.length - 1])}).${lensNote}`,
     `Depth is breadth, not loudness: a topic is at the surface when every kind of source and most groups have it, and in the deep when it lives in one place. Watched: ${d.kindNames.join(', ')}; ${d.watched.groups} groups; ${d.watched.sources} sources.`,
     up.length ? `Steepest climb: ${link(up[0].label, up[0].url)}, ${climbWords(up[0], d)}.` : 'Nothing climbed much in the last days.'];
-  const row = (t: RisingTopic, i: number) => `${i + 1}. ${link(t.label, t.url)} ${code(t.slug)}${t.state ? ` (${t.state})` : ''}: breadth ${pctOf(t.b[t.b.length - 1] ?? 0)}, ${t.reach ?? 'no source had it in the last days'}${d.lens && t.inLens === false ? ' [outside lens]' : ''}`;
+  const row = (t: RisingTopic, i: number) => `${i + 1}. ${link(t.label, t.url)} ${code(t.slug)}${t.state ? ` (${t.state})` : ''}: breadth ${pctOf(t.b[t.b.length - 1] ?? 0)}, ${t.reach ?? 'no source had it in the last days'}${t.theme ? `; theme ${link(t.theme.name, t.theme.url)}` : ''}${d.lens && t.inLens === false ? ' [outside lens]' : ''}`;
   const secs = [up.length ? `## Rising from the deep\n${up.map((t, i) => `${i + 1}. ${link(t.label, t.url)} ${code(t.slug)}: ${climbWords(t, d)}. Now ${t.reach}.`).join('\n')}` : '',
     ...(['surface', 'mid', 'deep'] as Zone[]).map((z) => { const l = inZone(d, z); return l.length ? `## ${ZONE_LABEL[z]}\n${l.map(row).join('\n')}` : ''; })].filter(Boolean);
   const text = `${lead.join('\n')}\n\n${secs.join('\n\n')}\n\n_Breadth is ${BREADTH_IS} The picture: ${page}_\n\n**Next:** ${code('get_topic')} with a topic address for the summary and evidence; ${code('get_who_said_first')} for the order the sources had it in.`;
