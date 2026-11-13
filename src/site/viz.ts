@@ -57,7 +57,7 @@ export const HOST_JS = `(function () {
   try { if (window.MutationObserver) new MutationObserver(function () { to({ method: 'ui/notifications/host-context-changed', params: { theme: themeNow() } }); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] }); } catch (x) {}
   var load = function () { f.src = '/viz/' + kind + '.html'; };
   // The landscape comes after the text: when the page has finished loading, and not at all on a phone, where the ranked list is the picture.
-  if (kind === 'landscape') {
+  if (kind === 'landscape' || (f.closest && f.closest('.mast'))) {
     if (window.matchMedia && window.matchMedia('(max-width: 520px)').matches) return;
     if (document.readyState !== 'complete') { window.addEventListener('load', load); return; }
   }

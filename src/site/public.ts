@@ -364,6 +364,7 @@ h1{font-weight:800;font-variation-settings:"opsz" 72}
 .since .t-new b{color:#ffc56b}.since .t-rising b{color:#ff8fb8}.since .t-papers b{color:#7fd3df}
 .since .sincehint{flex-basis:100%;color:#9fc3c8;font-size:14px}.since .sincehint a{color:#fff}
 .mastviz .vizbox.land{margin:0;border:0;border-radius:16px;background:#142224;box-shadow:0 0 0 1px rgba(255,255,255,.1),0 30px 60px -30px rgba(0,0,0,.7)}.mastviz .vizbox.land iframe{height:380px;animation:fade .8s .2s both}
+.mastviz .vizbox.depth{margin:0;border:0;border-radius:16px;background:#142224;box-shadow:0 0 0 1px rgba(255,255,255,.1),0 30px 60px -30px rgba(0,0,0,.7)}.mastviz .vizbox.depth iframe{height:440px;animation:fade .8s .2s both}.mastviz .vizbox.depth noscript{display:none}@media(max-width:520px){.mastviz .vizbox.depth{display:none}}
 .minibub{display:none;list-style:none;margin:18px 0 0;padding:0;flex-wrap:wrap;gap:8px;align-items:center}
 .minibub li{width:var(--s);height:var(--s);border-radius:50%;display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;background:rgba(127,211,223,.16);border:1px solid rgba(127,211,223,.5);animation:pop .5s cubic-bezier(.2,.9,.3,1.3) both}
 .minibub li.new{background:#f5b93a;border-color:#f5b93a}.minibub li.rising{background:#ff7aa1;border-color:#ff7aa1}
@@ -667,8 +668,10 @@ ${rs.top.length ? `<p class="meta"><b>Most discussed this week</b></p><ol>${rs.t
     const big = own.slice(0, 6), mx = Math.max(1e-9, big[0]?.signal ?? 0);
     return big.length ? `<ol class="minibub" aria-label="Biggest topics">${big.map((t, i) => `<li class="${pop(t) || 'steady'}" style="--s:${Math.round(52 + 50 * Math.sqrt(t.signal / mx))}px;animation-delay:${i * 60}ms"><a href="${tl(t.term)}">${esc(t.label)}</a></li>`).join('')}</ol>` : '';
   });
-  const bubbles = !!(d.landscape?.bubbles.length && rank.rows.length);
-  const graphic = bubbles ? `<div class="mastviz landscape-graphic" id="landscape-graphic">${vizFrame('landscape', `/overview.json?window=${win}${lens ? '&amp;lens=' + encodeURIComponent(lens.key) : ''}${ai ? '' : '&amp;area=politics'}`, 'The landscape: a bubble for each topic, sized by its score, grouped by topics talked about together. The ranked list on this page says the same.')}</div>` : '';
+  // The picture is Rising from the deep (the Depth chart of /rising), in its hero form: 14 days of breadth, the area and lens of the page. The ranked list on this page and /rising say it in words.
+  const bubbles = !!(ctx.boards.length && rank.rows.length);
+  const rq = [lens ? 'lens=' + encodeURIComponent(lens.key) : '', ai ? '' : 'area=politics'].filter(Boolean).join('&amp;');
+  const graphic = bubbles ? `<div class="mastviz depth-graphic" id="depth-graphic">${vizFrame('depth', `/rising.json${rq ? '?' + rq : ''}`, 'Rising from the deep: topics as bubbles in water, the higher the more widely spread. The page Rising from the deep says the same in words.')}</div>` : '';
   const lede = lens ? `${lens.description ? esc(lens.description) + ' ' : ''}${headline ? headline + '. ' : rank.inCount ? '' : `No topic in ${esc(lens.name)} is big enough ${win === 1 ? 'today' : 'in this period'}. `}<a href="${landingHref({ window: win }, area)}">Show everything</a>`
     : sig || ai ? `<b class="tagline">${TAGLINE(area)}.</b> Short briefings and the topics being talked about across news, blogs, X, YouTube and Hacker News${ai ? ', with the research behind them' : ''}.` : 'Nothing is published here yet.';
   const mast = `<section class="mast${bubbles ? '' : ' nobub'}${lens ? ` lensmast lc-${lens.color}` : ''}" aria-labelledby="h-mast">${MAST_WAVE}<div class="mastin"><div class="masttext">

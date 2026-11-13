@@ -49,6 +49,7 @@ details{margin-top:4px}summary{cursor:pointer;color:var(--mut);font-size:13px}
 #list{margin-top:6px;gap:2px}#list button{display:flex;gap:8px;width:100%;text-align:left;border:0;background:none;padding:3px 4px;border-radius:5px;flex-wrap:wrap}#list button:hover{background:var(--btn)}
 #list .n{flex:1 1 12em}#list .z{color:var(--mut);font-size:12.5px;flex:2 1 16em}#list .p{color:var(--mut);font-variant-numeric:tabular-nums}
 body.full #app{min-height:100vh}body.full svg{max-height:calc(100vh - 210px)}
+body.hero #bar,body.hero #side,body.hero #lbox,body.hero #note:empty{display:none!important}body.hero #app{padding:8px 10px 6px}body.hero #grid{grid-template-columns:minmax(0,1fr)}body.hero #scrub{margin-top:8px}body.hero #legend{text-align:center;margin:6px 2px 2px}
 </style></head><body><div id="s">Reading the water…</div><div id="app" class="hide">
 <div id="bar"><label>Lens <select id="lens" aria-label="Lens"></select></label><span class="sp"></span>
 <button id="pickb" class="hide" aria-pressed="false" title="Click bubbles to pick them, then ask Claude about them">Pick topics</button><button id="ask" class="hide"></button><button id="fs" class="hide">Fullscreen</button></div>
@@ -60,6 +61,8 @@ body.full #app{min-height:100vh}body.full svg{max-height:calc(100vh - 210px)}
 <script>
 ${SHELL_JS}
 var NS = 'http://www.w3.org/2000/svg', MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], ZONES = { surface: 'at the surface', mid: 'mid-water', deep: 'in the deep' };
+// Hero: the picture in the site's landing masthead (the host says so in hostContext.embed). The page has the lens and the lists already, so the view shows only the water, the days and a short key.
+var hero = false;
 var pending = {}, nextId = 2, host = {}, D = null, busy = false, theme = '', lens = '', area = 'ai', picking = false, sel = {}, scale = 1, ox = 0, oy = 0;
 var T = 0, playing = false, raf = 0, stepTimer = 0, hot = '', MIN_CLIMB = 0.08, TRAIL = 6, DAY_MS = 750;
 function el(id) { return document.getElementById(id); }
@@ -278,6 +281,14 @@ function renderLists() {
 function renderLegend() {
   var p = el('legend');
   p.textContent = '';
+  if (hero) {   // a short key, and the way to the full chart
+    p.appendChild(mk('b', '', 'Higher is more widely spread. '));
+    p.appendChild(document.createTextNode('Size is its share of the week\\'s items. ▲ +N: up N points in ' + D.span + ' days. '));
+    var a = mk('a', '', 'The full chart →'); a.href = siteUrl() || '#'; a.style.color = 'var(--fg)';
+    a.onclick = function (e) { e.preventDefault(); var u = siteUrl(); if (u) request('ui/open-link', { url: u }, 8000, function () {}); };
+    p.appendChild(a);
+    return;
+  }
   p.appendChild(mk('b', '', 'Depth is breadth, not loudness: '));
   p.appendChild(document.createTextNode('how much of what is watched had the topic over ' + D.window + ' days (kinds of source, groups of sources, single sources). Size is its share of the week\\'s items. ▲ +N: breadth up N points in ' + D.span + ' days. Watched: ' + D.kindNames.join(', ') + '; ' + D.watched.groups + ' groups; ' + D.watched.sources + ' sources.'));
 }
@@ -368,6 +379,7 @@ window.addEventListener('message', function (e) {
     if (m.error) { el('s').textContent = 'initialize failed: ' + JSON.stringify(m.error); return; }
     var r = m.result || {}, hc = r.hostContext || {};
     host = r.hostCapabilities || {};
+    hero = hc.embed === 'hero'; document.body.classList.toggle('hero', hero);
     UC.init({ title: 'Rising from the deep', host: host, root: el('app'), size: reportSize,
       note: function (t) { el('note').textContent = t; }, site: siteUrl,
       context: function () { return D ? contextText() : ''; },
@@ -377,7 +389,7 @@ window.addEventListener('message', function (e) {
     send({ method: 'ui/notifications/initialized' });
     reportSize();
     new ResizeObserver(function () { var w = Math.round(el('stage').getBoundingClientRect().width); if (D && w && w !== lastW) { lastW = w; if (!playing) draw(); } else reportSize(); }).observe(document.body);
-    if ((hc.availableDisplayModes || []).indexOf('fullscreen') >= 0) el('fs').classList.remove('hide');
+    if (!hero && (hc.availableDisplayModes || []).indexOf('fullscreen') >= 0) el('fs').classList.remove('hide');
     if (hc.displayMode === 'fullscreen') setFull(true);
   } else if (m.id && pending[m.id]) {
     fn = pending[m.id]; delete pending[m.id]; fn(m);
