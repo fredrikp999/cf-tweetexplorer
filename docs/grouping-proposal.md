@@ -207,4 +207,14 @@ Step 0 was skipped, so the grouping was read once on a local run instead: 49 pub
 - **Feed boilerplate glued unrelated posts.** A feed whose every description is "Comments" made a junk story; `embedText` drops that line.
 - **Themes from one week.** With one week of history "five of the eleven stories" was proposed as a theme. A theme now always needs two active weeks.
 
-Not checked: real model names (the name bonus and the number veto ran on mock names), X posts, more than a week of items, and the theme tests on real history.
+Then the same items again with real names (the production topic prompt, applied by a small model batch by batch with earlier names as hints, as the Monitor does):
+
+- **An item named for two stories glued them.** "Fable 5.2 retakes #1 as the IPO roadshow begins" carried both names, so the model release and the IPO were born
+  as one story. Now only a story's leading name lowers the bar for a join, and at a birth an item let in only by a name must carry the group's leading name. With that,
+  the release is one story of five items (it was not found at all with mock names) and the IPO another.
+- **Labels can be wrong, and then a name lets a stray in.** Two of 444 items were tagged with the name of a big story they were not about and joined it (0.48 and 0.49
+  alike, where true members of that story go down to 0.41). Accepted: the vectors cannot tell them apart.
+- **Sub-stories stay apart.** The interim CEO and the chip smuggling around the biggest story became stories of their own (0.44 and 0.60 alike to it). That reads right.
+- **The number veto never fired**: no two names in these items differ only in a number. It is covered by the tests (kimi k2 and k3), not by this data.
+
+Still not checked: X posts, more than a week of items, and the theme tests on real history. They need production, or weeks of a local run.

@@ -140,6 +140,17 @@ describe('sources and merging', () => {
     assert.deepEqual(findMerges([big, other], bg()), [], 'different stories stay apart');
     assert.deepEqual(findMerges([big, story(0, { id: 'shut', state: 'closed' })], bg()), [], 'a closed story is left alone');
   });
+  test('an item named for two stories does not make them one at birth', () => {
+    // Exact vectors (no background): "alpha" items, "beta" items, and one item between them named for both. The beta items are alike to it only with the name
+    // bonus, and only "alpha" can lead the group, so they are left waiting instead of being born with the alpha story.
+    const D = 8, e = (i) => Array.from({ length: D }, (_, j) => (j === i ? 1 : 0)), mix = (...ws) => unitOf(ws.reduce((s, [w, v]) => s.map((x, j) => x + w * v[j]), Array(D).fill(0)));
+    const a = [3, 4, 5].map((n, i) => ({ key: `a${i}`, v: mix([1, e(0)], [0.9, e(2)], [0.35, e(n)]), ts: NOW - (6 + i) * HOUR, names: ['alpha'], group: 'g', source: `a${i}` }));
+    const b = [6, 7].map((n, i) => ({ key: `b${i}`, v: mix([1, e(1)], [0.9, e(2)], [0.35, e(n)]), ts: NOW - (1 + i) * HOUR, names: ['beta'], group: 'g', source: `b${i}` }));
+    const bridge = { key: 'x', v: mix([1, e(0)], [0.1, e(1)], [0.9, e(2)]), ts: NOW - 5 * HOUR, names: ['alpha', 'beta'], group: 'g', source: 'x' };
+    const res = assignItems([bridge, ...a, ...b], [], [], Array(D).fill(0), NOW);
+    assert.deepEqual(res.births.map((x) => [...x.items].sort()), [['a0', 'a1', 'a2', 'x']]);
+    assert.deepEqual(res.pool.map((x) => x.key).sort(), ['b0', 'b1']);
+  });
   test('a clash in a number keeps two alike stories apart, and joined names keep the bigger story\'s lead', () => {
     assert.deepEqual(findMerges([story(0, { id: 'a', names: ['kimi k2'] }), story(0, { id: 'b', names: ['kimi k3'] })], bg()), []);
     assert.equal(joinNames(['nvidia ceo', 'huang resigns'], ['huang affair', 'nvidia ceo'])[0], 'nvidia ceo');

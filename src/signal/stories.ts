@@ -24,8 +24,10 @@ export const STORY_SIM = 0.55;
  * the evidence the proposal wants used, but a name alone is not enough. On real feeds (2026-11-13) different takes on one subject (an essay, a quote, a newsletter and
  * a review of one model release) were 0.37 to 0.49 alike pair by pair, and so were different launches by one company in one week (0.40 to 0.48): the vectors cannot
  * tell those apart, the names can. Under 0.40 nearly every pair is unrelated.
+ * Only the story's leading name counts (STORY_NAME_TOP), and at a birth only the group's leading name: with real names, one item tagged with two stories ("Fable 5.2
+ * retakes #1 as the IPO roadshow begins") otherwise pulled both into one.
  */
-export const STORY_NAME_BONUS = 0.15, STORY_NAME_TOP = 4;
+export const STORY_NAME_BONUS = 0.15, STORY_NAME_TOP = 1;
 /** Pooled items wait this long for company; older ones are dropped. */
 export const STORY_POOL_MS = 48 * 3_600_000;
 /**
@@ -197,6 +199,9 @@ function findBirths(fresh: StoryItem[], bg: ArrayLike<number>): { births: Birth[
     if (seed < 0) break;
     let members = [...free].filter((j) => j === seed || near(seed, j));
     const tight = (ms: number[]) => { const c = centredOn(meanCentre(ms.map((j) => fresh[j].v)), bg); return ms.filter((j) => dot(cs[j], c) >= STORY_SIM); };
+    // Members let in only by a shared name must share the group's leading name: an item named for two stories does not make them one.
+    const lead = rankNames(members.map((j) => fresh[j].names))[0];
+    members = members.filter((j) => j === seed || dot(cs[seed], cs[j]) >= STORY_SIM || (!!lead && fresh[j].names.some((x) => norm(x) === norm(lead))));
     members = tight(members);
     const groups = new Set(members.map((j) => fresh[j].group)), sources = new Set(members.map((j) => fresh[j].source ?? fresh[j].group));
     if (members.length < STORY_BIRTH_MIN || sources.size < STORY_BIRTH_SOURCES) { skipped.add(seed); continue; }
