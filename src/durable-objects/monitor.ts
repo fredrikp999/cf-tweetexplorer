@@ -112,6 +112,10 @@ const themeOf = (r: ThemeDbRow): ThemeRow => ({ id: r.id, area: parseArea(r.area
   centre: fromBlob(r.centre), approvedCentre: fromBlob(r.approved_centre), state: r.state === 'retired' ? 'retired' : 'active', slug: r.slug, oldSlugs: JSON.parse(r.old_slugs) as string[], created: r.created });
 /** Story names written by the model per wake-up at most, so a backfill that makes hundreds of stories spreads its naming (and its cost) over several. */
 const STORY_NAME_BATCH = 25;
+/** The most one alarm runs (wall time, so CPU time is less): well under the 30 s of CPU a Durable Object is allowed per event. */
+const ALARM_BUDGET_MS = 20_000;
+/** Lets requests that came in meanwhile run: work in the alarm is synchronous, and a page would otherwise wait for the whole step. */
+const breathe = () => new Promise<void>((r) => setTimeout(r, 0));
 /** Closed stories are kept as summary rows this long (for themes); their items go with the item log after 30 days. */
 const STORY_KEEP_DAYS = 365;
 const SUMMARY_TOPICS = 24, SUMMARY_PER_BOARD = 12, SUMMARY_KEEP_DAYS = 3, SUMMARY_RETRY_MS = 10 * 60_000;
@@ -268,20 +272,25 @@ export class MonitorDO extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
+    // One budget for the whole wake-up: a Durable Object is stopped past 30 s of CPU, and the steps together used to be allowed far more (each had its own deadline), so the
+    // alarm was killed and retried over and over while every page waited behind it. A step that runs out of time carries on at the next wake-up, which comes a second later.
+    const until = Date.now() + ALARM_BUDGET_MS, by = (ms: number) => Math.min(Date.now() + ms, until), took: string[] = [];
+    const timed = async (name: string, f: () => Promise<void> | void) => { const t = Date.now(); try { await f(); } finally { const ms = Date.now() - t; if (ms > 500) took.push(`${name} ${ms}ms`); } };
     if (!this.collectReady()) await this.syncCollect();
-    try { await this.summaryStep(Date.now() + 20_000); } catch (err) { console.error('topic summaries failed', err instanceof Error ? err.message : String(err)); }   // before the naming work: a day's summaries cost cents, and the cap is shared
-    try { await this.prismStep(Date.now() + 15_000); } catch (err) { console.error('topic conversations failed', err instanceof Error ? err.message : String(err)); }   // after the summaries: the cap is shared, and a day's summaries matter more than a day's names
-    try { await this.processAi(Date.now() + 20_000); } catch (err) { console.error('signal topics failed', err instanceof Error ? err.message : String(err)); }
-    try { await this.storyStep(Date.now() + 15_000); } catch (err) { console.error('stories failed', err instanceof Error ? err.message : String(err)); this.setMeta('storyError', err instanceof Error ? err.message : String(err)); }   // after the reading: the first grouping needs what was read
-    try { await this.themeStep(Date.now() + 20_000); } catch (err) { console.error('themes failed', err instanceof Error ? err.message : String(err)); }   // once a week
-    this.pruneSignal();
-    const researchUntil = Date.now() + 25_000;
+    await timed('summaries', async () => { try { await this.summaryStep(by(20_000)); } catch (err) { console.error('topic summaries failed', err instanceof Error ? err.message : String(err)); } });   // before the naming work: a day's summaries cost cents, and the cap is shared
+    await timed('prism', async () => { try { await this.prismStep(by(15_000)); } catch (err) { console.error('topic conversations failed', err instanceof Error ? err.message : String(err)); } });   // after the summaries: the cap is shared, and a day's summaries matter more than a day's names
+    await timed('topics', async () => { try { await this.processAi(by(20_000)); } catch (err) { console.error('signal topics failed', err instanceof Error ? err.message : String(err)); } });
+    await timed('stories', async () => { try { await this.storyStep(by(8_000)); } catch (err) { console.error('stories failed', err instanceof Error ? err.message : String(err)); this.setMeta('storyError', err instanceof Error ? err.message : String(err)); } });   // after the reading: the first grouping needs what was read
+    await timed('themes', async () => { try { await this.themeStep(by(20_000)); } catch (err) { console.error('themes failed', err instanceof Error ? err.message : String(err)); } });   // once a week
+    await timed('prune', () => this.pruneSignal());
+    const researchUntil = by(25_000);
     try { await this.pulseStep(researchUntil); await this.researchStep(researchUntil); } catch (err) { console.error('research pulse failed', err instanceof Error ? err.message : String(err)); }
     if (this.getMeta<string>('storageDay', '') !== today()) {   // this wakes at least once a day, so the storage line in Costs has no gaps on quiet days
       this.setMeta('storageDay', today());
       try { await this.env.COST.getByName('main').measureStorage(); } catch (err) { console.error('storage measure failed', err instanceof Error ? err.message : String(err)); }
     }
-    try { await this.backfillStep(researchUntil); await this.mapStep(researchUntil); } catch (err) { console.error('research map failed', err instanceof Error ? err.message : String(err)); this.setMeta('mapError', err instanceof Error ? err.message : String(err)); this.setMeta('mapRetry', Date.now() + 3_600_000); }
+    await timed('map', async () => { try { await this.backfillStep(researchUntil); await this.mapStep(researchUntil); } catch (err) { console.error('research map failed', err instanceof Error ? err.message : String(err)); this.setMeta('mapError', err instanceof Error ? err.message : String(err)); this.setMeta('mapRetry', Date.now() + 3_600_000); } });
+    if (took.length) console.log('alarm', took.join(', '));
     await this.reschedule();
   }
 
@@ -2282,6 +2291,7 @@ export class MonitorDO extends DurableObject<Env> {
       for (const [area, items] of byArea) this.storyAssign(area, items, last.ts, bgs.get(area) ?? bgs.set(area, this.storyBg(area, scope.area)).get(area)!, scope.source);
       st = { ...st, at: last.ts, key: `${last.watch}\n${last.item}`, n: st.n + chunk.length };
       this.setMeta('storyBackfill', st);
+      await breathe();
     }
   }
   /** Live to dormant after three quiet days, to closed after 14. */
@@ -2393,12 +2403,14 @@ export class MonitorDO extends DurableObject<Env> {
   private async themeStep(deadline: number): Promise<void> {
     if (!this.tables().ai || !this.storyBackfill().done || this.getMeta<number>('themeNext', 0) > Date.now()) return;
     this.setMeta('themeNext', Date.now() + THEME_RUN_MS);   // set first: a run that fails waits a week, not a minute (the admin can run it now)
+    await this.ctx.storage.sync();   // written for good before the run: a run stopped for its CPU must not come back at every wake-up
     await this.themeRunAll(deadline);
   }
   private async themeRunAll(deadline: number): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
     for (const area of LENS_AREAS) {
       if (!this.ctx.storage.sql.exec('SELECT 1 FROM story WHERE area = ? LIMIT 1', area).toArray().length) continue;
+      await breathe();
       try { out[area] = await this.themeRun(area, deadline); } catch (err) { out[area] = { error: err instanceof Error ? err.message : String(err) }; console.error('themes failed', area, out[area]); }
     }
     this.setMeta('themeLast', { at: Date.now(), areas: out });
