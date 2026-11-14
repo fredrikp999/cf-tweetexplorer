@@ -164,7 +164,7 @@ export function assignItems(items: StoryItem[], stories: Story[], pool: StoryIte
     let best: (typeof live)[number] | null = null, top = -2;
     for (const L of live) {
       const sim = dot(ci, L.c);
-      if (sim > top + 1e-12 && sim >= joinBar(it.names, L.names) && !numberVeto(it.names, L.names)) { top = sim; best = L; }
+      if (sim > top + 1e-12 && sim >= STORY_SIM - STORY_NAME_BONUS && sim >= joinBar(it.names, L.names) && !numberVeto(it.names, L.names)) { top = sim; best = L; }   // the lowest bar first: the name checks are string work
     }
     if (!best) { waiting.push(it); continue; }
     joins.push({ key: it.key, story: best.s.id });
@@ -187,7 +187,16 @@ function mergeNames(old: string[], more: string[][]): string[] {
 /** New stories among waiting items (oldest first). A group is the seed and the items alike with it (the bar is lower for a pair that shares a name, and a clash in a number keeps a pair apart), tightened once against the group's own centre. */
 function findBirths(fresh: StoryItem[], bg: ArrayLike<number>): { births: Birth[]; left: StoryItem[] } {
   const cs = fresh.map((it) => centredOn(it.v, bg)), free = new Set(fresh.map((_, i) => i)), skipped = new Set<number>(), births: Birth[] = [];
-  const near = (i: number, j: number) => dot(cs[i], cs[j]) >= (sharedName(fresh[i].names, fresh[j].names) ? STORY_SIM - STORY_NAME_BONUS : STORY_SIM) && !numberVeto(fresh[i].names, fresh[j].names);
+  // Whether two items are alike, worked out once per pair (the seed search below asks again for every seed, and the name checks are string work): the vectors first, the
+  // names only for a pair close enough that a shared name could decide. Symmetric, as sharedName and numberVeto are.
+  const p = fresh.length, sims = new Float32Array(p * p), isNear = new Uint8Array(p * p);
+  for (let i = 0; i < p; i++) for (let j = i + 1; j < p; j++) {
+    const sim = dot(cs[i], cs[j]);
+    sims[i * p + j] = sims[j * p + i] = sim;
+    const ok = sim >= STORY_SIM - STORY_NAME_BONUS && (sim >= STORY_SIM || sharedName(fresh[i].names, fresh[j].names)) && !numberVeto(fresh[i].names, fresh[j].names);
+    isNear[i * p + j] = isNear[j * p + i] = ok ? 1 : 0;
+  }
+  const near = (i: number, j: number) => isNear[i * p + j] === 1;
   for (;;) {
     let seed = -1, most = -1;
     for (const i of free) {
@@ -201,7 +210,7 @@ function findBirths(fresh: StoryItem[], bg: ArrayLike<number>): { births: Birth[
     const tight = (ms: number[]) => { const c = centredOn(meanCentre(ms.map((j) => fresh[j].v)), bg); return ms.filter((j) => dot(cs[j], c) >= STORY_SIM); };
     // Members let in only by a shared name must share the group's leading name: an item named for two stories does not make them one.
     const lead = rankNames(members.map((j) => fresh[j].names))[0];
-    members = members.filter((j) => j === seed || dot(cs[seed], cs[j]) >= STORY_SIM || (!!lead && fresh[j].names.some((x) => norm(x) === norm(lead))));
+    members = members.filter((j) => j === seed || sims[seed * p + j] >= STORY_SIM || (!!lead && fresh[j].names.some((x) => norm(x) === norm(lead))));
     members = tight(members);
     const groups = new Set(members.map((j) => fresh[j].group)), sources = new Set(members.map((j) => fresh[j].source ?? fresh[j].group));
     if (members.length < STORY_BIRTH_MIN || sources.size < STORY_BIRTH_SOURCES) { skipped.add(seed); continue; }
